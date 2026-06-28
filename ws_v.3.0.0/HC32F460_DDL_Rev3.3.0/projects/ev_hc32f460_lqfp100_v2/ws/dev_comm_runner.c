@@ -173,7 +173,7 @@ static void do_stop(void)
         hall_3ch_stop(s_hall);
     }
     for (ch = 0; ch < 3; ch++) {
-        TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch, TMR4_MODE_SYNC, 98.0f);
+        TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch, TMR4_MODE_HIGH_SIDE, 98.0f);
     }
     MAIN_D("[CommRunner] STOP");
 }
@@ -458,7 +458,7 @@ void CommRunner_Init(const comm_runner_config_t *cfg)
 
     /* ---- 上电默�: 全高�?? ON (上�全�=刹车, 待机安全) ---- */
     for (ch = 0; ch < 3; ch++) {
-        TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch, TMR4_MODE_SYNC, 98.0f);
+        TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch, TMR4_MODE_HIGH_SIDE, 98.0f);
     }
 
     /* ---- Hall 传感�?? ---- */

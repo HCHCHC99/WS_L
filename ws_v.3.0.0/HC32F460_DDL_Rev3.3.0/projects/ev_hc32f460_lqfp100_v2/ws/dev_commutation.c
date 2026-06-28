@@ -6,22 +6,23 @@
  *
  * Each row = { U_mode, U_duty_flag,  V_mode, V_duty_flag,  W_mode, W_duty_flag }
  *
- * mode:  0 = SYNC (PWM/ON),  1 = COMPLEMENTARY (OFF)
- * duty:  D = PWM duty (from parameter),
- *        L = COMM_DUTY_MIN (2%),
- *        O = COMM_DUTY_OFF (50% complementary)
+ * mode:  M_OFF = both LOW (OFF),  M_HIGH = H=PWM/L=LOW (high-side),
+ *        M_LOW = H=LOW/L=HIGH (low-side)
+ * duty:  D_PWM = PWM duty (from parameter, only meaningful for M_HIGH),
+ *        D_MIN = LOW_SIDE 100% (only meaningful for M_LOW),
+ *        D_OFF = don't care (only meaningful for M_OFF)
  *=============================================================================*/
-enum { M_SYNC = 0, M_COMP = 1 };
+enum { M_OFF = 0, M_HIGH = 1, M_LOW = 2 };
 enum { D_PWM = 0, D_MIN = 1, D_OFF = 2 };
 
 static const uint8_t s_states[6][6] = {
-    /*         U_mode   U_duty  V_mode  V_duty  W_mode  W_duty */
-    /* UH_VL */ { M_SYNC, D_PWM, M_SYNC, D_MIN, M_COMP, D_OFF },
-    /* UH_WL */ { M_SYNC, D_PWM, M_COMP, D_OFF, M_SYNC, D_MIN },
-    /* VH_WL */ { M_COMP, D_OFF, M_SYNC, D_PWM, M_SYNC, D_MIN },
-    /* VH_UL */ { M_SYNC, D_MIN, M_SYNC, D_PWM, M_COMP, D_OFF },
-    /* WH_UL */ { M_SYNC, D_MIN, M_COMP, D_OFF, M_SYNC, D_PWM },
-    /* WH_VL */ { M_COMP, D_OFF, M_SYNC, D_MIN, M_SYNC, D_PWM },
+    /*         U_mode  U_duty  V_mode  V_duty  W_mode  W_duty */
+    /* UH_VL */ { M_HIGH, D_PWM, M_LOW, D_MIN, M_OFF, D_OFF },
+    /* UH_WL */ { M_HIGH, D_PWM, M_OFF, D_OFF, M_LOW, D_MIN },
+    /* VH_WL */ { M_OFF, D_OFF, M_HIGH, D_PWM, M_LOW, D_MIN },
+    /* VH_UL */ { M_LOW, D_MIN, M_HIGH, D_PWM, M_OFF, D_OFF },
+    /* WH_UL */ { M_LOW, D_MIN, M_OFF, D_OFF, M_HIGH, D_PWM },
+    /* WH_VL */ { M_OFF, D_OFF, M_LOW, D_MIN, M_HIGH, D_PWM },
 };
 
 /* Step metadata for debug display */
@@ -62,7 +63,7 @@ static uint8_t  s_last_ch_mode[3] = {0xFFU, 0xFFU, 0xFFU};
 static float    s_last_ch_duty[3] = {0.0f, 0.0f, 0.0f};
 
 /*=============================================================================
- * Commutation_Init - All 3 phases to complementary OFF
+ * Commutation_Init - All 3 phases to OFF (both pins LOW â†’ 6288T-MNS both FETs OFF)
  *=============================================================================*/
 void Commutation_Init(void)
 {
@@ -72,7 +73,7 @@ void Commutation_Init(void)
     }
     for (ch = 0; ch < 3; ch++) {
         TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch,
-                                TMR4_MODE_COMPLEMENTARY, COMM_DUTY_OFF_F);
+                                TMR4_MODE_OFF, COMM_DUTY_OFF_F);
     }
 }
 
@@ -115,39 +116,45 @@ void Commutation_Step(uint8_t state, uint16_t freq_hz, float duty_pct)
         float   new_duty;
 
         if (dflag == D_PWM) {
-            new_duty = duty_pct;
+            new_duty = duty_pct;         /* M_HIGH: H pin PWM duty */
         } else if (dflag == D_MIN) {
-            new_duty = COMM_DUTY_MIN_F;
+            new_duty = COMM_DUTY_MIN_F;  /* M_LOW: duty ignored (L fixed 100%) */
         } else {
-            new_duty = COMM_DUTY_OFF_F;
+            new_duty = COMM_DUTY_OFF_F;  /* M_OFF: duty ignored (both LOW) */
         }
 
         if (new_mode != s_last_ch_mode[ch]) {
-            /* Mode changed (SYNCâ†”COMP) â† full channel reinit */
-            TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch,
-                (new_mode == M_COMP) ? TMR4_MODE_COMPLEMENTARY : TMR4_MODE_SYNC,
-                new_duty);
+            /* Mode changed: OFF / HIGH_SIDE / LOW_SIDE -> full channel reinit */
+            tmr4_channel_mode_t tmr4_mode;
+            if (new_mode == M_HIGH) {
+                tmr4_mode = TMR4_MODE_HIGH_SIDE;
+            } else if (new_mode == M_LOW) {
+                tmr4_mode = TMR4_MODE_LOW_SIDE;
+            } else {
+                tmr4_mode = TMR4_MODE_OFF;
+            }
+            TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch, tmr4_mode, new_duty);
             s_last_ch_mode[ch] = new_mode;
             s_last_ch_duty[ch] = new_duty;
         } else if (dflag == D_PWM && new_duty != s_last_ch_duty[ch]) {
-            /* Same mode, active PWM channel, duty changed â† OCCR only (fast) */
+            /* Same mode, active PWM channel, duty changed ï¿½ OCCR only (fast) */
             TMR4_PWM_SetDutyFloat((tmr4_pwm_channel_t)ch, new_duty);
             s_last_ch_duty[ch] = new_duty;
         }
-        /* else: mode unchanged, duty unchanged, or non-PWM channel â† skip */
+        /* else: mode unchanged, duty unchanged, or non-PWM channel ï¿½ skip */
     }
 
     (void)state;
 }
 
 /*=============================================================================
- * Commutation_Stop - All phases to complementary OFF
+ * Commutation_Stop - All phases to OFF (both pins LOW â†’ 6288T-MNS both FETs OFF)
  *=============================================================================*/
 void Commutation_Stop(void)
 {
     int ch;
     for (ch = 0; ch < 3; ch++) {
         TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch,
-                                TMR4_MODE_COMPLEMENTARY, COMM_DUTY_OFF_F);
+                                TMR4_MODE_OFF, COMM_DUTY_OFF_F);
     }
 }

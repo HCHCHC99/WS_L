@@ -6,25 +6,32 @@
 /*=============================================================================
  * Six-step commutation states
  *
- *   Macro             High-side(PWM)  Low-side(ON)  OFF
- *   -----             --------------  ------------  ---
- *   COMM_STEP_UH_VL   U (SYNC, duty)  V (SYNC, 2%)  W (COMP, 50%)
- *   COMM_STEP_UH_WL   U (SYNC, duty)  W (SYNC, 2%)  V (COMP, 50%)
- *   COMM_STEP_VH_WL   V (SYNC, duty)  W (SYNC, 2%)  U (COMP, 50%)
- *   COMM_STEP_VH_UL   V (SYNC, duty)  U (SYNC, 2%)  W (COMP, 50%)
- *   COMM_STEP_WH_UL   W (SYNC, duty)  U (SYNC, 2%)  V (COMP, 50%)
- *   COMM_STEP_WH_VL   W (SYNC, duty)  V (SYNC, 2%)  U (COMP, 50%)
+ *   Macro             High-side(PWM)  Low-side(ON)   OFF
+ *   -----             --------------  ------------   ---
+ *   COMM_STEP_UH_VL   U (HS, duty)    V (LS, 100%)   W (OFF)
+ *   COMM_STEP_UH_WL   U (HS, duty)    W (LS, 100%)   V (OFF)
+ *   COMM_STEP_VH_WL   V (HS, duty)    W (LS, 100%)   U (OFF)
+ *   COMM_STEP_VH_UL   V (HS, duty)    U (LS, 100%)   W (OFF)
+ *   COMM_STEP_WH_UL   W (HS, duty)    U (LS, 100%)   V (OFF)
+ *   COMM_STEP_WH_VL   W (HS, duty)    V (LS, 100%)   U (OFF)
  *
- * SDH21263 pre-driver truth table (per phase):
- *   H,H -> high-side ON   L,L -> low-side ON   H!=L -> interlock OFF
+ * 6288T-MNS pre-driver truth table (per phase):
+ *   HIN=L, LIN=L → HO=L, LO=L  (both OFF)
+ *   HIN=L, LIN=H → HO=L, LO=H  (low-side ON)
+ *   HIN=H, LIN=L → HO=H, LO=L  (high-side ON)
+ *   HIN=H, LIN=H → HO=L, LO=L  (both OFF)
+ *
+ * HIGH_SIDE: H=PWM, L=LOW  → PWM ON: HIN=H,LIN=L → high-side ON, PWM OFF: both OFF
+ * LOW_SIDE:  H=LOW, L=HIGH → HIN=L, LIN=H → low-side ON continuous
+ * OFF:       H=LOW, L=LOW  → HIN=L, LIN=L → both OFF
  *=============================================================================*/
 
 /* Pre-driver duty limits */
 #define COMM_DUTY_MIN_F  2.0f    /* 2% */
 #define COMM_DUTY_MAX_F  98.0f   /* 98% */
-#define COMM_DUTY_OFF_F  50.0f   /* 50% (complementary OFF) */
+#define COMM_DUTY_OFF_F  0.0f    /* 0% (OFF mode: both pins LOW) */
 
-/* Commutation step macros � freq_hz (e.g. 50000), duty_pct (e.g. 95.0f) */
+/* Commutation step macros � freq_hz (e.g. 50000), duty_pct (e.g. 95.0f) */
 #define COMM_STEP_UH_VL(f, d)  Commutation_Step(0, (f), (d))
 #define COMM_STEP_UH_WL(f, d)  Commutation_Step(1, (f), (d))
 #define COMM_STEP_VH_WL(f, d)  Commutation_Step(2, (f), (d))

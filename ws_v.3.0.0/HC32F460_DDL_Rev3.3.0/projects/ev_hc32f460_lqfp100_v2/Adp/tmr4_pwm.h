@@ -73,10 +73,21 @@ void TMR4_PWM_PinSetDuty(tmr4_pwm_channel_t channel, bool high_side, uint16_t u1
  * Use for OFF phase: set H=HIGH, L=LOW → disable both → H,L → interlock. */
 void TMR4_PWM_PinSetInvalidLevel(tmr4_pwm_channel_t channel, bool high_side, bool level_high);
 
-/* Channel output mode */
+/* Channel output mode — 6288T-MNS pre-driver
+ *
+ * 6288T-MNS truth table (per phase):
+ *   HIN=L, LIN=L → HO=L, LO=L  (both OFF / shoot-through protection)
+ *   HIN=L, LIN=H → HO=L, LO=H  (low-side ON)
+ *   HIN=H, LIN=L → HO=H, LO=L  (high-side ON)
+ *   HIN=H, LIN=H → HO=L, LO=L  (both OFF / shoot-through protection)
+ *
+ * OFF:       H=L=LOW  → both OFF
+ * HIGH_SIDE: H=PWM, L=LOW → PWM ON: high-side ON, PWM OFF: both OFF
+ * LOW_SIDE:  H=LOW, L=HIGH → low-side ON (continuous) */
 typedef enum {
-    TMR4_MODE_SYNC           = 0,  /* H & L same duty */
-    TMR4_MODE_COMPLEMENTARY  = 1,  /* H & L complementary (dead-time from Config) */
+    TMR4_MODE_OFF       = 0,  /* H & L both LOW → 6288T: both FETs OFF */
+    TMR4_MODE_HIGH_SIDE = 1,  /* H=PWM, L=LOW → 6288T: high-side FET chopping */
+    TMR4_MODE_LOW_SIDE  = 2,  /* H=LOW, L=HIGH → 6288T: low-side FET ON */
 } tmr4_channel_mode_t;
 
 /* Switch a channel's output mode at runtime (for six-step commutation).

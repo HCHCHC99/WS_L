@@ -47,7 +47,7 @@ td.hl2 { background: #2a1f3a; color: #bc8cff; font-weight: bold; }
 <body>
 
 <h1>⚡ BLDC 六步换相：Hall→Step 查表原理</h1>
-<div class="subtitle">HC32F460 · TMR4 PWM · SDH21263 · 3-Hall 120° · 3对极</div>
+<div class="subtitle">HC32F460 · TMR4 PWM · 6288T-MNS · 3-Hall 120° · 3对极</div>
 
 <div class="container">
 
@@ -118,16 +118,16 @@ td.hl2 { background: #2a1f3a; color: #bc8cff; font-weight: bold; }
   <div class="table-wrap">
     <table>
       <tr><th>Step</th><th>名称</th><th>U相 (PB9/PB8)</th><th>V相 (PB7/PB6)</th><th>W相 (PB5/PB4)</th><th>电流方向</th><th>磁场角度</th></tr>
-      <tr><td>0</td><td>UH_VL</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#f85149">COMP(50%)</td><td>U→V</td><td>330°</td></tr>
-      <tr><td>1</td><td>UH_WL</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(2%)</td><td>U→W</td><td>30°</td></tr>
-      <tr><td>2</td><td>VH_WL</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#3fb950">SYNC(2%)</td><td>V→W</td><td>90°</td></tr>
-      <tr><td>3</td><td>VH_UL</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#f85149">COMP(50%)</td><td>V→U</td><td>150°</td></tr>
-      <tr><td>4</td><td>WH_UL</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(duty%)</td><td>W→U</td><td>210°</td></tr>
-      <tr><td>5</td><td>WH_VL</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#3fb950">SYNC(duty%)</td><td>W→V</td><td>270°</td></tr>
+      <tr><td>0</td><td>UH_VL</td><td style="color:#3fb950">HIGH_SIDE(duty%)</td><td style="color:#3fb950">LOW_SIDE</td><td style="color:#f85149">OFF</td><td>U→V</td><td>330°</td></tr>
+      <tr><td>1</td><td>UH_WL</td><td style="color:#3fb950">HIGH_SIDE(duty%)</td><td style="color:#f85149">OFF</td><td style="color:#3fb950">LOW_SIDE</td><td>U→W</td><td>30°</td></tr>
+      <tr><td>2</td><td>VH_WL</td><td style="color:#f85149">OFF</td><td style="color:#3fb950">HIGH_SIDE(duty%)</td><td style="color:#3fb950">LOW_SIDE</td><td>V→W</td><td>90°</td></tr>
+      <tr><td>3</td><td>VH_UL</td><td style="color:#3fb950">LOW_SIDE</td><td style="color:#3fb950">HIGH_SIDE(duty%)</td><td style="color:#f85149">OFF</td><td>V→U</td><td>150°</td></tr>
+      <tr><td>4</td><td>WH_UL</td><td style="color:#3fb950">LOW_SIDE</td><td style="color:#f85149">OFF</td><td style="color:#3fb950">HIGH_SIDE(duty%)</td><td>W→U</td><td>210°</td></tr>
+      <tr><td>5</td><td>WH_VL</td><td style="color:#f85149">OFF</td><td style="color:#3fb950">LOW_SIDE</td><td style="color:#3fb950">HIGH_SIDE(duty%)</td><td>W→V</td><td>270°</td></tr>
     </table>
   </div>
   <div class="info" style="margin-top:8px; font-size:12px; color:#8b949e;">
-    SYNC = 同相模式（H=L=脉冲 → SDH21263: H=上管ON, L=下管ON）· COMP = 互补模式（H≠L → 互锁 → 两管都OFF）
+    HIGH_SIDE = H=PWM, L=LOW → 6288T-MNS: HIN=H,LIN=L → 上管ON · LOW_SIDE = H=LOW, L=HIGH → HIN=L,LIN=H → 下管ON · OFF = H=L=LOW → HIN=L,LIN=L → 两管都OFF
   </div>
 </div>
 

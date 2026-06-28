@@ -45,9 +45,14 @@ static const pwm_pair_desc_t s_pairs[3] = {
 static bool               s_bConfigured = false;
 static uint16_t           s_u16Period   = 0U;
 static tmr4_output_type_t s_channel_type[3] = {
-    TMR4_OUTPUT_COMPLEMENTARY,
-    TMR4_OUTPUT_COMPLEMENTARY,
-    TMR4_OUTPUT_COMPLEMENTARY,
+    TMR4_OUTPUT_SYNC,
+    TMR4_OUTPUT_SYNC,
+    TMR4_OUTPUT_SYNC,
+};
+static tmr4_channel_mode_t s_ch_op_mode[3] = {
+    TMR4_MODE_OFF,
+    TMR4_MODE_OFF,
+    TMR4_MODE_OFF,
 };
 /*=============================================================================
  * Apply shadow register settings to one OC channel
@@ -359,9 +364,16 @@ void TMR4_PWM_SetDuty(tmr4_pwm_channel_t channel, uint16_t u16Duty)
 
     pair = &s_pairs[channel];
 
-    TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_l, u16Compare);
-    if (s_channel_type[channel] == TMR4_OUTPUT_SYNC) {
+    switch (s_ch_op_mode[channel]) {
+    case TMR4_MODE_HIGH_SIDE:
         TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_h, u16Compare);
+        break;
+    case TMR4_MODE_LOW_SIDE:
+        /* Fixed 100%, no update */
+        break;
+    case TMR4_MODE_OFF:
+    default:
+        break;
     }
 }
 
@@ -380,12 +392,21 @@ void TMR4_PWM_ChannelCmd(tmr4_pwm_channel_t channel, bool enable)
 
     pair = &s_pairs[channel];
 
-    if (s_channel_type[channel] == TMR4_OUTPUT_SYNC) {
-        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_h,
-                    enable ? ENABLE : DISABLE);
+    switch (s_ch_op_mode[channel]) {
+    case TMR4_MODE_HIGH_SIDE:
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_h, enable ? ENABLE : DISABLE);
+        /* L stays disabled (forced LOW) */
+        break;
+    case TMR4_MODE_LOW_SIDE:
+        /* H stays disabled (forced LOW) */
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l, enable ? ENABLE : DISABLE);
+        break;
+    case TMR4_MODE_OFF:
+    default:
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_h, enable ? ENABLE : DISABLE);
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l, enable ? ENABLE : DISABLE);
+        break;
     }
-    TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l,
-                enable ? ENABLE : DISABLE);
 }
 
 /*=============================================================================
@@ -468,15 +489,18 @@ static uint16_t DutyFloatToCompare(float duty_pct)
 }
 
 /*=============================================================================
- * TMR4_PWM_SetChannelMode - Switch channel between SYNC and COMPLEMENTARY
+ * TMR4_PWM_SetChannelMode - Switch channel for 6288T-MNS pre-driver
+ *
+ * OFF:       H & L both disabled, invalid level LOW → HIN=L, LIN=L → both OFF
+ * HIGH_SIDE: H enabled (SYNC, PWM duty), L disabled (LOW) → HIN=PWM, LIN=L
+ *            PWM ON: HIN=H,LIN=L → high-side ON. PWM OFF: HIN=L,LIN=L → both OFF.
+ * LOW_SIDE:  H disabled (LOW), L enabled (SYNC, 100%) → HIN=L, LIN=H → low-side ON
  *=============================================================================*/
 void TMR4_PWM_SetChannelMode(tmr4_pwm_channel_t channel, tmr4_channel_mode_t mode, float duty_pct)
 {
     const pwm_pair_desc_t *pair;
     stc_tmr4_pwm_init_t stcPwmInit;
     stc_tmr4_oc_init_t  stcOcInit;
-    uint32_t u32TimerClock;
-    uint16_t u16DeadTicks;
     uint16_t u16Compare;
 
     if (!s_bConfigured || channel > TMR4_CHANNEL_W) {
@@ -484,62 +508,77 @@ void TMR4_PWM_SetChannelMode(tmr4_pwm_channel_t channel, tmr4_channel_mode_t mod
     }
 
     u16Compare = DutyFloatToCompare(duty_pct);
-
     pair = &s_pairs[channel];
-    u32TimerClock = CLK_GetBusClockFreq(CLK_BUS_PCLK1);
 
-    s_channel_type[channel] = (mode == TMR4_MODE_COMPLEMENTARY)
-                              ? TMR4_OUTPUT_COMPLEMENTARY : TMR4_OUTPUT_SYNC;
+    /* All 6288T-MNS modes use THROUGH (no dead-time needed) */
+    s_channel_type[channel] = TMR4_OUTPUT_SYNC;
+    s_ch_op_mode[channel]   = mode;
 
-    if (mode == TMR4_MODE_COMPLEMENTARY) {
-        /* --- Switch to complementary --- */
-        u16DeadTicks = DeadTimeNsToTicks(0U, u32TimerClock);
+    switch (mode) {
 
-        TMR4_OC_StructInit(&stcOcInit);
-        TMR4_OC_Init(CM_TMR4_3, pair->oc_ch_l, &stcOcInit);
-        OCMode_CompLow(CM_TMR4_3, pair->oc_ch_l);
-
-        TMR4_PWM_StructInit(&stcPwmInit);
-        stcPwmInit.u16Mode = TMR4_PWM_MD_DEAD_TMR;
-        stcPwmInit.u16ClockDiv = TMR4_PWM_CLK_DIV1;
-        stcPwmInit.u16Polarity = TMR4_PWM_OXH_HOLD_OXL_HOLD;
-        TMR4_PWM_Init(CM_TMR4_3, pair->pwm_ch, &stcPwmInit);
-
-        TMR4_PWM_SetDeadTimeValue(CM_TMR4_3, pair->pwm_ch,
-                                  TMR4_PWM_PDAR_IDX, u16DeadTicks);
-        TMR4_PWM_SetDeadTimeValue(CM_TMR4_3, pair->pwm_ch,
-                                  TMR4_PWM_PDBR_IDX, u16DeadTicks);
-
+    case TMR4_MODE_OFF:
+        /* H=L=LOW → HIN=L, LIN=L → both OFF (6288T-MNS) */
         TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_h, DISABLE);
-        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l, ENABLE);
-        TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_l, u16Compare);
-        Shadow_ApplyOC(pair->oc_ch_l);
-
-    } else {
-        /* --- Switch to SYNC --- */
-        TMR4_OC_StructInit(&stcOcInit);
-        stcOcInit.u16CompareValue = s_u16Period / 2U;
-        stcOcInit.u16CompareValueBufCond = TMR4_OC_BUF_COND_PEAK;
-
-        TMR4_OC_Init(CM_TMR4_3, pair->oc_ch_h, &stcOcInit);
-        TMR4_OC_Init(CM_TMR4_3, pair->oc_ch_l, &stcOcInit);
-
-        OCMode_SyncHigh(CM_TMR4_3, pair->oc_ch_h);
-        OCMode_SyncLow(CM_TMR4_3, pair->oc_ch_l);
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l, DISABLE);
+        TMR4_OC_SetOcInvalidPolarity(CM_TMR4_3, pair->oc_ch_h, TMR4_OC_INVD_LOW);
+        TMR4_OC_SetOcInvalidPolarity(CM_TMR4_3, pair->oc_ch_l, TMR4_OC_INVD_LOW);
 
         TMR4_PWM_StructInit(&stcPwmInit);
-        stcPwmInit.u16Mode = TMR4_PWM_MD_THROUGH;
+        stcPwmInit.u16Mode     = TMR4_PWM_MD_THROUGH;
         stcPwmInit.u16ClockDiv = TMR4_PWM_CLK_DIV1;
         stcPwmInit.u16Polarity = TMR4_PWM_OXH_HOLD_OXL_HOLD;
         TMR4_PWM_Init(CM_TMR4_3, pair->pwm_ch, &stcPwmInit);
+        break;
 
+    case TMR4_MODE_HIGH_SIDE:
+        /* H=PWM, L=LOW → HIN=PWM, LIN=L → high-side FET chopping (6288T-MNS)
+         *   PWM ON:  HIN=H, LIN=L → high-side ON
+         *   PWM OFF: HIN=L, LIN=L → both OFF (body-diode freewheeling) */
+
+        /* H channel: SYNC mode OC with PWM duty */
+        TMR4_OC_StructInit(&stcOcInit);
+        stcOcInit.u16CompareValue        = s_u16Period / 2U;
+        stcOcInit.u16CompareValueBufCond = TMR4_OC_BUF_COND_PEAK;
+        TMR4_OC_Init(CM_TMR4_3, pair->oc_ch_h, &stcOcInit);
+        OCMode_SyncHigh(CM_TMR4_3, pair->oc_ch_h);
         TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_h, ENABLE);
-        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l, ENABLE);
-
         TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_h, u16Compare);
-        TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_l, u16Compare);
         Shadow_ApplyOC(pair->oc_ch_h);
+
+        /* L channel: disabled, forced LOW */
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l, DISABLE);
+        TMR4_OC_SetOcInvalidPolarity(CM_TMR4_3, pair->oc_ch_l, TMR4_OC_INVD_LOW);
+
+        TMR4_PWM_StructInit(&stcPwmInit);
+        stcPwmInit.u16Mode     = TMR4_PWM_MD_THROUGH;
+        stcPwmInit.u16ClockDiv = TMR4_PWM_CLK_DIV1;
+        stcPwmInit.u16Polarity = TMR4_PWM_OXH_HOLD_OXL_HOLD;
+        TMR4_PWM_Init(CM_TMR4_3, pair->pwm_ch, &stcPwmInit);
+        break;
+
+    case TMR4_MODE_LOW_SIDE:
+        /* H=LOW, L=HIGH → HIN=L, LIN=H → low-side FET ON continuous (6288T-MNS) */
+
+        /* H channel: disabled, forced LOW */
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_h, DISABLE);
+        TMR4_OC_SetOcInvalidPolarity(CM_TMR4_3, pair->oc_ch_h, TMR4_OC_INVD_LOW);
+
+        /* L channel: 100% duty = always HIGH */
+        TMR4_OC_StructInit(&stcOcInit);
+        stcOcInit.u16CompareValue        = s_u16Period / 2U;
+        stcOcInit.u16CompareValueBufCond = TMR4_OC_BUF_COND_PEAK;
+        TMR4_OC_Init(CM_TMR4_3, pair->oc_ch_l, &stcOcInit);
+        OCMode_SyncLow(CM_TMR4_3, pair->oc_ch_l);
+        TMR4_OC_Cmd(CM_TMR4_3, pair->oc_ch_l, ENABLE);
+        TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_l, s_u16Period - 1U);  /* 100% duty */
         Shadow_ApplyOC(pair->oc_ch_l);
+
+        TMR4_PWM_StructInit(&stcPwmInit);
+        stcPwmInit.u16Mode     = TMR4_PWM_MD_THROUGH;
+        stcPwmInit.u16ClockDiv = TMR4_PWM_CLK_DIV1;
+        stcPwmInit.u16Polarity = TMR4_PWM_OXH_HOLD_OXL_HOLD;
+        TMR4_PWM_Init(CM_TMR4_3, pair->pwm_ch, &stcPwmInit);
+        break;
     }
 }
 
@@ -575,8 +614,17 @@ void TMR4_PWM_SetDutyFloat(tmr4_pwm_channel_t channel, float duty_pct)
     u16Compare = DutyFloatToCompare(duty_pct);
     pair = &s_pairs[channel];
 
-    TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_l, u16Compare);
-    if (s_channel_type[channel] == TMR4_OUTPUT_SYNC) {
+    switch (s_ch_op_mode[channel]) {
+    case TMR4_MODE_HIGH_SIDE:
+        /* Only H channel has PWM; update its compare value */
         TMR4_OC_SetCompareValue(CM_TMR4_3, pair->oc_ch_h, u16Compare);
+        break;
+    case TMR4_MODE_LOW_SIDE:
+        /* L channel fixed at 100%; no duty update needed */
+        break;
+    case TMR4_MODE_OFF:
+    default:
+        /* Both channels disabled; no duty update needed */
+        break;
     }
 }

@@ -1,0 +1,47 @@
+# Keil MDK build output
+template/MDK/output/
+*.dep
+*.uvgui*
+*.uvguix*
+JLinkLog.txt
+*.Administrator
+*.CrApplication
+*.D99
+
+# Compiled objects
+*.o
+*.obj
+*.axf
+*.hex
+*.bin
+*.elf
+*.out
+*.lst
+*.map
+*.d
+*.crf
+*.htm
+*.lnp
+*.plg
+*.iex
+*.bak
+*.sct
+*.scvd
+*.tra
+
+# RTE
+RTE/
+
+# JLink
+JLink*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

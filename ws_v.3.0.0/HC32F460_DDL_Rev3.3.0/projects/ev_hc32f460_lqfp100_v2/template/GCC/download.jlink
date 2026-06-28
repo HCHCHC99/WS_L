@@ -1,0 +1,6 @@
+r
+h
+loadfile ..\Debug\template.hex
+r
+g
+q

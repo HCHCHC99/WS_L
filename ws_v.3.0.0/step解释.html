@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLDC 六步换相 Hall→Step 查表详解</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }
+h1 { text-align: center; margin-bottom: 10px; color: #58a6ff; font-size: 24px; }
+.subtitle { text-align: center; color: #8b949e; margin-bottom: 20px; font-size: 13px; }
+.container { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+
+.panel { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; }
+.canvas-row { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+canvas { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; }
+
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 10px; }
+button { padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 13px; transition: all .15s; }
+button:hover { background: #30363d; border-color: #58a6ff; }
+button.active { background: #1f6feb; border-color: #58a6ff; color: #fff; font-weight: bold; }
+button.highlight { background: #238636; border-color: #3fb950; color: #fff; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: center; }
+th, td { padding: 6px 10px; border: 1px solid #30363d; }
+th { background: #21262d; color: #58a6ff; }
+td { background: #0d1117; }
+td.hl { background: #1f3a2c; color: #3fb950; font-weight: bold; }
+td.hl2 { background: #2a1f3a; color: #bc8cff; font-weight: bold; }
+
+.info { font-size: 13px; line-height: 1.7; }
+.info strong { color: #58a6ff; }
+.info em { color: #d2a8ff; font-style: normal; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; }
+.legend span { display: flex; align-items: center; gap: 4px; }
+.legend .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+
+.step-indicator { display: flex; gap: 6px; justify-content: center; margin: 8px 0; }
+.step-dot { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #30363d; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; transition: all .2s; }
+.step-dot.current { border-color: #58a6ff; background: #1f3a2c; color: #3fb950; transform: scale(1.15); box-shadow: 0 0 12px #1f6feb44; }
+
+.arrow-explain { display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 14px; margin: 8px 0; }
+.arrow-explain .arr { font-size: 22px; }
+</style>
+</head>
+<body>
+
+<h1>⚡ BLDC 六步换相：Hall→Step 查表原理</h1>
+<div class="subtitle">HC32F460 · TMR4 PWM · SDH21263 · 3-Hall 120° · 3对极</div>
+
+<div class="container">
+
+<!-- ==================== 画布区域 ==================== -->
+<div class="panel">
+  <div class="btn-row">
+    <button id="btnCW" class="active" onclick="setMode('cw')">🔁 CW 正转 (s_hall2step_cw)</button>
+    <button id="btnCCW" onclick="setMode('ccw')">🔁 CCW 反转 (s_hall2step_ccw)</button>
+    <button id="btnCalib" onclick="setMode('calib')">📐 0° 标定 (g_calib_table)</button>
+    <span style="margin: 0 12px; color: #484f58;">|</span>
+    <button id="btnAuto" onclick="toggleAuto()">▶ 自动播放</button>
+    <button onclick="stepNext()">⏭ 下一步</button>
+    <button onclick="stepPrev()">⏮ 上一步</button>
+    <span id="speedLabel" style="color: #8b949e; font-size: 12px; margin-left: 8px;">间隔: 800ms</span>
+  </div>
+  <div style="display:flex; gap: 8px; justify-content: center; margin-top: 6px;">
+    <button onclick="changeSpeed(-200)" style="font-size:11px; padding:4px 10px;">⏩ 加速</button>
+    <button onclick="changeSpeed(200)" style="font-size:11px; padding:4px 10px;">⏪ 减速</button>
+  </div>
+
+  <!-- 标定值输入面板 -->
+  <div id="calibPanel" style="display:none; margin-top:10px; padding:10px; background:#1a1f2b; border:1px solid #30363d; border-radius:8px;">
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:center;">
+      <span style="color:#f0883e; font-weight:bold;">📐 g_calib_table =</span>
+      <span style="color:#8b949e;font-size:12px;">{</span>
+      <span style="color:#8b949e;font-size:12px;">0xFF,</span>
+      <span>0x01→<input id="ci1" type="number" min="0" max="5" value="0" onchange="onCalibChange()" style="width:42px;background:#0d1117;color:#58a6ff;border:1px solid #30363d;border-radius:4px;padding:3px 5px;font-size:13px;text-align:center;"></span>
+      <span>0x02→<input id="ci2" type="number" min="0" max="5" value="2" onchange="onCalibChange()" style="width:42px;background:#0d1117;color:#58a6ff;border:1px solid #30363d;border-radius:4px;padding:3px 5px;font-size:13px;text-align:center;"></span>
+      <span>0x03→<input id="ci3" type="number" min="0" max="5" value="5" onchange="onCalibChange()" style="width:42px;background:#0d1117;color:#58a6ff;border:1px solid #30363d;border-radius:4px;padding:3px 5px;font-size:13px;text-align:center;"></span>
+      <span>0x04→<input id="ci4" type="number" min="0" max="5" value="4" onchange="onCalibChange()" style="width:42px;background:#0d1117;color:#58a6ff;border:1px solid #30363d;border-radius:4px;padding:3px 5px;font-size:13px;text-align:center;"></span>
+      <span>0x05→<input id="ci5" type="number" min="0" max="5" value="1" onchange="onCalibChange()" style="width:42px;background:#0d1117;color:#58a6ff;border:1px solid #30363d;border-radius:4px;padding:3px 5px;font-size:13px;text-align:center;"></span>
+      <span>0x06→<input id="ci6" type="number" min="0" max="5" value="3" onchange="onCalibChange()" style="width:42px;background:#0d1117;color:#58a6ff;border:1px solid #30363d;border-radius:4px;padding:3px 5px;font-size:13px;text-align:center;"></span>
+      <span style="color:#8b949e;font-size:12px;">0xFF }</span>
+      <button onclick="randomCalib()" style="font-size:11px;padding:4px 10px;">🎲 随机</button>
+    </div>
+  </div>
+
+  <div class="canvas-row" style="margin-top:10px;">
+    <div style="text-align:center;">
+      <div style="color:#8b949e; font-size:12px; margin-bottom:4px;">定子磁场 &amp; 转子位置</div>
+      <canvas id="mainCanvas" width="420" height="420"></canvas>
+    </div>
+    <div style="text-align:center;">
+      <div style="color:#8b949e; font-size:12px; margin-bottom:4px;">Hall 传感器电平 &amp; 查表结果</div>
+      <canvas id="hallCanvas" width="380" height="420"></canvas>
+    </div>
+  </div>
+
+  <div class="step-indicator" id="stepDots"></div>
+  <div id="stepInfo" style="text-align:center; font-size:14px; margin-top:6px; color:#58a6ff;"></div>
+</div>
+
+<!-- ==================== 查表对照 ==================== -->
+<div class="panel">
+  <h3 style="color:#58a6ff; margin-bottom:8px;">📋 Hall→Step 查表对照</h3>
+  <div class="btn-row" style="margin-bottom:10px;">
+    <button id="tabCW" class="active" onclick="showTable('cw')">CW 表 (s_hall2step_cw)</button>
+    <button id="tabCCW" onclick="showTable('ccw')">CCW 表 (s_hall2step_ccw)</button>
+    <button id="tabBoth" onclick="showTable('both')">两张表对比</button>
+    <button id="tabOffset" onclick="showTable('offset')">偏移推导过程</button>
+  </div>
+  <div class="table-wrap" id="tableContainer"></div>
+</div>
+
+<!-- ==================== 换相步骤详解 ==================== -->
+<div class="panel">
+  <h3 style="color:#58a6ff; margin-bottom:8px;">🔧 六步换相 — 每步通电状态</h3>
+  <div class="table-wrap">
+    <table>
+      <tr><th>Step</th><th>名称</th><th>U相 (PB9/PB8)</th><th>V相 (PB7/PB6)</th><th>W相 (PB5/PB4)</th><th>电流方向</th><th>磁场角度</th></tr>
+      <tr><td>0</td><td>UH_VL</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#f85149">COMP(50%)</td><td>U→V</td><td>330°</td></tr>
+      <tr><td>1</td><td>UH_WL</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(2%)</td><td>U→W</td><td>30°</td></tr>
+      <tr><td>2</td><td>VH_WL</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#3fb950">SYNC(2%)</td><td>V→W</td><td>90°</td></tr>
+      <tr><td>3</td><td>VH_UL</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#3fb950">SYNC(duty%)</td><td style="color:#f85149">COMP(50%)</td><td>V→U</td><td>150°</td></tr>
+      <tr><td>4</td><td>WH_UL</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(duty%)</td><td>W→U</td><td>210°</td></tr>
+      <tr><td>5</td><td>WH_VL</td><td style="color:#f85149">COMP(50%)</td><td style="color:#3fb950">SYNC(2%)</td><td style="color:#3fb950">SYNC(duty%)</td><td>W→V</td><td>270°</td></tr>
+    </table>
+  </div>
+  <div class="info" style="margin-top:8px; font-size:12px; color:#8b949e;">
+    SYNC = 同相模式（H=L=脉冲 → SDH21263: H=上管ON, L=下管ON）· COMP = 互补模式（H≠L → 互锁 → 两管都OFF）
+  </div>
+</div>
+
+</div>
+
+<script>
+// ==================== 数据定义 ====================
+const HALL_CW_SEQ = [0x02, 0x06, 0x04, 0x05, 0x01, 0x03];  // CW Hall sequence
+const HALL_CCW_SEQ = [0x01, 0x05, 0x04, 0x06, 0x02, 0x03]; // CCW Hall sequence
+
+// s_hall2step_cw: sector -90°  (CW rotation, field leads rotor in CW direction)
+const TABLE_CW = [0xFF, 5, 3, 4, 1, 0, 2, 0xFF];
+// s_hall2step_ccw: sector +90° (CCW rotation, field leads rotor in CCW direction)
+const TABLE_CCW = [0xFF, 2, 0, 1, 4, 3, 5, 0xFF];
+
+// 0° calibration example result
+let TABLE_CALIB = [0xFF, 0, 2, 5, 4, 1, 3, 0xFF];
+
+function getCalibCW(h) { return (h>=1&&h<=6 && TABLE_CALIB[h]<=5) ? (TABLE_CALIB[h]+5)%6 : 0xFF; }
+function getCalibCCW(h) { return (h>=1&&h<=6 && TABLE_CALIB[h]<=5) ? (TABLE_CALIB[h]+2)%6 : 0xFF; }
+function getCalibTableCW() { const t=[]; for(let i=0;i<8;i++) t[i]=(i>=1&&i<=6&&TABLE_CALIB[i]<=5)?(TABLE_CALIB[i]+5)%6:0xFF; return t; }
+function getCalibTableCCW() { const t=[]; for(let i=0;i<8;i++) t[i]=(i>=1&&i<=6&&TABLE_CALIB[i]<=5)?(TABLE_CALIB[i]+2)%6:0xFF; return t; }
+
+const STEP_NAMES = ['UH_VL','UH_WL','VH_WL','VH_UL','WH_UL','WH_VL'];
+// Step field positions evenly spaced (0°=3h, timing in canvas: y↓ so angle↑=CW)
+const STEP_ANGLES = [0, 60, 120, 180, 240, 300];
+const STEP_COLORS = ['#3fb950','#58a6ff','#d2a8ff','#f0883e','#f85149','#ffc107'];
+
+// Rotor position for each Hall state (evenly spaced, CW order)
+// Canvas: 0°=3h(right), 90°=6h(down), 180°=9h(left), 270°=12h(up) — angle↑ = CW
+// CW Hall sequence: 0x02→0x06→0x04→0x05→0x01→0x03  (angle must INCREASE = CW)
+const HALL_ANGLE = {
+  0x02: 30,   // ~4 o'clock
+  0x06: 90,   //  6 o'clock
+  0x04: 150,  // ~8 o'clock
+  0x05: 210,  // ~10 o'clock
+  0x01: 270,  // 12 o'clock
+  0x03: 330   // ~2 o'clock
+};
+
+const STEP_PHASES = [
+  {h:'U', l:'V'}, {h:'U', l:'W'}, {h:'V', l:'W'},
+  {h:'V', l:'U'}, {h:'W', l:'U'}, {h:'W', l:'V'}
+];
+
+let currentMode = 'cw';
+let currentIdx = 0;
+let autoTimer = null;
+let autoSpeed = 800;
+
+// ==================== 主画布绘制 ====================
+const mainCanvas = document.getElementById('mainCanvas');
+const mainCtx = mainCanvas.getContext('2d');
+const hallCanvas = document.getElementById('hallCanvas');
+const hallCtx = hallCanvas.getContext('2d');
+const cx = 210, cy = 210, r = 180;
+
+function drawMain() {
+  const ctx = mainCtx;
+  const seq = currentMode === 'ccw' ? HALL_CCW_SEQ : HALL_CW_SEQ;
+  const hall = seq[currentIdx];
+  const table = currentMode === 'ccw' ? TABLE_CCW : (currentMode === 'calib' ? TABLE_CALIB : TABLE_CW);
+  const step = table[hall];
+  const isCCW = (currentMode === 'ccw');
+
+  // In canvas: 0°=right(3h), 90°=down(6h), 180°=left(9h), 270°=up(12h)
+  // angle increasing = clockwise in canvas
+  // For CW: rotor angle INCREASES (0→60→120→...→300)
+  // For CCW: rotor angle DECREASES (300→240→...→0)
+
+  // 6 Hall positions evenly spaced starting at 30°
+  const hallAngles = [30, 90, 150, 210, 270, 330]; // Ha,Hb,Hc sensor physical positions
+  const hallBits = [(hall>>2)&1, (hall>>1)&1, hall&1];
+
+  // Rotor centers (evenly spaced, INCREASING angle = CW in canvas)
+  // CW Hall seq: 0x02→0x06→0x04→0x05→0x01→0x03
+  const HALL_ROTOR = {
+    0x02: 0,   0x06: 60,  0x04: 120,
+    0x05: 180, 0x01: 240, 0x03: 300
+  };
+  const rotorAngle = HALL_ROTOR[hall] || 0;
+  const ra = rotorAngle * Math.PI / 180;
+
+  ctx.clearRect(0, 0, 420, 420);
+
+  // Title
+  const modeNames = {cw: '⟳ CW 顺时针', ccw: '⟲ CCW 逆时针', calib: '⟳ CW 顺 (0°标定)'};
+  ctx.fillStyle = '#58a6ff'; ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(modeNames[currentMode] || modeNames.cw, cx, 16);
+
+  // Stator ring
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+  ctx.strokeStyle = '#30363d'; ctx.lineWidth = 3; ctx.stroke();
+
+  // Direction arrows on the ring
+  for (let i = 0; i < 6; i++) {
+    const aa = (i * 60) * Math.PI/180;
+    const ax = cx + (r+14) * Math.cos(aa);
+    const ay = cy + (r+14) * Math.sin(aa);
+    ctx.save(); ctx.translate(ax, ay);
+    ctx.rotate(isCCW ? (aa - Math.PI/2) : (aa + Math.PI/2));
+    ctx.fillStyle = isCCW ? '#d2a8ff44' : '#3fb95044';
+    ctx.beginPath(); ctx.moveTo(0,-6); ctx.lineTo(7,0); ctx.lineTo(0,6); ctx.fill();
+    ctx.restore();
+  }
+
+  // 6 step sectors placed so that the CW table's step sequence goes CW
+  // CW table: 3→2→1→0→5→4 must go INCREASING angle (CW in canvas)
+  // step sector start angles: step4=0°, step3=60°, step2=120°, step1=180°, step0=240°, step5=300°
+  const stepStart = [240, 180, 120, 60, 0, 300]; // index by step number
+  // sector centers (start+30°): step4=30°, step3=90°, step2=150°, step1=210°, step0=270°, step5=330°
+  // These lead rotor by 90° CW (rotor at 0,60,120,180,240,300 for CW Hall seq)
+  for (let i = 0; i < 6; i++) {
+    const a0 = stepStart[i] * Math.PI/180;
+    const a1 = (stepStart[i] + 60) * Math.PI/180;
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    ctx.arc(cx, cy, r-30, a0, a1);
+    ctx.closePath();
+    const isActive = (step !== 0xFF && i === step);
+    ctx.fillStyle = isActive ? STEP_COLORS[i] + '33' : '#ffffff03';
+    ctx.fill();
+    if (isActive) {
+      ctx.strokeStyle = STEP_COLORS[i]; ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    // Label at sector center
+    const la = (stepStart[i] + 30) * Math.PI/180;
+    ctx.fillStyle = isActive ? STEP_COLORS[i] : '#8b949e55';
+    ctx.font = isActive ? 'bold 11px monospace' : '8px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const lbl = isActive ? `S${i}\n${STEP_NAMES[i]}` : `S${i}`;
+    const lines = lbl.split('\n');
+    ctx.fillText(lines[0], cx+(r-55)*Math.cos(la), cy+(r-55)*Math.sin(la)-5);
+    if (lines[1]) ctx.fillText(lines[1], cx+(r-55)*Math.cos(la), cy+(r-55)*Math.sin(la)+8);
+  }
+
+  // Phase labels U V W
+  const phases = [{a:30,c:'#3fb950',n:'U'},{a:150,c:'#58a6ff',n:'V'},{a:270,c:'#d2a8ff',n:'W'}];
+  phases.forEach(p => {
+    ctx.fillStyle = p.c; ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(p.n, cx+(r+18)*Math.cos(p.a*Math.PI/180), cy+(r+18)*Math.sin(p.a*Math.PI/180));
+  });
+
+  // Hall sensors (fixed on stator, 120° apart)
+  const hsPos = [{a:0, n:'Hu'},{a:120, n:'Hv'},{a:240, n:'Hw'}];
+  hsPos.forEach((hs, i) => {
+    const hx = cx + (r-16)*Math.cos(hs.a*Math.PI/180);
+    const hy = cy + (r-16)*Math.sin(hs.a*Math.PI/180);
+    ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI*2);
+    ctx.fillStyle = hallBits[i] ? '#3fb950' : '#161b22';
+    ctx.fill();
+    ctx.strokeStyle = hallBits[i] ? '#3fb950' : '#484f58'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 8px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(hallBits[i]?'1':'0', hx, hy);
+    ctx.fillStyle = '#8b949e'; ctx.font = '8px sans-serif';
+    ctx.fillText(hs.n, hx, hy-12);
+  });
+
+  // Rotor (big arrow showing N pole direction)
+  const tipX = cx + (r-40)*Math.cos(ra);
+  const tipY = cy + (r-40)*Math.sin(ra);
+  // rotor body
+  ctx.beginPath(); ctx.arc(cx, cy, 14, 0, Math.PI*2);
+  ctx.fillStyle = '#21262d'; ctx.fill();
+  ctx.strokeStyle = '#f0883e'; ctx.lineWidth = 2; ctx.stroke();
+  // N arrow
+  ctx.beginPath();
+  ctx.moveTo(cx+8*Math.cos(ra+1.6), cy+8*Math.sin(ra+1.6));
+  ctx.lineTo(tipX, tipY);
+  ctx.lineTo(cx+8*Math.cos(ra-1.6), cy+8*Math.sin(ra-1.6));
+  ctx.closePath();
+  ctx.fillStyle = '#f0883e'; ctx.fill();
+  // N label
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('N', tipX+14*Math.cos(ra), tipY+14*Math.sin(ra));
+  // S label
+  ctx.fillStyle = '#8b949e';
+  ctx.fillText('S', cx-30*Math.cos(ra), cy-30*Math.sin(ra));
+
+  // Field arrow (points to active step's sector center)
+  if (step !== 0xFF) {
+    const fa = (stepStart[step] + 30) * Math.PI/180; // center of active step sector
+    const fTipX = cx + (r-35)*Math.cos(fa);
+    const fTipY = cy + (r-35)*Math.sin(fa);
+    // big arrow
+    ctx.beginPath();
+    ctx.moveTo(cx+16*Math.cos(fa-Math.PI/2), cy+16*Math.sin(fa-Math.PI/2));
+    ctx.lineTo(fTipX, fTipY);
+    ctx.lineTo(cx+16*Math.cos(fa+Math.PI/2), cy+16*Math.sin(fa+Math.PI/2));
+    ctx.closePath();
+    ctx.fillStyle = STEP_COLORS[step] + 'aa'; ctx.fill();
+    ctx.strokeStyle = STEP_COLORS[step]; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.font = '9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('磁场', fTipX+18*Math.cos(fa), fTipY+18*Math.sin(fa));
+  }
+
+  // Hall state display
+  ctx.fillStyle = '#8b949e'; ctx.font = '11px monospace';
+  ctx.textAlign = 'left';
+  const hallStr = 'Hall 0x0' + hall.toString(16).toUpperCase() + ' = ' +
+    hallBits.map((b,i) => ['Hu','Hv','Hw'][i]+'='+b).join(' ');
+  ctx.fillText(hallStr, 10, 400);
+  if (step !== 0xFF) {
+    ctx.fillStyle = STEP_COLORS[step]; ctx.font = 'bold 12px monospace';
+    ctx.fillText('→ Step ' + step + ' ' + STEP_NAMES[step] +
+      ' (' + STEP_PHASES[step].h + '→' + STEP_PHASES[step].l + ' 通电)', 10, 414);
+  }
+}
+
+// ==================== Hall 画布 ====================
+function drawHall() {
+  const ctx = hallCtx;
+  const seq = currentMode === 'ccw' ? HALL_CCW_SEQ : HALL_CW_SEQ;
+  const hall = seq[currentIdx];
+  const table = currentMode === 'ccw' ? TABLE_CCW : (currentMode === 'calib' ? TABLE_CALIB : TABLE_CW);
+  const step = table[hall];
+
+  ctx.clearRect(0, 0, 380, 420);
+
+  // Hall 信号波形
+  const seqFull = [...seq, ...seq, seq[0]];
+  const margin = 30;
+  const barW = 42;
+  const barGap = 12;
+  const startX = 30;
+
+  // 时序图
+  for (let i = 0; i < 7; i++) {
+    const h = seqFull[i];
+    const bits = [(h>>2)&1, (h>>1)&1, h&1];
+    const colors = ['#3fb950', '#58a6ff', '#d2a8ff'];
+    const x = startX + i * (barW + barGap);
+
+    bits.forEach((b, ch) => {
+      ctx.fillStyle = b ? colors[ch] : colors[ch] + '22';
+      ctx.fillRect(x, margin + ch * 55, barW, 40);
+      ctx.strokeStyle = b ? colors[ch] : '#30363d';
+      ctx.lineWidth = b ? 2 : 1;
+      ctx.strokeRect(x, margin + ch * 55, barW, 40);
+
+      // 标记 0/1
+      ctx.fillStyle = b ? '#fff' : '#8b949e';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(b ? '1' : '0', x + barW/2, margin + ch * 55 + 20);
+    });
+
+    // 边框高亮当前位置
+    if (i === currentIdx) {
+      ctx.strokeStyle = '#58a6ff';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x-2, margin-2, barW+4, 165+4);
+    }
+
+    // Hall 编码
+    ctx.fillStyle = i === currentIdx ? '#58a6ff' : '#8b949e';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`0x0${h.toString(16).toUpperCase()}`, x + barW/2, margin + 175);
+
+    // 箭头指向下一步
+    if (i < 6) {
+      const ax = x + barW + 3;
+      const ay = margin + 82;
+      ctx.fillStyle = '#484f58';
+      ctx.font = '16px sans-serif';
+      ctx.fillText('→', ax, ay);
+    }
+  }
+
+  // 查表结果
+  const tableStartY = margin + 210;
+  ctx.fillStyle = '#58a6ff';
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText(`查表: hall_to_step[0x0${hall.toString(16).toUpperCase()}] = ${step === 0xFF ? '0xFF (无效!)' : step}`, 10, tableStartY);
+
+  if (step !== 0xFF) {
+    ctx.fillText(`换相: ${STEP_NAMES[step]}  (${STEP_PHASES[step].h}→${STEP_PHASES[step].l} 通电, 磁场 ${STEP_ANGLES[step]}°)`, 10, tableStartY + 28);
+  }
+}
+
+// ==================== 步骤指示器 ====================
+function updateStepDots() {
+  const seq = currentMode === 'ccw' ? HALL_CCW_SEQ : HALL_CW_SEQ;
+  const hall = seq[currentIdx];
+  const table = currentMode === 'ccw' ? TABLE_CCW : (currentMode === 'calib' ? TABLE_CALIB : TABLE_CW);
+  const step = table[hall];
+
+  let html = '';
+  for (let i = 0; i < 6; i++) {
+    const cls = (step !== 0xFF && i === step) ? 'step-dot current' : 'step-dot';
+    html += `<div class="${cls}" style="border-color:${STEP_COLORS[i]}">${STEP_NAMES[i]}</div>`;
+  }
+  document.getElementById('stepDots').innerHTML = html;
+
+  const info = document.getElementById('stepInfo');
+  const dir = currentMode === 'ccw' ? '⟲ CCW 逆时针' : (currentMode === 'calib' ? '⟳ CW 顺时针 (0°标定)' : '⟳ CW 顺时针');
+  const modeLabel = currentMode === 'ccw' ? 's_hall2step_ccw' : (currentMode === 'calib' ? 'g_calib_table (0°映射)' : 's_hall2step_cw');
+  info.innerHTML = `<strong>${dir}</strong> · Hall=0x0${hall.toString(16).toUpperCase()} → Step ${step===0xFF?'无效':step} (${step!==0xFF?STEP_NAMES[step]:'?'}) · 表: ${modeLabel}`;
+}
+
+function updateAll() {
+  drawMain();
+  drawHall();
+  updateStepDots();
+}
+
+// ==================== 表格 ====================
+function showTable(type) {
+  document.querySelectorAll('#tabCW,#tabCCW,#tabBoth,#tabOffset').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab' + type.charAt(0).toUpperCase() + type.slice(1)).classList.add('active');
+
+  const container = document.getElementById('tableContainer');
+  let html = '';
+
+  if (type === 'cw') {
+    html = buildSingleTable('s_hall2step_cw (sector -90°)', TABLE_CW, HALL_CW_SEQ);
+  } else if (type === 'ccw') {
+    html = buildSingleTable('s_hall2step_ccw (sector +90°)', TABLE_CCW, HALL_CCW_SEQ);
+  } else if (type === 'both') {
+    html = buildCompareTable();
+  } else if (type === 'offset') {
+    html = buildOffsetTable();
+  }
+
+  container.innerHTML = html;
+}
+
+function buildSingleTable(title, table, seq) {
+  let h = `<h4 style="color:#58a6ff;margin-bottom:6px;">${title}</h4><table><tr><th>Hall 状态</th>`;
+  seq.forEach(s => h += `<th>0x0${s.toString(16).toUpperCase()}</th>`);
+  h += `<th>0x00</th><th>0x07</th></tr><tr><td><strong>Step</strong></td>`;
+  seq.forEach(s => {
+    const v = table[s];
+    h += `<td class="${v!==0xFF?'hl':''}">${v===0xFF?'0xFF':v+' ('+STEP_NAMES[v]+')'}</td>`;
+  });
+  h += `<td style="color:#f85149">0xFF</td><td style="color:#f85149">0xFF</td></tr></table>`;
+
+  // 转动的 step 序列
+  h += `<div class="info" style="margin-top:6px;">转动时 step 序列: `;
+  seq.forEach((s, i) => {
+    const v = table[s];
+    if (v !== 0xFF) {
+      h += `<span style="color:${STEP_COLORS[v]}">${v}(${STEP_NAMES[v]})</span>`;
+      if (i < 5) h += ` <span style="color:#484f58">→</span> `;
+    }
+  });
+  h += `</div>`;
+  return h;
+}
+
+function buildCompareTable() {
+  let h = `<table><tr><th>Hall</th>`;
+  for (let s = 1; s <= 6; s++) h += `<th>0x0${s.toString(16).toUpperCase()}</th>`;
+  h += `<th>用法</th></tr>`;
+  h += `<tr><td style="color:#3fb950"><strong>CW step</strong></td>`;
+  for (let s = 1; s <= 6; s++) h += `<td class="hl">${TABLE_CW[s]} (${STEP_NAMES[TABLE_CW[s]]})</td>`;
+  h += `<td style="color:#3fb950">CLOSED_FW</td></tr>`;
+  h += `<tr><td style="color:#d2a8ff"><strong>CCW step</strong></td>`;
+  for (let s = 1; s <= 6; s++) h += `<td class="hl2">${TABLE_CCW[s]} (${STEP_NAMES[TABLE_CCW[s]]})</td>`;
+  h += `<td style="color:#d2a8ff">CLOSED_RV</td></tr>`;
+  h += `<tr><td><strong>差值</strong></td>`;
+  for (let s = 1; s <= 6; s++) h += `<td>${(TABLE_CW[s]-TABLE_CCW[s]+6)%6}</td>`;
+  h += `<td></td></tr></table>`;
+  h += `<div class="info" style="margin-top:6px;"><em>关键观察：相同 Hall 状态，正反转查不同的表，得到不同的 step。差值不是固定值（因为 +5/+2 偏移改变了排序）。</em></div>`;
+  return h;
+}
+
+function buildOffsetTable() {
+  let h = `<h4 style="color:#58a6ff;margin-bottom:6px;">从 0° 标定 → ±90° 偏移推导</h4>`;
+  h += `<p class="info" style="margin-bottom:6px;">假设标定结果 g_calib_table = {0xFF, <strong>0</strong>, <strong>2</strong>, <strong>5</strong>, <strong>4</strong>, <strong>1</strong>, <strong>3</strong>, 0xFF}（示例值）</p>`;
+  h += `<table><tr><th>Hall</th>`;
+  for (let s = 1; s <= 6; s++) h += `<th>0x0${s.toString(16).toUpperCase()}</th>`;
+  h += `<th>偏移公式</th></tr>`;
+
+  h += `<tr><td style="color:#f0883e"><strong>0° 标定</strong></td>`;
+  for (let s = 1; s <= 6; s++) h += `<td>${TABLE_CALIB[s]}</td>`;
+  h += `<td>g_calib_table[H]</td></tr>`;
+
+  h += `<tr><td style="color:#3fb950"><strong>CW = +5</strong></td>`;
+  for (let s = 1; s <= 6; s++) {
+    const v = (TABLE_CALIB[s] + 5) % 6;
+    h += `<td class="hl">${v} (${STEP_NAMES[v]})</td>`;
+  }
+  h += `<td>(calib[H] + 5) % 6</td></tr>`;
+
+  h += `<tr><td style="color:#d2a8ff"><strong>CCW = +2</strong></td>`;
+  for (let s = 1; s <= 6; s++) {
+    const v = (TABLE_CALIB[s] + 2) % 6;
+    h += `<td class="hl2">${v} (${STEP_NAMES[v]})</td>`;
+  }
+  h += `<td>(calib[H] + 2) % 6</td></tr></table>`;
+
+  h += `<div class="info" style="margin-top:8px;">`;
+  h += `<strong>+5 = -1 (mod 6) → 磁场后退 60° → 落后转子 ~90° → CW 正转</strong><br>`;
+  h += `<strong>+2 = +2 (mod 6) → 磁场前进 120° → 超前转子 ~90° → CCW 反转</strong><br>`;
+  h += `<em>为什么是 60°/120° 而不是精确 90°？六步换相每步间隔 60° 电角度，离散系统只能取最近的 step。</em>`;
+  h += `</div>`;
+  return h;
+}
+
+// ==================== 控制 ====================
+function setMode(mode) {
+  currentMode = mode;
+  currentIdx = 0;
+  document.querySelectorAll('#btnCW,#btnCCW,#btnCalib').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn' + mode.charAt(0).toUpperCase() + mode.slice(1)).classList.add('active');
+  document.getElementById('calibPanel').style.display = (mode === 'calib') ? 'block' : 'none';
+  updateAll();
+  showTable('cw');
+}
+
+function onCalibChange() {
+  for (let i = 1; i <= 6; i++) {
+    let v = parseInt(document.getElementById('ci'+i).value);
+    if (isNaN(v) || v < 0) v = 0;
+    if (v > 5) v = 5;
+    document.getElementById('ci'+i).value = v;
+    TABLE_CALIB[i] = v;
+  }
+  TABLE_CALIB[0] = 0xFF;
+  TABLE_CALIB[7] = 0xFF;
+  if (currentMode === 'calib') updateAll();
+  // Update table view if offset tab is active
+  if (document.getElementById('tabOffset').classList.contains('active')) showTable('offset');
+}
+
+function randomCalib() {
+  // Generate a random valid bijection: each step 0-5 appears exactly once
+  const steps = [0,1,2,3,4,5];
+  for (let i = steps.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [steps[i], steps[j]] = [steps[j], steps[i]];
+  }
+  for (let i = 1; i <= 6; i++) {
+    document.getElementById('ci'+i).value = steps[i-1];
+    TABLE_CALIB[i] = steps[i-1];
+  }
+  TABLE_CALIB[0] = 0xFF;
+  TABLE_CALIB[7] = 0xFF;
+  if (currentMode === 'calib') updateAll();
+  if (document.getElementById('tabOffset').classList.contains('active')) showTable('offset');
+}
+
+function stepNext() {
+  const seq = currentMode === 'ccw' ? HALL_CCW_SEQ : HALL_CW_SEQ;
+  currentIdx = (currentIdx + 1) % 6;
+  updateAll();
+}
+
+function stepPrev() {
+  const seq = currentMode === 'ccw' ? HALL_CCW_SEQ : HALL_CW_SEQ;
+  currentIdx = (currentIdx + 5) % 6;
+  updateAll();
+}
+
+function toggleAuto() {
+  const btn = document.getElementById('btnAuto');
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+    btn.textContent = '▶ 自动播放';
+    btn.classList.remove('highlight');
+  } else {
+    autoTimer = setInterval(stepNext, autoSpeed);
+    btn.textContent = '⏸ 暂停';
+    btn.classList.add('highlight');
+  }
+}
+
+function changeSpeed(delta) {
+  autoSpeed = Math.max(200, Math.min(2000, autoSpeed + delta));
+  document.getElementById('speedLabel').textContent = `间隔: ${autoSpeed}ms`;
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = setInterval(stepNext, autoSpeed);
+  }
+}
+
+// ==================== 键盘控制 ====================
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight') stepNext();
+  else if (e.key === 'ArrowLeft') stepPrev();
+  else if (e.key === ' ') { e.preventDefault(); toggleAuto(); }
+  else if (e.key === '1') setMode('cw');
+  else if (e.key === '2') setMode('ccw');
+  else if (e.key === '3') setMode('calib');
+});
+
+// ==================== 初始化 ====================
+showTable('cw');
+updateAll();
+</script>
+</body>
+</html>

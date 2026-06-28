@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<JScopeProject>
+    <FileVersion major="1" minor="1" />
+    <Project>
+        <Configuration>
+            <JLink>
+                <Options Connection="1" IsRTTSession="0" IsRTTWithTimeStamp="0" SamplingPeriod="100" SerialNo="0" JTAG_IRPre="0" JTAG_DRPre="0" IP="" TargetDevice="HC32F460xE" TargetInterface="SWD" InterfaceSpeed="4000" />
+            </JLink>
+            <ElfFile Name="D:\WS\ws_v.2.1\HC32F460_DDL_Rev3.3.0\projects\ev_hc32f460_lqfp100_v2\template\MDK\output\debug\template.axf" />
+            <Scope>
+                <Options TimeResolutionUs="1000000" />
+            </Scope>
+        </Configuration>
+        <Windows>
+            <Graph Show="1" />
+            <Watch Show="1" />
+        </Windows>
+        <SelectedSymbols>
+            <Symbol>
+                <Options Name="g_scope_ha" Address="0x1FFF80ED" Type="uchar" TypeID="6" Size="1" GraphColorRed="255" GraphColorGreen="0" GraphColorBlue="0" YMinSampled="0" YMaxSampled="1" YAvgSampled="0" Offset="4" ShowInGraph="1" YOffset="0" IsAutoConfig="0" YResolution="1" MaxValue="255" File="..\..\ws\hall_sensor_3ch.c" Scope="0" DrawStyle="0" NameWithParents="g_scope_ha" />
+            </Symbol>
+            <Symbol>
+                <Options Name="g_scope_hb" Address="0x1FFF80EE" Type="uchar" TypeID="6" Size="1" GraphColorRed="0" GraphColorGreen="0" GraphColorBlue="255" YMinSampled="0" YMaxSampled="1" YAvgSampled="1" Offset="5" ShowInGraph="1" YOffset="1" IsAutoConfig="0" YResolution="1" MaxValue="255" File="..\..\ws\hall_sensor_3ch.c" Scope="0" DrawStyle="0" NameWithParents="g_scope_hb" />
+            </Symbol>
+            <Symbol>
+                <Options Name="g_scope_hc" Address="0x1FFF80EF" Type="uchar" TypeID="6" Size="1" GraphColorRed="0" GraphColorGreen="255" GraphColorBlue="0" YMinSampled="0" YMaxSampled="1" YAvgSampled="1" Offset="6" ShowInGraph="1" YOffset="-1" IsAutoConfig="0" YResolution="1" MaxValue="255" File="..\..\ws\hall_sensor_3ch.c" Scope="0" DrawStyle="0" NameWithParents="g_scope_hc" />
+            </Symbol>
+            <Symbol>
+                <Options Name="g_scope_step" Address="0x1FFF80F0" Type="uchar" TypeID="6" Size="1" GraphColorRed="255" GraphColorGreen="255" GraphColorBlue="0" YMinSampled="0" YMaxSampled="5" YAvgSampled="0" Offset="7" ShowInGraph="0" YOffset="-1" IsAutoConfig="0" YResolution="1" MaxValue="255" File="..\..\ws\hall_sensor_3ch.c" Scope="0" DrawStyle="0" NameWithParents="g_scope_step" />
+            </Symbol>
+        </SelectedSymbols>
+    </Project>
+</JScopeProject>

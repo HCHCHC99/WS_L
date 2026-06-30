@@ -718,6 +718,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\tmr4_pwm.c</FilePath>
             </File>
+            <File>
+              <FileName>Bemf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Bemf.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1603,6 +1608,11 @@
               <FileName>tmr4_pwm.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Adp\tmr4_pwm.c</FilePath>
+            </File>
+            <File>
+              <FileName>Bemf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Bemf.c</FilePath>
             </File>
           </Files>
         </Group>

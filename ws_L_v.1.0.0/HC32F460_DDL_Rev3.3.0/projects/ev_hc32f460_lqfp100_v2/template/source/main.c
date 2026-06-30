@@ -11,6 +11,7 @@
   #include "hc32_ll_utility.h"
   #include "tmr4_pwm.h"
 #include "dev_comm_runner.h"
+#include "Bemf.h"
 
 /*=============================================================================
  * Keil Watch ��改变� (调试接口)
@@ -93,6 +94,9 @@ int main(void)
     };
     CommRunner_Init(&runner_cfg);
 
+    /* ---- BEMF 初始化 (PWM 已启动, TMR4_3 正在运行) ---- */
+    Bemf_Init();
+
     EventBus_Enable();
 
     /* ---- 主循� ---- */
@@ -121,6 +125,20 @@ int main(void)
             if (actual != comm_mode) {
                 comm_mode   = actual;
                 s_prev_mode = actual;
+            }
+        }
+
+        /* ---- BEMF 数据读取 (每500ms打印一次观察数据) ---- */
+        {
+            static uint32_t s_u32LastBemfPrintMs = 0;
+            uint32_t u32Now = tickTimer_GetCount();
+            if ((u32Now - s_u32LastBemfPrintMs) >= 500) {
+                s_u32LastBemfPrintMs = u32Now;
+                if (g_bemf_running) {
+                    MAIN_D("BEMF: M=%umV U=%dmV V=%dmV W=%dmV cnt=%lu\r\n",
+                           g_bemf_m_mv, g_bemf_u_mv, g_bemf_v_mv, g_bemf_w_mv,
+                           g_bemf_sample_cnt);
+                }
             }
         }
     }

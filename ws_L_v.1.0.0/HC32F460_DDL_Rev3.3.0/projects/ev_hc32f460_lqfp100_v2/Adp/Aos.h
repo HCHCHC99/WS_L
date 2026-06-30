@@ -20,6 +20,14 @@
 #define AOS_EVT_TMR0_2_CMP_A        INT_SRC_TMR0_2_CMP_A
 #define AOS_EVT_TMR0_2_CMP_B        INT_SRC_TMR0_2_CMP_B
 
+/* TMR4 事件 (TMR4_3 = PWM 定时器, 使用 EVT/SCMP 输出) */
+#define AOS_EVT_TMR4_3_SCMP0        EVT_SRC_TMR4_3_SCMP0  /* SCMP0 = PWM中点触发 */
+#define AOS_EVT_TMR4_3_SCMP1        EVT_SRC_TMR4_3_SCMP1
+#define AOS_EVT_TMR4_3_SCMP2        EVT_SRC_TMR4_3_SCMP2
+#define AOS_EVT_TMR4_3_SCMP3        EVT_SRC_TMR4_3_SCMP3
+#define AOS_EVT_TMR4_3_SCMP4        EVT_SRC_TMR4_3_SCMP4
+#define AOS_EVT_TMR4_3_SCMP5        EVT_SRC_TMR4_3_SCMP5
+
 /* ADC 事件 */
 #define AOS_EVT_ADC1_EOCA           INT_SRC_ADC1_EOCA
 #define AOS_EVT_ADC1_EOCB           INT_SRC_ADC1_EOCB
@@ -62,6 +70,7 @@
  *============================================================================*/
 
 void AOS_Init(void);
+void AOS_InitForBemf(void);   /* BEMF 专用: TMR4_3 UDF -> ADC1, ADC1 EOCA -> DMA1 CH0/1/2/3 */
 void AOS_DeInit(void);
 void AOS_Enable(void);
 void AOS_Disable(void);

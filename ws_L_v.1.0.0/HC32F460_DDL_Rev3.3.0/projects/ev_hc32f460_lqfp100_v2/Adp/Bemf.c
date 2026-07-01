@@ -148,9 +148,9 @@ static void Bemf_AdcConfig(void)
     /* 1. Enable ADC1 peripheral clock */
     FCG_Fcg3PeriphClockCmd(BEMF_ADC_PERIPH_CLK, ENABLE);
 
-    /* 2. ADC base configuration: SEQ_A single-shot scan */
+    /* 2. ADC base configuration: SEQ_A + SEQ_B both single-shot (SEQ_B used by current sensing) */
     (void)ADC_StructInit(&stcAdcInit);
-    stcAdcInit.u16ScanMode = ADC_MD_SEQA_SINGLESHOT;
+    stcAdcInit.u16ScanMode = ADC_MD_SEQA_SEQB_SINGLESHOT;
 
     /* 3. Initialize ADC1 */
     (void)ADC_Init(BEMF_ADC_UNIT, &stcAdcInit);

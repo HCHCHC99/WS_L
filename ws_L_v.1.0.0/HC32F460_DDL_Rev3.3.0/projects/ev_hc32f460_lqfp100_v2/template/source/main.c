@@ -12,6 +12,7 @@
   #include "tmr4_pwm.h"
 #include "dev_comm_runner.h"
 #include "Bemf.h"
+#include "I.h"
 
 /*=============================================================================
  * Keil Watch ��改变� (调试接口)
@@ -96,6 +97,12 @@ int main(void)
 
     /* ---- BEMF 初始化 (PWM 已启动, TMR4_3 正在运行) ---- */
     Bemf_Init();
+
+    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 50kHz) ---- */
+    I_Init();
+
+    /* ---- 电流零偏校准 (阻塞500ms, 电机必须静止) ---- */
+    I_Calibrate();
 
     EventBus_Enable();
 

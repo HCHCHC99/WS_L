@@ -93,7 +93,7 @@ int32_t TMR0_Unit1_Init(TMR0_Channel1_t ch, uint32_t period_us, ReCount1_t cmd)
         }
         
         NVIC_ClearPendingIRQ(TMR0_UNIT1_IRQn);
-        NVIC_SetPriority(TMR0_UNIT1_IRQn, 1UL);
+        NVIC_SetPriority(TMR0_UNIT1_IRQn, DDL_IRQ_PRIO_04);
         NVIC_EnableIRQ(TMR0_UNIT1_IRQn);
         
         s_irq_registered = 1;

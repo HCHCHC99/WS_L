@@ -893,6 +893,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\ws\dev_comm_runner.c</FilePath>
             </File>
+            <File>
+              <FileName>I.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\I.c</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>
@@ -1783,6 +1788,11 @@
               <FileName>dev_comm_runner.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\ws\dev_comm_runner.c</FilePath>
+            </File>
+            <File>
+              <FileName>I.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\I.c</FilePath>
             </File>
           </Files>
         </Group>

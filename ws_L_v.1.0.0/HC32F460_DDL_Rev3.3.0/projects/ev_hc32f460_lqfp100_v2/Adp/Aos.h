@@ -70,7 +70,8 @@
  *============================================================================*/
 
 void AOS_Init(void);
-void AOS_InitForBemf(void);   /* BEMF 专用: TMR4_3 UDF -> ADC1, ADC1 EOCA -> DMA1 CH0/1/2/3 */
+void AOS_InitForBemf(void);       /* BEMF 专用: TMR4_3 SCMP0 -> ADC1, ADC1 EOCA -> DMA1 CH0/1/2/3 */
+void AOS_InitForCurrent(void);    /* 电流专用: TMR4_3 SCMP2 -> AOS_ADC1_1 (ADC1_TRGSEL1 → SEQ_B) */
 void AOS_DeInit(void);
 void AOS_Enable(void);
 void AOS_Disable(void);

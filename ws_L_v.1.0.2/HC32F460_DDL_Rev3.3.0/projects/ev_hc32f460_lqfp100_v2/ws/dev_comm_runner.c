@@ -16,8 +16,8 @@
  * CW rotation:  field lags rotor by 90° (sector -90° = reverse_map).
  * CCW rotation: field leads rotor by 90° (sector +90° = forward_map).
  *
- * CLOSED_FW uses s_hall2step_cw (FW = CW rotation �? sector -90°).
- * CLOSED_RV uses s_hall2step_ccw (RV = CCW rotation �? sector +90°).
+ * CLOSED_FW uses s_hall2step_cw (FW = CW rotation �? sector -90°).
+ * CLOSED_RV uses s_hall2step_ccw (RV = CCW rotation �? sector +90°).
  *=============================================================================*/
 static const uint8_t s_hall2step_cw[8]  = {0xFF, 5, 3, 4, 1, 0, 2, 0xFF};  /* CW: sector -90° */
 static const uint8_t s_hall2step_ccw[8] = {0xFF, 2, 0, 1, 4, 3, 5, 0xFF};  /* CCW: sector +90° */
@@ -38,6 +38,16 @@ static int                  s_sub_phase = 0;
 static uint8_t              s_initialized = 0;
 static volatile uint8_t     s_fault_pending = 0;
 
+/* PID speed controller */
+static pid_state_t  s_pid;
+static float        s_target_rpm = 0.0f;
+
+/* J-Scope: PID observability */
+volatile float g_scope_pid_target  = 0.0f;
+volatile float g_scope_pid_error   = 0.0f;
+volatile float g_scope_pid_duty    = 0.0f;
+volatile float g_scope_pid_i_term  = 0.0f;
+
 /* ��定时变量 (mode 1/2 恒� & mode 3/4 飞启共用��) */
 static uint64_t s_ol_ramp_start_us  = 0;
 static uint64_t s_ol_last_step_us   = 0;
@@ -47,7 +57,7 @@ static uint32_t s_ol_target_interval = 0;
 static uint32_t s_ol_ramp_duration_ms = 0;
 
 /*=============================================================================
- * Calibration globals (volatile �?? Keil Watch accessible)
+ * Calibration globals (volatile �?? Keil Watch accessible)
  *=============================================================================*/
 volatile calib_status_t      g_calib_status          = CALIB_IDLE;
 volatile calib_error_detail_t g_calib_error          = {0, 0, 0, 0};
@@ -90,7 +100,7 @@ static void calib_finalize(void);
 static void calib_fail(calib_status_t reason, uint8_t hall, uint8_t step_a, uint8_t step_b);
 
 /*=============================================================================
- * Hall 回调 (ISR 上下�??)
+ * Hall 回调 (ISR 上下�??)
  *=============================================================================*/
 static void runner_on_hall_step(uint8_t step, hall3_direction_t dir)
 {
@@ -101,12 +111,12 @@ static void runner_on_hall_step(uint8_t step, hall3_direction_t dir)
 static void runner_on_hall_fault(uint8_t hall_state)
 {
     (void)hall_state;
-    /* ISR 上下�??: ��标志, 不执行停�?? (避免 ISR 内大量寄存器操作 + 重入风险) */
+    /* ISR 上下�??: ��标志, 不执行停�?? (避免 ISR 内大量寄存器操作 + 重入风险) */
     s_fault_pending = 1;
 }
 
 /*=============================================================================
- * 内部: �动开�强�?? (mode 1/2 �?? mode 3/4 飞启阶�共�)
+ * 内部: �动开�强�?? (mode 1/2 �?? mode 3/4 飞启阶�共�)
  *=============================================================================*/
 static void start_open_loop(uint32_t start_interval, uint32_t target_interval,
                             uint32_t ramp_ms, int dir_fw)
@@ -121,7 +131,7 @@ static void start_open_loop(uint32_t start_interval, uint32_t target_interval,
     s_ol_last_step_us  = s_ol_ramp_start_us;
 
     Commutation_Init();
-    /* ���??: UH_VL */
+    /* ���??: UH_VL */
     COMM_STEP_UH_VL(s_cfg.pwm_freq_hz, s_duty);
 
     if (dir_fw) {
@@ -134,7 +144,7 @@ static void start_open_loop(uint32_t start_interval, uint32_t target_interval,
 }
 
 /*=============================================================================
- * 内部: ��斜坡计算 + 定时换相 (�?? Update 调用)
+ * 内部: ��斜坡计算 + 定时换相 (�?? Update 调用)
  *=============================================================================*/
 static void open_loop_tick(uint64_t now, int dir_fw)
 {
@@ -150,7 +160,7 @@ static void open_loop_tick(uint64_t now, int dir_fw)
         s_ol_interval_us = s_ol_target_interval;
     }
 
-    /* 到时间就���?? */
+    /* 到时间就���?? */
     if ((now - s_ol_last_step_us) >= s_ol_interval_us) {
         s_ol_last_step_us = now;
         if (dir_fw) {
@@ -179,7 +189,7 @@ static void do_stop(void)
 }
 
 /*=============================================================================
- * calib_reset �?? arm calibration open-loop and clear accumulators
+ * calib_reset �?? arm calibration open-loop and clear accumulators
  *=============================================================================*/
 static void calib_reset(void)
 {
@@ -231,7 +241,7 @@ static void calib_reset(void)
 }
 
 /*=============================================================================
- * calib_finalize �?? copy reference table to output and stop
+ * calib_finalize �?? copy reference table to output and stop
  *=============================================================================*/
 static void calib_finalize(void)
 {
@@ -249,7 +259,7 @@ static void calib_finalize(void)
 }
 
 /*=============================================================================
- * calib_fail �?? stop calibration and populate error detail
+ * calib_fail �?? stop calibration and populate error detail
  *=============================================================================*/
 static void calib_fail(calib_status_t reason, uint8_t hall, uint8_t step_a, uint8_t step_b)
 {
@@ -270,7 +280,7 @@ static void calib_fail(calib_status_t reason, uint8_t hall, uint8_t step_a, uint
 }
 
 /*=============================================================================
- * calib_update �?? event-driven: on each Hall edge, record (hall, s_comm_step).
+ * calib_update �?? event-driven: on each Hall edge, record (hall, s_comm_step).
  * The 0-offset mapping is directly observed, no majority voting needed.
  *=============================================================================*/
 static void calib_update(uint64_t now)
@@ -456,13 +466,13 @@ void CommRunner_Init(const comm_runner_config_t *cfg)
     Timer6_Timebase_Init();
     Timer6_Timebase_Start();
 
-    /* ---- 上电默�: 全高�?? ON (上�全�=刹车, 待机安全) ---- */
+    /* ---- 上电默�: 全高�?? ON (上�全�=刹车, 待机安全) ---- */
     for (ch = 0; ch < 3; ch++) {
         TMR4_PWM_SetChannelMode((tmr4_pwm_channel_t)ch, TMR4_MODE_HIGH_SIDE, 98.0f);
     }
 
-    /* ---- Hall 传感�?? ---- */
-    /* 覆写回调�?? Runner 内部函数 */
+    /* ---- Hall 传感�?? ---- */
+    /* 覆写回调�?? Runner 内部函数 */
     s_cfg.hall_cfg.on_step  = runner_on_hall_step;
     s_cfg.hall_cfg.on_fault = runner_on_hall_fault;
     s_hall = hall_3ch_create(&s_cfg.hall_cfg);
@@ -475,11 +485,25 @@ void CommRunner_Init(const comm_runner_config_t *cfg)
     s_mode        = COMM_RUNNER_STOP;
     s_initialized = 1;
 
+    /* ---- PID speed controller (optional) ---- */
+    if (cfg->pid_cfg) {
+        PID_Init(&s_pid, cfg->pid_cfg);
+        MAIN_D("[CommRunner] PID enabled: Kp=%d Ki=%d Kd=%d Imax=%d T=%lums",
+               (int)(cfg->pid_cfg->kp * 1000.0f),
+               (int)(cfg->pid_cfg->ki * 1000.0f),
+               (int)(cfg->pid_cfg->kd * 1000.0f),
+               (int)(cfg->pid_cfg->integral_max * 10.0f),
+               (unsigned long)cfg->pid_cfg->update_ms);
+    } else {
+        PID_Init(&s_pid, NULL);
+        MAIN_D("[CommRunner] PID disabled (pid_cfg=NULL)");
+    }
+
     MAIN_D("[CommRunner] Init done, freq=%u Hz", cfg->pwm_freq_hz);
 }
 
 /*=============================================================================
- * calib_build_derived_tables �?? build CW/CCW tables from g_calib_table.
+ * calib_build_derived_tables �?? build CW/CCW tables from g_calib_table.
  * CW: offset +5 (matches s_hall2step_cw)
  * CCW: offset +2 (matches s_hall2step_ccw)
  *=============================================================================*/
@@ -511,13 +535,16 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
 {
     if (!s_initialized) return;
 
-    /* Calibration / calib-derived modes always allowed to restart */
+    /* Calibration / calib-derived / PID modes always allowed to restart */
     if (mode != COMM_RUNNER_CALIB &&
         mode != COMM_RUNNER_CALIB_CW &&
         mode != COMM_RUNNER_CALIB_CCW &&
+        mode != COMM_RUNNER_PID_CW &&
+        mode != COMM_RUNNER_PID_CCW &&
         mode == s_mode) return;
 
     s_mode      = mode;
+    PID_Reset(&s_pid);
 
     switch (mode) {
 
@@ -576,6 +603,24 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         s_sub_phase = 0;
         MAIN_D("[CommRunner] Mode=CLOSED_RV: Open-loop ramp -> flying start");
         break;
+
+    case COMM_RUNNER_PID_CW:
+        if (s_hall) hall_3ch_stop(s_hall);
+        calib_build_derived_tables();
+        start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
+                        s_cfg.ol_fly_ramp_ms, 1);
+        s_sub_phase = 0;
+        MAIN_D("[CommRunner] Mode=PID_CW: Calib table + PID speed control CW");
+        break;
+
+    case COMM_RUNNER_PID_CCW:
+        if (s_hall) hall_3ch_stop(s_hall);
+        calib_build_derived_tables();
+        start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
+                        s_cfg.ol_fly_ramp_ms, 0);
+        s_sub_phase = 0;
+        MAIN_D("[CommRunner] Mode=PID_CCW: Calib table + PID speed control CCW");
+        break;
     }
 }
 
@@ -596,8 +641,8 @@ void CommRunner_SetDuty(float duty_pct)
     if (duty_pct > 98.0f) duty_pct = 98.0f;
     s_duty = duty_pct;
 
-    /* ��模式�??, 下� Hall ISR 触发 on_step 时自然带新占空比 */
-    /* ��模式�??, 下�定时换相时带新占空� */
+    /* ��模式�??, 下� Hall ISR 触发 on_step 时自然带新占空比 */
+    /* ��模式�??, 下�定时换相时带新占空� */
 }
 
 /*=============================================================================
@@ -609,7 +654,7 @@ float CommRunner_GetDuty(void)
 }
 
 /*=============================================================================
- * CommRunner_Update - 主循�?? 1ms 调用
+ * CommRunner_Update - 主循�?? 1ms 调用
  *=============================================================================*/
 /*=============================================================================
  * CommRunner_Update - ��ѭ�� 1ms ����
@@ -631,7 +676,7 @@ void CommRunner_Update(void)
         return;
     }
 
-    /* ���� ISR �����? Hall ���� (000/111) */
+    /* ���� ISR �����? Hall ���� (000/111) */
     if (s_fault_pending) {
         s_fault_pending = 0;
         MAIN_D("[CommRunner] Hall fault, coast");
@@ -661,16 +706,16 @@ void CommRunner_Update(void)
             /* === �׶�0: ����ǿ�� + б�� === */
             open_loop_tick(now, is_fw);
 
-            /* б�½��� -> �ɳ�����ջ�? */
+            /* б�½��� -> �ɳ�����ջ�? */
             uint64_t ramp_elapsed = now - s_ol_ramp_start_us;
             uint64_t ramp_total   = (uint64_t)s_ol_ramp_duration_ms * 1000UL;
             if (ramp_elapsed >= ramp_total) {
                 if (is_fw) {
-                    /* FW = CW rotation �? sector -90° �? s_hall2step_cw */
+                    /* FW = CW rotation �? sector -90° �? s_hall2step_cw */
                     hall_3ch_set_table(s_hall, s_hall2step_cw);
                     hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
                 } else {
-                    /* RV = CCW rotation �? sector +90° �? s_hall2step_ccw */
+                    /* RV = CCW rotation �? sector +90° �? s_hall2step_ccw */
                     hall_3ch_set_table(s_hall, s_hall2step_ccw);
                     hall_3ch_start_flying(s_hall, HALL3_DIR_REVERSE);
                 }
@@ -718,6 +763,65 @@ void CommRunner_Update(void)
             if (hall_3ch_is_stalled(s_hall)) {
                 MAIN_D("[CommRunner] Calib closed-loop stall, coast");
                 CommRunner_SetMode(COMM_RUNNER_STOP);
+            }
+        }
+        break;
+    }
+
+    /* ---- PID speed control (mode 8/9) ---- */
+    case COMM_RUNNER_PID_CW:
+    case COMM_RUNNER_PID_CCW: {
+        int is_fw = (s_mode == COMM_RUNNER_PID_CW);
+
+        if (s_sub_phase == 0) {
+            /* Phase 0: open-loop ramp */
+            open_loop_tick(now, is_fw);
+
+            uint64_t ramp_elapsed = now - s_ol_ramp_start_us;
+            uint64_t ramp_total   = (uint64_t)s_ol_ramp_duration_ms * 1000UL;
+            if (ramp_elapsed >= ramp_total) {
+                if (is_fw) {
+                    hall_3ch_set_table(s_hall, g_calib_cw_table);
+                    hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
+                } else {
+                    hall_3ch_set_table(s_hall, g_calib_ccw_table);
+                    hall_3ch_start_flying(s_hall, HALL3_DIR_REVERSE);
+                }
+                s_sub_phase = 1;
+                MAIN_D("[CommRunner] PID fly-start -> closed-loop (%s)",
+                       is_fw ? "CW" : "CCW");
+            }
+        } else {
+            /* Phase 1: closed-loop (Hall ISR driven) + PID speed control */
+            hall_3ch_update(s_hall);
+            if (hall_3ch_is_stalled(s_hall)) {
+                MAIN_D("[CommRunner] PID closed-loop stall, coast");
+                CommRunner_SetMode(COMM_RUNNER_STOP);
+                break;
+            }
+            /* PID speed control */
+            {
+                float rpm  = hall_3ch_get_rpm(s_hall);
+                float duty = PID_Update(&s_pid, s_target_rpm, rpm);
+                if (duty > 0.0f) {
+                    CommRunner_SetDuty(duty);
+                }
+                /* J-Scope + RTT debug */
+                g_scope_pid_target = s_target_rpm;
+                g_scope_pid_error  = s_target_rpm - rpm;
+                g_scope_pid_duty   = duty;
+                g_scope_pid_i_term = s_pid.integral;
+                {
+                    static uint32_t s_last_pid_dbg = 0;
+                    uint32_t now_ms = tickTimer_GetCount();
+                    if ((now_ms - s_last_pid_dbg) >= 500) {
+                        s_last_pid_dbg = now_ms;
+                        MAIN_D("[PID] Tgt=%d Act=%d Err=%d Duty=%d Int=%d",
+                               (int)s_target_rpm, (int)rpm,
+                               (int)(s_target_rpm - rpm),
+                               (int)(duty * 10), (int)s_pid.integral);
+                    }
+                }
             }
         }
         break;
@@ -780,4 +884,20 @@ void CommRunner_CalibAbort(void)
     if (g_calib_status == CALIB_RUNNING) {
         calib_fail(CALIB_FAIL_TIMEOUT, 0, 0, 0);
     }
+}
+
+/*=============================================================================
+ * CommRunner_SetTargetRPM
+ *=============================================================================*/
+void CommRunner_SetTargetRPM(float rpm)
+{
+    s_target_rpm = rpm;
+}
+
+/*=============================================================================
+ * CommRunner_GetTargetRPM
+ *=============================================================================*/
+float CommRunner_GetTargetRPM(void)
+{
+    return s_target_rpm;
 }

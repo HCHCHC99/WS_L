@@ -718,11 +718,6 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\tmr4_pwm.c</FilePath>
             </File>
-            <File>
-              <FileName>Bemf.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\Adp\Bemf.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
@@ -873,6 +868,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\Utils\Params.c</FilePath>
             </File>
+            <File>
+              <FileName>dev_pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Utils\dev_pid.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -897,6 +897,11 @@
               <FileName>I.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\ws\I.c</FilePath>
+            </File>
+            <File>
+              <FileName>Bemf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\Bemf.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1614,11 +1619,6 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\tmr4_pwm.c</FilePath>
             </File>
-            <File>
-              <FileName>Bemf.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\Adp\Bemf.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
@@ -1769,6 +1769,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\Utils\Params.c</FilePath>
             </File>
+            <File>
+              <FileName>dev_pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Utils\dev_pid.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1793,6 +1798,11 @@
               <FileName>I.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\ws\I.c</FilePath>
+            </File>
+            <File>
+              <FileName>Bemf.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\Bemf.c</FilePath>
             </File>
           </Files>
         </Group>

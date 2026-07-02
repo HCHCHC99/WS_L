@@ -31,8 +31,9 @@ extern "C" {
  * Global pre-processor symbols/macros ('#define')
  ******************************************************************************/
 
-/* 调试开关 */
-#define BEMF_RTT 1
+/* 调试开关 (取消注释以启用) */
+/* #define DEBUG_BEMF_Adp */          /* Bemf.c 内部函数级调试打印 */
+/* #define BEMF_PERIODIC_DBG */      /* main.c 每500ms BEMF 数据打印 */
 
 #ifdef DEBUG_BEMF_Adp
     #define BEMF_Adp_DEBUG(fmt, ...)    MAIN_D("[BEMF_DEBUG] " fmt, ##__VA_ARGS__)

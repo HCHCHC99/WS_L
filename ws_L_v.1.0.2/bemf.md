@@ -4,10 +4,11 @@
 
 BEMF (Back Electromotive Force) detection for BLDC sensorless control on HC32F460.
 
-- **File**: `Adp/Bemf.c`, `Adp/Bemf.h`
+- **File**: `ws/Bemf.c`, `ws/Bemf.h`
 - **Role**: Observer-only — collects 4-channel ADC data, no commutation logic
 - **Architecture**: Independent instance framework (does NOT depend on `Adc.c/.h`)
 - **Depends on**: `Dma.c/.h`, `Aos.c/.h`, `hc32_ll_tmr4.h`, `tmr4_pwm.c/.h`
+- **Location**: Moved to `ws/` folder (commutation engine workspace) to colocate with other motor control modules
 
 ## Pin Mapping
 
@@ -142,8 +143,8 @@ EventBus_Enable();
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `Adp/Bemf.c` | Created | BEMF module implementation (~370 lines) |
-| `Adp/Bemf.h` | Created | BEMF module header |
+| `ws/Bemf.c` | Created (moved from Adp) | BEMF module implementation (~370 lines) |
+| `ws/Bemf.h` | Created (moved from Adp) | BEMF module header |
 | `Adp/Aos.c` | Modified | Added `AOS_InitForBemf()` |
 | `Adp/Aos.h` | Modified | Added TMR4 SCMP event macros + function declaration |
 | `Adp/Dma.c` | Modified | `Dma_Init()` now supports incremental initialization |

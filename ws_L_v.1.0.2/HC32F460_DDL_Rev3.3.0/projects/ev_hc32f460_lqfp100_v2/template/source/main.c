@@ -13,12 +13,31 @@
 #include "dev_comm_runner.h"
 #include "Bemf.h"
 #include "I.h"
+#include "../Utils/dev_pid.h"
 
 /*=============================================================================
  * Keil Watch ��改变� (调试接口)
  *=============================================================================*/
 volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW */
 volatile float g_comm_duty_pct  = 80.0f; /* Duty cycle 2%~98% */
+
+/* PID speed control — Keil Watch variables */
+volatile float g_target_rpm       = 3000.0f;
+
+/* PID config — all fields volatile, Keil Watch can modify at runtime */
+pid_config_t g_pid_cfg = {
+    .enabled      = true,
+    .p_valid      = true,
+    .i_valid      = true,
+    .d_valid      = false,
+    .kp           = 0.02f,
+    .ki           = 0.005f,
+    .kd           = 0.0f,
+    .output_min   = 2.0f,
+    .output_max   = 98.0f,
+    .integral_max = 50.0f,
+    .update_ms    = 50,
+};
 
 /* � PWM 全局变量 (dev_motor 模块引用, 不可删除) */
 pwm_t g_motor_pwm_ch1;
@@ -92,6 +111,7 @@ int main(void)
 
         .default_duty_pct   = 80.0f,
         .on_init_done       = NULL,
+        .pid_cfg           = &g_pid_cfg,
     };
     CommRunner_Init(&runner_cfg);
 
@@ -136,6 +156,7 @@ int main(void)
         }
 
         /* ---- BEMF 数据读取 (每500ms打印一次观察数据) ---- */
+#ifdef BEMF_PERIODIC_DBG
         {
             static uint32_t s_u32LastBemfPrintMs = 0;
             uint32_t u32Now = tickTimer_GetCount();
@@ -146,6 +167,16 @@ int main(void)
                            g_bemf_m_mv, g_bemf_u_mv, g_bemf_v_mv, g_bemf_w_mv,
                            g_bemf_sample_cnt);
                 }
+            }
+        }
+#endif
+
+        /* ---- Target RPM: Keil Watch -> PID ---- */
+        {
+            static float s_last_target = 0.0f;
+            if (g_target_rpm != s_last_target) {
+                s_last_target = g_target_rpm;
+                CommRunner_SetTargetRPM(g_target_rpm);
             }
         }
     }

@@ -2,6 +2,7 @@
 #define __DEV_COMM_RUNNER_H__
 
 #include "hall_sensor_3ch.h"
+#include "../Utils/dev_pid.h"
 #include <stdint.h>
 
 /*=============================================================================
@@ -21,6 +22,8 @@ typedef enum {
     COMM_RUNNER_CALIB      = 5,  /* Open-loop calibration: auto-derive Hall-to-Step 0deg table */
     COMM_RUNNER_CALIB_CW   = 6,  /* 500ms open-loop -> closed-loop CW  using calib table +5 */
     COMM_RUNNER_CALIB_CCW  = 7,  /* 500ms open-loop -> closed-loop CCW using calib table +2 */
+    COMM_RUNNER_PID_CW     = 8,  /* Calib table + Hall closed-loop + PID speed control CW */
+    COMM_RUNNER_PID_CCW    = 9,  /* Calib table + Hall closed-loop + PID speed control CCW */
 } comm_runner_mode_t;
 
 /*=============================================================================
@@ -96,6 +99,9 @@ typedef struct {
 
     /* PWM 初�化后回� (��): � main.c 做�� GPIO 设置 */
     void (*on_init_done)(void);
+
+    /* PID speed controller (NULL = PID disabled, modes 8/9 use fixed duty) */
+    pid_config_t *pid_cfg;
 } comm_runner_config_t;
 
 /*=============================================================================
@@ -128,5 +134,15 @@ uint8_t CommRunner_IsRunning(void);
 
 /* �否堵� */
 uint8_t CommRunner_IsStalled(void);
+
+/* PID target speed (r/min). Modes 8/9 use this as the PID setpoint. */
+void  CommRunner_SetTargetRPM(float rpm);
+float CommRunner_GetTargetRPM(void);
+
+/* J-Scope HSS: PID real-time monitoring */
+extern volatile float g_scope_pid_target;   /* Target RPM */
+extern volatile float g_scope_pid_error;    /* Speed error (RPM) */
+extern volatile float g_scope_pid_duty;     /* PID output duty (%) */
+extern volatile float g_scope_pid_i_term;   /* Integral accumulator */
 
 #endif /* __DEV_COMM_RUNNER_H__ */

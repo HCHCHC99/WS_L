@@ -718,6 +718,16 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\tmr4_pwm.c</FilePath>
             </File>
+            <File>
+              <FileName>Usart3_HW.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_HW.c</FilePath>
+            </File>
+            <File>
+              <FileName>Usart3_IO.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_IO.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1618,6 +1628,16 @@
               <FileName>tmr4_pwm.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\Adp\tmr4_pwm.c</FilePath>
+            </File>
+            <File>
+              <FileName>Usart3_HW.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_HW.c</FilePath>
+            </File>
+            <File>
+              <FileName>Usart3_IO.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_IO.c</FilePath>
             </File>
           </Files>
         </Group>

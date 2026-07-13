@@ -93,7 +93,7 @@ int main(void)
 
     /* ---- 换相控制器初始化 ---- */
     static const comm_runner_config_t runner_cfg = {
-        .pwm_freq_hz       = 50000,
+        .pwm_freq_hz       = 100000,
 
         /* Hall 传感器配�?: 3�?, PA10=U, PA9=V, PA8=W, 3对极 */
         .hall_cfg = {
@@ -141,6 +141,11 @@ int main(void)
     I_Calibrate();
 
     EventBus_Enable();
+
+    /* ---- 电流 VOFA+ 快速发送 (20ms / 50Hz) ---- */
+    static NonBlockingDelay_t s_stcCurDelay;
+    nbDelay_Init(&s_stcCurDelay, 20);
+    nbDelay_Start(&s_stcCurDelay);
 
     /* ---- 主循环 ---- */
     static int   s_prev_mode     = -1;
@@ -196,12 +201,24 @@ int main(void)
             }
         }
 
-        /* ---- VOFA+ USART3: 心跳 + RX 日志 + 测试信号 ---- */
+        /* ---- VOFA+ USART3: 快速电流 (EMA 滤波) + 心跳 + RX 日志 ---- */
+        if (nbDelay_IsComplete(&s_stcCurDelay)) {
+            nbDelay_Start(&s_stcCurDelay);                 /* restart 20ms */
+            if (!Usart3_Vofa_IsTxBusy()) {
+                int32_t cur[3];
+                /* g_i_iu_filt is Q8 (mA × 256), >> 8 = filtered mA */
+                cur[0] = (int32_t)(g_i_iu_filt >> 8);      /* IU mA → A */
+                cur[1] = (int32_t)(g_i_iv_filt >> 8);      /* IV mA → A */
+                cur[2] = (int32_t)(g_i_iw_filt >> 8);      /* IW mA → A */
+                Usart3_Vofa_SendScaled(cur, 3, USART3_VOFA_SCALE_MILLI);
+            }
+        }
+
         Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */
         Usart3_Vofa_Runner_Run();     /* heartbeat + RX MAIN_D logging */
 
 #if VOFA_TEST_ENABLE
-        TestVofa_Run();               /* CH1 sawtooth + CH2 counter */
+        TestVofa_Run();               /* CH1 sawtooth + CH2 counter (disabled) */
 #endif
     }
 }

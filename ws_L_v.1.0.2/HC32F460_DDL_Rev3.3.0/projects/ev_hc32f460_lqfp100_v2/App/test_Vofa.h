@@ -13,7 +13,7 @@
 #include <stdint.h>
 
 /* Set to 1 to enable test signals, 0 to disable */
-#define VOFA_TEST_ENABLE  1
+#define VOFA_TEST_ENABLE  0
 
 #if VOFA_TEST_ENABLE
 

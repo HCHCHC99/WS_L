@@ -15,10 +15,10 @@
 #include "I.h"
 #include "Usart3_Vofa.h"
 #include "Usart3_Vofa_Runner.h"
-#include "Vofa_Bridge.h"       /* official Vofa.c bridge */
+#include "test_Vofa.h"
 #include "../Utils/dev_pid.h"
 
-/* Official Vofa handle */
+/* Official Vofa handle (for Vofa_JustFloat / Vofa_Printf etc.) */
 Vofa_HandleTypedef vofa1;
 
 /*=============================================================================
@@ -80,13 +80,14 @@ int main(void)
     };
     App_Comm_Init(&comm_cfg);
 #endif  /* RS485 Modbus disabled */
-    /* ---- USART3 初始化 + VOFA+ 协议 + 心跳启动 ---- */
+    /* ---- USART3 + VOFA+ 初始化 ---- */
     Usart3_Vofa_Init(NULL);
-    // Usart3_Vofa_SendRaw((const uint8_t *)"USART3 OK!\r\n", 12);  /* disabled: breaks JustFloat sync */
     Usart3_Vofa_Runner_Init();
-
-    /* Official Vofa init */
     Vofa_Init(&vofa1, VOFA_MODE_SKIP);
+
+#if VOFA_TEST_ENABLE
+    TestVofa_Init();
+#endif
 
     tickTimer_DelayMs(5);
 
@@ -195,17 +196,12 @@ int main(void)
             }
         }
 
-        /* ---- VOFA+ USART3: 心跳发送 + RX 指令打印 ---- */
-        Vofa_Bridge_FeedRx(&vofa1);   /* ring_buf → Vofa FIFO */
-        Usart3_Vofa_Runner_Run();
+        /* ---- VOFA+ USART3: 心跳 + RX 日志 + 测试信号 ---- */
+        Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */
+        Usart3_Vofa_Runner_Run();     /* heartbeat + RX MAIN_D logging */
 
-        /* Example: read commands via official Vofa API */
-        {
-            uint8_t cmd[32];
-            uint16_t n = Vofa_ReadCmd(&vofa1, cmd, sizeof(cmd));
-            if (n > 0) {
-                MAIN_D("[Vofa CMD] len=%d\r\n", (int)n);
-            }
-        }
+#if VOFA_TEST_ENABLE
+        TestVofa_Run();               /* CH1 sawtooth + CH2 counter */
+#endif
     }
 }

@@ -7,7 +7,6 @@
  *   - Internal TX buffer (DMA-safe copy)
  *   - RX ring buffer
  *   - Busy flag
- *   - VOFA+ JustFloat frame assembly
  *
  * Delegates to Usart3_HW for register-level operations.
  *******************************************************************************
@@ -17,12 +16,6 @@
 #include "ring_buf.h"
 #include "rtt_manager.h"
 #include <string.h>
-
-/*=============================================================================
- * VOFA+ JustFloat tail: 0x00 0x00 0x80 0x7F
- *============================================================================*/
-#define VOFA_TAIL_LEN   (4U)
-static const uint8_t s_au8VofaTail[VOFA_TAIL_LEN] = {0x00, 0x00, 0x80, 0x7F};
 
 /*=============================================================================
  * Static — buffers & state
@@ -106,25 +99,6 @@ void Usart3_IO_SendBlocking(const uint8_t *data, uint16_t len)
 {
     if (!s_bInitialized || data == NULL || len == 0) return;
     Usart3_HW_SendBlocking(data, len);
-}
-
-bool Usart3_IO_SendFloats(const float *data, uint8_t count)
-{
-    uint8_t  buf[USART3_IO_TX_MAX];
-    uint16_t frameLen;
-    uint8_t  i;
-
-    if (!s_bInitialized || data == NULL || count == 0) return false;
-
-    frameLen = (uint16_t)count * sizeof(float) + VOFA_TAIL_LEN;
-    if (frameLen > USART3_IO_TX_MAX) return false;
-
-    memcpy(buf, data, (size_t)count * sizeof(float));
-    for (i = 0; i < VOFA_TAIL_LEN; i++) {
-        buf[(count * sizeof(float)) + i] = s_au8VofaTail[i];
-    }
-
-    return Usart3_IO_Send(buf, frameLen);
 }
 
 bool Usart3_IO_IsTxBusy(void)

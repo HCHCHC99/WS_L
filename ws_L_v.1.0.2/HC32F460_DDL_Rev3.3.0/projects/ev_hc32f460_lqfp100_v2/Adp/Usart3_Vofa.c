@@ -1,29 +1,35 @@
 /**
  *******************************************************************************
  * @file  Usart3_Vofa.c
- * @brief USART3 + VOFA+ protocol wrapper implementation.
+ * @brief USART3 + VOFA+ unified protocol layer implementation.
  *
  * Layers:
- *   Usart3_Vofa  (this file)  — FireWater / command parsing / scaled JustFloat
- *   Usart3_IO                 — ring buffer / DMA TX copy / JustFloat frame
+ *   Usart3_Vofa  (this file)  — JustFloat / FireWater / CMD / Vofa.c bridge
+ *   Usart3_IO                 — ring buffer / DMA TX copy
  *   Usart3_HW                 — GPIO / USART / DMA / AOS / IRQ
  *
- * RX data flow (fully interrupt-driven, no polling):
- *   USART3 RX IRQ → HW_RxFull_ISR → IO_RxCallback → BUF_Write(ring_buf)
- *   Main loop → Usart3_Vofa_ReadCmd/ReadLine → Usart3_IO_Read → BUF_Read(ring_buf)
+ * RX data flow:
+ *   USART3 RX IRQ -> HW_RxFull_ISR -> IO_RxCallback -> BUF_Write(ring_buf)
+ *   Main loop -> Usart3_Vofa_ReadCmd -> Usart3_IO_Read -> BUF_Read(ring_buf)
  *
  * TX data flow (DMA, non-blocking):
- *   Usart3_Vofa_SendScaled → int32→float convert → Usart3_IO_SendFloats → DMA
- *   Usart3_Vofa_Printf → vsnprintf → Usart3_IO_Send → memcpy(txBuf) → DMA
- *   DMA done → HW_DmaTc_ISR → IO_TxDoneCallback → Busy flag cleared
+ *   Usart3_Vofa_SendFloats -> Usart3_IO_Send -> memcpy(txBuf) -> DMA
+ *   Usart3_Vofa_Printf -> vsnprintf -> Usart3_IO_Send -> DMA
+ *   DMA done -> HW_DmaTc_ISR -> IO_TxDoneCallback -> Busy cleared
  *******************************************************************************
  */
 
 #include "Usart3_Vofa.h"
 #include "Usart3_IO.h"
+#include "rtt_manager.h"
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
+
+/*=============================================================================
+ * JustFloat tail bytes: {0x00, 0x00, 0x80, 0x7F}
+ *============================================================================*/
+static const uint8_t s_au8JfTail[] = USART3_VOFA_JF_TAIL;
 
 /*=============================================================================
  * VOFA+ command tail
@@ -43,7 +49,6 @@ static uint8_t  s_au8TxBuf[USART3_VOFA_TX_MAX];   /* printf staging buffer */
 void Usart3_Vofa_Init(const Usart3_HW_Config_t *hw_cfg)
 {
     if (s_bInitialized) return;
-
     Usart3_IO_Init(hw_cfg);
     s_bInitialized = true;
 }
@@ -51,24 +56,38 @@ void Usart3_Vofa_Init(const Usart3_HW_Config_t *hw_cfg)
 void Usart3_Vofa_DeInit(void)
 {
     if (!s_bInitialized) return;
-
     Usart3_IO_DeInit();
     s_bInitialized = false;
 }
 
 /*=============================================================================
- * Public API — TX
+ * Public API — TX: JustFloat
  *============================================================================*/
 
 /**
+ * @brief  Send float array as JustFloat: [float32 x N] + [tail 4B].
+ */
+bool Usart3_Vofa_SendFloats(const float *data, uint8_t count)
+{
+    uint8_t  buf[USART3_VOFA_TX_MAX];
+    uint16_t frameLen;
+    uint8_t  i;
+
+    if (!s_bInitialized || data == NULL || count == 0) return false;
+
+    frameLen = (uint16_t)count * sizeof(float) + USART3_VOFA_JF_TAIL_LEN;
+    if (frameLen > USART3_VOFA_TX_MAX) return false;
+
+    (void)memcpy(buf, data, (size_t)count * sizeof(float));
+    for (i = 0; i < USART3_VOFA_JF_TAIL_LEN; i++) {
+        buf[(count * sizeof(float)) + i] = s_au8JfTail[i];
+    }
+
+    return Usart3_IO_Send(buf, frameLen);
+}
+
+/**
  * @brief  Send int32 array as scaled JustFloat.
- *
- * Converts each int32 to float (int32 × scale → float), then delegates
- * to Usart3_IO_SendFloats for JustFloat framing and DMA send.
- *
- * Conversion is cheap on Cortex-M4F: single-cycle VCVT instruction.
- * No float variables needed in caller — all physical quantities stay as
- * scaled int32 (×1000 convention) in application code.
  */
 bool Usart3_Vofa_SendScaled(const int32_t *data, uint8_t count, float scale)
 {
@@ -81,20 +100,17 @@ bool Usart3_Vofa_SendScaled(const int32_t *data, uint8_t count, float scale)
     }
     if (Usart3_IO_IsTxBusy()) return false;
 
-    /* int32 × scale → float (FPU: 1 cycle each) */
     for (i = 0; i < count; i++) {
         afBuf[i] = (float)data[i] * scale;
     }
 
-    return Usart3_IO_SendFloats(afBuf, count);
+    return Usart3_Vofa_SendFloats(afBuf, count);
 }
 
-/**
- * @brief  FireWater: format via vsnprintf, then DMA send.
- *
- * Blocking inside vsnprintf (CPU formats string), but the actual UART
- * transfer is DMA-driven and returns immediately.
- */
+/*=============================================================================
+ * Public API — TX: FireWater / Raw
+ *============================================================================*/
+
 bool Usart3_Vofa_Printf(const char *format, ...)
 {
     int      n;
@@ -107,7 +123,6 @@ bool Usart3_Vofa_Printf(const char *format, ...)
     n = vsnprintf((char *)s_au8TxBuf, USART3_VOFA_TX_MAX, format, args);
     va_end(args);
 
-    /* vsnprintf returns required length (could be > buffer) */
     if (n <= 0 || (uint32_t)n > USART3_VOFA_TX_MAX) {
         return false;
     }
@@ -115,9 +130,6 @@ bool Usart3_Vofa_Printf(const char *format, ...)
     return Usart3_IO_Send(s_au8TxBuf, (uint16_t)n);
 }
 
-/**
- * @brief  Raw send: delegate to Usart3_IO.
- */
 bool Usart3_Vofa_SendRaw(const uint8_t *data, uint16_t len)
 {
     if (!s_bInitialized) return false;
@@ -145,23 +157,13 @@ uint16_t Usart3_Vofa_ReadRaw(uint8_t *buf, uint16_t max_len)
     return Usart3_IO_Read(buf, max_len);
 }
 
-/**
- * @brief  Read one command frame by scanning for tail bytes {0xAF, 0xFA}.
- *
- * Reads byte-by-byte from ring_buf (via Usart3_IO_Read) so we can stop
- * as soon as the tail pattern is matched.  If max_len is reached before
- * the tail is found, returns the partial data (caller can check whether
- * the last 2 bytes match the tail).
- */
 uint16_t Usart3_Vofa_ReadCmd(uint8_t *buf, uint16_t max_len)
 {
     uint16_t len       = 0;
     uint16_t tailMatch = 0;
     uint8_t  byte;
 
-    if (!s_bInitialized || buf == NULL || max_len == 0) {
-        return 0;
-    }
+    if (!s_bInitialized || buf == NULL || max_len == 0) return 0;
 
     while (len < max_len && Usart3_IO_Read(&byte, 1U) == 1U) {
         buf[len++] = byte;
@@ -169,8 +171,7 @@ uint16_t Usart3_Vofa_ReadCmd(uint8_t *buf, uint16_t max_len)
         if (byte == s_au8CmdTail[tailMatch]) {
             tailMatch++;
             if (tailMatch >= CMD_TAIL_LEN) {
-                /* Complete command frame received */
-                break;
+                break;   /* complete command frame */
             }
         } else {
             tailMatch = 0;
@@ -180,26 +181,70 @@ uint16_t Usart3_Vofa_ReadCmd(uint8_t *buf, uint16_t max_len)
     return len;
 }
 
-/**
- * @brief  Read one line (up to '\n') from ring_buf.
- *
- * Reads byte-by-byte; stops at '\n' or when buffer exhausted.
- */
 uint16_t Usart3_Vofa_ReadLine(uint8_t *buf, uint16_t max_len)
 {
     uint16_t len  = 0;
     uint8_t  byte;
 
-    if (!s_bInitialized || buf == NULL || max_len == 0) {
-        return 0;
-    }
+    if (!s_bInitialized || buf == NULL || max_len == 0) return 0;
 
     while (len < max_len && Usart3_IO_Read(&byte, 1U) == 1U) {
         buf[len++] = byte;
-        if (byte == '\n') {
-            break;
-        }
+        if (byte == '\n') break;
     }
 
     return len;
+}
+
+/*=============================================================================
+ * Official Vofa.c bridge — Vofa_SendDataCallBack / Vofa_GetDataCallBack
+ *
+ * These are called by the official Vofa.c (Vofa_JustFloat etc.).
+ * TX: DMA with busy-wait for back-to-back calls.
+ * RX: stub — use Usart3_Vofa_FeedRx() instead of Vofa_ReceiveData().
+ *============================================================================*/
+
+void Vofa_SendDataCallBack(Vofa_HandleTypedef *handle, uint8_t *data,
+                           uint16_t length)
+{
+    (void)handle;
+    if (data == NULL || length == 0U) return;
+
+    /* Wait for previous DMA to finish (Vofa_JustFloat calls us twice) */
+    while (Usart3_IO_IsTxBusy()) {
+        /* spin */
+    }
+
+    (void)Usart3_IO_Send(data, length);
+}
+
+uint8_t Vofa_GetDataCallBack(Vofa_HandleTypedef *handle)
+{
+    (void)handle;
+    return 0U;   /* not used — RX goes through FeedRx */
+}
+
+/**
+ * @brief  Move all available bytes from ring_buf into Vofa FIFO.
+ *         Call in main loop before Vofa_ReadCmd / Vofa_ReadLine.
+ */
+void Usart3_Vofa_FeedRx(Vofa_HandleTypedef *handle)
+{
+    uint8_t byte;
+
+    if (handle == NULL) return;
+
+    while (Usart3_IO_Read(&byte, 1U) == 1U) {
+        *handle->rxBuffer.wp = byte;
+        handle->rxBuffer.wp++;
+
+        if (handle->rxBuffer.wp ==
+            (handle->rxBuffer.buffer + VOFA_BUFFER_SIZE)) {
+            handle->rxBuffer.wp = handle->rxBuffer.buffer;
+        }
+
+        if (handle->rxBuffer.wp == handle->rxBuffer.rp) {
+            handle->rxBuffer.overflow = true;
+        }
+    }
 }

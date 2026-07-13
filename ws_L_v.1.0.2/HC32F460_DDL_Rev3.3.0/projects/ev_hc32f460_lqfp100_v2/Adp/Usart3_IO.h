@@ -65,13 +65,6 @@ bool Usart3_IO_Send(const uint8_t *data, uint16_t len);
 void Usart3_IO_SendBlocking(const uint8_t *data, uint16_t len);
 
 /**
- * @brief  Send float array in VOFA+ JustFloat format.
- *         Frame: [float32 × count] + tail [0x00 0x00 0x80 0x7F]
- * @note   Non-blocking (uses DMA).
- */
-bool Usart3_IO_SendFloats(const float *data, uint8_t count);
-
-/**
  * @brief  Check if DMA TX is in progress.
  */
 bool Usart3_IO_IsTxBusy(void);

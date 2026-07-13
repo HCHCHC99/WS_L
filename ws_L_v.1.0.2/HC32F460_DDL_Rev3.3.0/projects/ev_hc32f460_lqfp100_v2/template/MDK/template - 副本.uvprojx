@@ -738,11 +738,6 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\Usart3_Vofa_Runner.c</FilePath>
             </File>
-            <File>
-              <FileName>Vofa_Bridge.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\Adp\Vofa_Bridge.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
@@ -852,6 +847,11 @@
               <FileName>Protocol_ModbusRtu.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\App\Protocol_ModbusRtu.c</FilePath>
+            </File>
+            <File>
+              <FileName>test_Vofa.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\App\test_Vofa.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1667,11 +1667,6 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\Usart3_Vofa_Runner.c</FilePath>
             </File>
-            <File>
-              <FileName>Vofa_Bridge.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\..\Adp\Vofa_Bridge.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>
@@ -1781,6 +1776,11 @@
               <FileName>Protocol_ModbusRtu.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\App\Protocol_ModbusRtu.c</FilePath>
+            </File>
+            <File>
+              <FileName>test_Vofa.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\App\test_Vofa.c</FilePath>
             </File>
           </Files>
         </Group>

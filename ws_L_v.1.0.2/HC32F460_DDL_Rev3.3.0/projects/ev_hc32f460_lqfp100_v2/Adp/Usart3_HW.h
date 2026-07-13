@@ -1,20 +1,22 @@
 /**
  *******************************************************************************
  * @file  Usart3_HW.h
- * @brief USART3 hardware abstraction layer (GPIO / clock / USART / DMA / IRQ)
+ * @brief Generic UART + DMA hardware abstraction layer.
+ *
+ * Originally hardcoded to USART3/DMA2.  Now fully configurable via struct —
+ * same code works with any USARTx + DMAx combination by passing a different
+ * config.  NULL = use default (USART3, PB12/PB13, DMA2 CH0, 115200).
  *
  * Responsibilities:
- *   - Pin mux: PB12=USART3_RX(FUNC_33)  PB13=USART3_TX(FUNC_32)
+ *   - GPIO pin mux
  *   - USART clock, baudrate, UART mode
- *   - DMA2 single-shot TX (triggered by USART3_TI via AOS)
- *   - RX interrupt → per-byte callback
- *   - DMA-TC interrupt → TX-done callback
+ *   - DMA single-shot TX (triggered by USART_TI via AOS)
+ *   - RX interrupt -> per-byte callback
+ *   - DMA-TC interrupt -> TX-done callback
  *
- * NOT responsible for:
- *   - Buffer management, ring buffers, frame assembly, VOFA+ protocol
- *     → those belong to Usart3_IO.h
- *
- * Modeled after Adp/rs485.h
+ * To switch USART:  fill in a Usart3_HW_Config_t and pass to Init().
+ * To switch DMA:    same struct — change dma_base / dma_ch / aos fields.
+ * To switch pins:   change rx_/tx_ GPIO fields.
  *******************************************************************************
  */
 
@@ -30,18 +32,47 @@ extern "C" {
 #endif
 
 /*******************************************************************************
- * Configuration structure
+ * Configuration structure — fill in to target any USART + DMA combination
  ******************************************************************************/
 
 typedef struct {
-    uint32_t baudrate;          /* e.g. 115200 for VOFA+ */
-    uint8_t  rx_port;           /* GPIO_PORT_x   (default GPIO_PORT_B)  */
-    uint16_t rx_pin;            /* GPIO_PIN_xx   (default GPIO_PIN_12)  */
-    uint8_t  rx_func;           /* GPIO_FUNC_xx  (default GPIO_FUNC_33) */
-    uint8_t  tx_port;           /* GPIO_PORT_x   (default GPIO_PORT_B)  */
-    uint16_t tx_pin;            /* GPIO_PIN_xx   (default GPIO_PIN_13)  */
-    uint8_t  tx_func;           /* GPIO_FUNC_xx  (default GPIO_FUNC_32) */
+    /* ---- GPIO ---- */
+    uint8_t     rx_port;        /* GPIO_PORT_x                                  */
+    uint16_t    rx_pin;         /* GPIO_PIN_xx                                  */
+    uint8_t     rx_func;        /* GPIO_FUNC_xx (AF for this USART RX)          */
+    uint8_t     tx_port;        /* GPIO_PORT_x                                  */
+    uint16_t    tx_pin;         /* GPIO_PIN_xx                                  */
+    uint8_t     tx_func;        /* GPIO_FUNC_xx (AF for this USART TX)          */
+
+    /* ---- USART ---- */
+    uint32_t    baudrate;       /* e.g. 115200, 921600                          */
+    uint32_t    fcg_periph;     /* FCG1_PERIPH_USARTx (clock gate)              */
+    CM_USART_TypeDef *usart_base;  /* CM_USARTx base address                    */
+
+    /* ---- DMA ---- */
+    CM_DMA_TypeDef *dma_base;   /* CM_DMAx base address                         */
+    uint8_t     dma_ch;         /* DMA_CH0 ~ DMA_CH3                            */
+    uint32_t    dma_fcg;        /* FCG0_PERIPH_DMAx (clock gate)                */
+    uint32_t    aos_target;     /* AOS_DMAx_y (trigger target)                  */
+    uint32_t    aos_event;      /* EVT_SRC_USARTx_TI (trigger source)           */
+    uint32_t    dma_tc_flag;    /* DMA_FLAG_TC_CHx (for status clear)           */
+    uint32_t    dma_tc_int;     /* DMA_INT_TC_CHx (interrupt enable)            */
+
+    /* ---- IRQ ---- */
+    IRQn_Type   rx_err_irqn;    /* e.g. INT004_IRQn                             */
+    en_int_src_t rx_err_int_src;/* e.g. INT_SRC_USARTx_EI                       */
+    IRQn_Type   rx_full_irqn;   /* e.g. INT005_IRQn                             */
+    en_int_src_t rx_full_int_src;/* e.g. INT_SRC_USARTx_RI                      */
+    IRQn_Type   dma_tc_irqn;    /* e.g. INT042_IRQn                             */
+    en_int_src_t dma_tc_int_src; /* e.g. INT_SRC_DMAx_TCy                       */
 } Usart3_HW_Config_t;
+
+/*******************************************************************************
+ * Default configs (pass to Init or copy as starting point)
+ ******************************************************************************/
+
+/** USART3, PB12(RX)/PB13(TX), DMA2 CH0, 115200 — current project default */
+extern const Usart3_HW_Config_t USART3_HW_CONFIG_DEFAULT;
 
 /*******************************************************************************
  * Callback types
@@ -56,54 +87,20 @@ typedef void (*Usart3_HW_ErrorCallback_t)(void);
  ******************************************************************************/
 
 /**
- * @brief  Initialize USART3 hardware, DMA, AOS, and interrupts.
- * @param  cfg  Pointer to config struct (NULL = use defaults)
- * @note   Must be called before any other Usart3_HW functions.
- *         Does NOT enable TX or RX yet — call StartRx/StartTxDma.
+ * @brief  Initialize UART hardware, DMA, AOS, and interrupts from config.
+ * @param  cfg  NULL = use USART3_HW_CONFIG_DEFAULT (USART3, 115200, DMA2 CH0)
  */
 void Usart3_HW_Init(const Usart3_HW_Config_t *cfg);
 
-/**
- * @brief  De-initialize hardware (disable clocks, DMA, IRQ).
- */
 void Usart3_HW_DeInit(void);
 
-/* ---- RX ---- */
-
-/**
- * @brief  Enable RX + RX interrupt (received bytes fire RxCallback).
- */
 void Usart3_HW_StartRx(void);
-
-/**
- * @brief  Disable RX + RX interrupt.
- */
 void Usart3_HW_StopRx(void);
 
-/* ---- TX (DMA, single-shot) ---- */
-
-/**
- * @brief  Start a DMA transfer. Returns immediately; TxDoneCallback fires when done.
- * @param  data  Buffer pointer (caller must keep valid until TxDoneCallback!)
- * @param  len   Number of bytes (1 ~ 256)
- * @return true if started, false if DMA busy or invalid params
- */
 bool Usart3_HW_StartTxDma(const uint8_t *data, uint16_t len);
-
-/**
- * @brief  Check if DMA TX is still in progress.
- */
 bool Usart3_HW_IsTxBusy(void);
 
-/* ---- TX (blocking polling, debug only) ---- */
-
-/**
- * @brief  Send bytes by polling TXE flag (BLOCKING, no DMA/IRQ).
- * @note   Bypasses DMA. Only for debug/testing.
- */
 void Usart3_HW_SendBlocking(const uint8_t *data, uint16_t len);
-
-/* ---- Callback registration ---- */
 
 void Usart3_HW_RegisterRxCallback(Usart3_HW_RxCallback_t cb);
 void Usart3_HW_RegisterTxDoneCallback(Usart3_HW_TxDoneCallback_t cb);

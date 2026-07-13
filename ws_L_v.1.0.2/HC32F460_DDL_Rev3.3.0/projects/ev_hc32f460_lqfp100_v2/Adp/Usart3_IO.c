@@ -123,6 +123,7 @@ bool Usart3_IO_SendFloats(const float *data, uint8_t count)
     for (i = 0; i < VOFA_TAIL_LEN; i++) {
         buf[(count * sizeof(float)) + i] = s_au8VofaTail[i];
     }
+
     return Usart3_IO_Send(buf, frameLen);
 }
 

@@ -728,6 +728,21 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\Usart3_IO.c</FilePath>
             </File>
+            <File>
+              <FileName>Usart3_Vofa.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_Vofa.c</FilePath>
+            </File>
+            <File>
+              <FileName>Usart3_Vofa_Runner.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_Vofa_Runner.c</FilePath>
+            </File>
+            <File>
+              <FileName>Vofa_Bridge.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Vofa_Bridge.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -914,6 +929,9 @@
               <FilePath>..\..\ws\Bemf.c</FilePath>
             </File>
           </Files>
+        </Group>
+        <Group>
+          <GroupName>::CMSIS Driver</GroupName>
         </Group>
       </Groups>
     </Target>
@@ -1639,6 +1657,21 @@
               <FileType>1</FileType>
               <FilePath>..\..\Adp\Usart3_IO.c</FilePath>
             </File>
+            <File>
+              <FileName>Usart3_Vofa.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_Vofa.c</FilePath>
+            </File>
+            <File>
+              <FileName>Usart3_Vofa_Runner.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Usart3_Vofa_Runner.c</FilePath>
+            </File>
+            <File>
+              <FileName>Vofa_Bridge.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\Adp\Vofa_Bridge.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1826,13 +1859,24 @@
             </File>
           </Files>
         </Group>
+        <Group>
+          <GroupName>::CMSIS Driver</GroupName>
+        </Group>
       </Groups>
     </Target>
   </Targets>
 
   <RTE>
     <apis/>
-    <components/>
+    <components>
+      <component Cclass="CMSIS Driver" Cgroup="VOFA" Cvendor="Freedom" Cversion="1.0.0">
+        <package name="VofaPlus" schemaVersion="1.6.3" url="" vendor="Freedom" version="1.0.0"/>
+        <targetInfos>
+          <targetInfo name="template_Debug"/>
+          <targetInfo name="template_Release"/>
+        </targetInfos>
+      </component>
+    </components>
     <files/>
   </RTE>
 

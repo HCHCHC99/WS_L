@@ -34,7 +34,7 @@ extern "C" {
  ******************************************************************************/
 
 typedef struct {
-    uint32_t baudrate;          /* e.g. 921600 for VOFA+ */
+    uint32_t baudrate;          /* e.g. 115200 for VOFA+ */
     uint8_t  rx_port;           /* GPIO_PORT_x   (default GPIO_PORT_B)  */
     uint16_t rx_pin;            /* GPIO_PIN_xx   (default GPIO_PIN_12)  */
     uint8_t  rx_func;           /* GPIO_FUNC_xx  (default GPIO_FUNC_33) */

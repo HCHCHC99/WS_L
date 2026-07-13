@@ -25,7 +25,7 @@
 #define USART3_HW_DEF_TX_PORT       (GPIO_PORT_B)
 #define USART3_HW_DEF_TX_PIN        (GPIO_PIN_13)
 #define USART3_HW_DEF_TX_FUNC       (GPIO_FUNC_32)
-#define USART3_HW_DEF_BAUDRATE      (921600UL)
+#define USART3_HW_DEF_BAUDRATE      (115200UL)
 
 /* Peripheral register unlock mask */
 #define LL_PERIPH_SEL               (LL_PERIPH_GPIO | LL_PERIPH_FCG | \
@@ -127,7 +127,16 @@ static void HW_RxFull_ISR(void)
 
 static void HW_DmaTc_ISR(void)
 {
+    /* Wait for USART shift register to drain before disabling TX.
+     * Without this, the last 1-2 bytes still in the TX pipeline
+     * (TDR + shift register) are truncated when TX is disabled.
+     * At 115200 baud, 2 bytes ≈ 174µs — acceptable ISR latency. */
+    while (USART_GetStatus(USART3_UNIT, USART_FLAG_TX_CPLT) != SET) {
+        __NOP();
+    }
+
     USART_FuncCmd(USART3_UNIT, USART_TX, DISABLE);
+    USART_ClearStatus(USART3_UNIT, (USART_FLAG_TX_EMPTY | USART_FLAG_TX_CPLT));
     DMA_ChCmd(TX_DMA_UNIT, TX_DMA_CH, DISABLE);
     DMA_ClearTransCompleteStatus(TX_DMA_UNIT, DMA_FLAG_TC_CH0);
     s_bTxBusy = false;
@@ -243,6 +252,10 @@ bool Usart3_HW_StartTxDma(const uint8_t *data, uint16_t len)
         return false;
     }
     if (s_bTxBusy) return false;
+
+    /* Clear stale TC flag before starting new transfer */
+    DMA_ClearTransCompleteStatus(TX_DMA_UNIT, DMA_FLAG_TC_CH0);
+    NVIC_ClearPendingIRQ(TX_DMA_TC_IRQn);
 
     DMA_SetSrcAddr(TX_DMA_UNIT, TX_DMA_CH, (uint32_t)data);
     DMA_SetTransCount(TX_DMA_UNIT, TX_DMA_CH, len);

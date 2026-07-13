@@ -1,8 +1,8 @@
-# USART3 DMA 心跳包问题记录
+# USART3 DMA — 根因分析与架构演进
 
 ---
 
-## 最终修复方案（✅ 工作正常）
+## DMA 尾帧截断问题（已修复）
 
 ### 根因
 
@@ -12,52 +12,88 @@ DMA TC 中断触发时，最后 1~2 字节还在 USART 发送管道中：
 
 ISR 立即执行 `USART_TX DISABLE` 直接掐断管道，导致尾帧字节丢失。
 
-对比阻塞模式 `SendBlocking`，它在发完所有字节后先 `while(TX_CPLT)` 等移位寄存器清空再关 TX，所以不会丢字节。
+### 修复代码（`HW_DmaTc_ISR`）
 
-### 修复代码
-
-在 `HW_DmaTc_ISR` 中，关 TX 之前先轮询 `USART_FLAG_TX_CPLT` 等移位寄存器清空：
+关 TX 之前先轮询 `USART_FLAG_TX_CPLT` 等移位寄存器清空：
 
 ```c
 static void HW_DmaTc_ISR(void)
 {
-    /* Wait for USART shift register to drain before disabling TX.
-     * Without this, the last 1-2 bytes still in the TX pipeline
-     * (TDR + shift register) are truncated when TX is disabled.
-     * At 115200 baud, 2 bytes ≈ 174µs — acceptable ISR latency. */
-    while (USART_GetStatus(USART3_UNIT, USART_FLAG_TX_CPLT) != SET) {
+    while (USART_GetStatus(s_stcCfg.usart_base, USART_FLAG_TX_CPLT) != SET) {
         __NOP();
     }
-
-    USART_FuncCmd(USART3_UNIT, USART_TX, DISABLE);
-    USART_ClearStatus(USART3_UNIT, (USART_FLAG_TX_EMPTY | USART_FLAG_TX_CPLT));
-    DMA_ChCmd(TX_DMA_UNIT, TX_DMA_CH, DISABLE);
-    DMA_ClearTransCompleteStatus(TX_DMA_UNIT, DMA_FLAG_TC_CH0);
+    USART_FuncCmd(s_stcCfg.usart_base, USART_TX, DISABLE);
+    USART_ClearStatus(s_stcCfg.usart_base,
+                      (USART_FLAG_TX_EMPTY | USART_FLAG_TX_CPLT));
+    DMA_ChCmd(s_stcCfg.dma_base, s_stcCfg.dma_ch, DISABLE);
+    DMA_ClearTransCompleteStatus(s_stcCfg.dma_base, s_stcCfg.dma_tc_flag);
     s_bTxBusy = false;
     if (s_pfnTxDoneCb) s_pfnTxDoneCb();
 }
 ```
 
-### 同时修复
+### 同时修复（`StartTxDma`）
 
-`Usart3_HW_StartTxDma` 开头增加残留中断标志清除，防止上次传输的 pending IRQ 提前触发 ISR：
+发送前清除残留中断标志：
 
 ```c
-DMA_ClearTransCompleteStatus(TX_DMA_UNIT, DMA_FLAG_TC_CH0);
-NVIC_ClearPendingIRQ(TX_DMA_TC_IRQn);
+DMA_ClearTransCompleteStatus(s_stcCfg.dma_base, s_stcCfg.dma_tc_flag);
+NVIC_ClearPendingIRQ(s_stcCfg.dma_tc_irqn);
 ```
-
-### 为什么这次成功而之前尝试 3 失败
-
-之前尝试 3 虽然在 ISR 中加过 `while(TX_CPLT)`，但当时的代码流程不同：
-1. **之前**：先关 DMA 通道 → 轮询 TC → 关 TX → 清除标志
-2. **现在**：先轮询 TC → 关 TX → 清除 TX 标志 → 关 DMA 通道 → 清除 DMA 标志
-
-关 DMA 通道的时机很关键——如果先关 DMA，DMA 停止响应 AOS 触发，但 USART TX 还在发送，管道里的字节正常移出。问题在于当时可能还有其他干扰因素（TCIE 使能残留等）。
 
 ---
 
-## 配置速查
+## 架构演进：从硬编码到可配置
+
+### v1.0（原始）— 全部 `#define` 硬编码
+
+```c
+#define USART3_UNIT      (CM_USART3)
+#define TX_DMA_UNIT      (CM_DMA2)
+#define TX_DMA_CH        (DMA_CH0)
+#define TX_DMA_TRIG_SEL  (AOS_DMA2_0)
+#define TX_DMA_TRIG_EVT  (EVT_SRC_USART3_TI)
+#define TX_DMA_TC_IRQn   (INT042_IRQn)
+// ... 换 USART 或 DMA 需要改代码
+```
+
+### v2.0（当前）— `Usart3_HW_Config_t` 结构体驱动
+
+所有硬件参数集中在一个结构体里。初始化时传入不同配置即可切换 USART/DMA/引脚，不改代码：
+
+```c
+typedef struct {
+    // GPIO
+    uint8_t  rx_port, rx_pin, rx_func, tx_port, tx_pin, tx_func;
+    // USART
+    uint32_t baudrate, fcg_periph;
+    CM_USART_TypeDef *usart_base;
+    // DMA
+    CM_DMA_TypeDef *dma_base;
+    uint8_t  dma_ch;
+    uint32_t dma_fcg, aos_target, aos_event, dma_tc_flag, dma_tc_int;
+    // IRQ
+    IRQn_Type    rx_err_irqn, rx_full_irqn, dma_tc_irqn;
+    en_int_src_t rx_err_int_src, rx_full_int_src, dma_tc_int_src;
+} Usart3_HW_Config_t;
+```
+
+**使用方式**：
+
+```c
+// 默认 USART3（传 NULL）
+Usart3_HW_Init(NULL);
+
+// 自定义配置
+Usart3_HW_Config_t cfg = USART3_HW_CONFIG_DEFAULT;
+cfg.baudrate = 921600;
+cfg.tx_pin   = GPIO_PIN_06;
+Usart3_HW_Init(&cfg);
+```
+
+---
+
+## 当前默认配置
 
 | 项目 | 值 |
 |------|-----|
@@ -73,17 +109,10 @@ NVIC_ClearPendingIRQ(TX_DMA_TC_IRQn);
 
 ---
 
-## 尝试过的失败方案记录
-
-### 尝试 1～3（详见旧版本记录）
-
-1. **TX_CPLT 中断 + INTC 重映射** → 失败：HC32F460 USART3 TX_CPLT 中断需要 IRQ137 + VSSEL137 配置，INT007 无法重映射
-2. **TCIE + TE 同时使能** → 失败：TCIE 成功置位但中断不来
-3. **轮询 TC 但先关 DMA** → 失败：DMA 提前关闭导致问题
-
-### 关键教训
+## 关键教训
 
 - HC32F460 USART3 的 TX_CPLT 中断路由复杂（共享 IRQ137），不建议使用
 - DMA TC ISR 中轮询 TX_CPLT 是可靠的替代方案
 - **轮询必须在关 DMA 通道之前**，顺序不能错
 - `USART_FLAG_TX_CPLT` 轮询后需要 `USART_ClearStatus` 清除
+- 将所有硬件参数集中到 Config 结构体，换 USART/DMA/引脚只需改配置，不改逻辑代码

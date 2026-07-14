@@ -81,7 +81,12 @@ int main(void)
     App_Comm_Init(&comm_cfg);
 #endif  /* RS485 Modbus disabled */
     /* ---- USART3 + VOFA+ 初始化 ---- */
-    Usart3_Vofa_Init(NULL);
+    /* VOFA+ 全速: 921600 baud, ~5760 frame/s max */
+    {
+        Usart3_HW_Config_t cfg = USART3_HW_CONFIG_DEFAULT;
+        cfg.baudrate = 921600;
+        Usart3_Vofa_Init(&cfg);
+    }
     Usart3_Vofa_Runner_Init();
     Vofa_Init(&vofa1, VOFA_MODE_SKIP);
 
@@ -142,10 +147,7 @@ int main(void)
 
     EventBus_Enable();
 
-    /* ---- 电流 VOFA+ 快速发送 (1ms / 1000Hz) ---- */
-    static NonBlockingDelay_t s_stcCurDelay;
-    nbDelay_Init(&s_stcCurDelay, 1);
-    nbDelay_Start(&s_stcCurDelay);
+    /* ---- 电流 VOFA+ 全速发送 (DMA 背压, ~720Hz max @115200) ---- */
 
     /* ---- 主循环 ---- */
     static int   s_prev_mode     = -1;
@@ -201,17 +203,14 @@ int main(void)
             }
         }
 
-        /* ---- VOFA+ USART3: 快速电流 (EMA 滤波) + 心跳 + RX 日志 ---- */
-        if (nbDelay_IsComplete(&s_stcCurDelay)) {
-            nbDelay_Start(&s_stcCurDelay);                 /* restart 1ms */
-            if (!Usart3_Vofa_IsTxBusy()) {
-                int32_t cur[3];
-                /* g_i_ix_disp = filt_mA * 10 + 10000, inverse: (disp - 10000) / 10 */
-                cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA → A */
-                cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA → A */
-                cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA → A */
-                Usart3_Vofa_SendScaled(cur, 3, USART3_VOFA_SCALE_MILLI);
-            }
+        /* ---- VOFA+ USART3: 全速电流 + 心跳 + RX 日志 ---- */
+        if (!Usart3_Vofa_IsTxBusy()) {
+            int32_t cur[3];
+            /* g_i_ix_disp = filt_mA * 10 + 10000, inverse: (disp - 10000) / 10 */
+            cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA → A */
+            cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA → A */
+            cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA → A */
+            Usart3_Vofa_SendScaled(cur, 3, USART3_VOFA_SCALE_MILLI);
         }
 
         Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */

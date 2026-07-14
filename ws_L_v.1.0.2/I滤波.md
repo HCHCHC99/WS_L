@@ -15,7 +15,7 @@ ADC 采样 (50kHz, 12-bit)
       (2阶 Butterworth)  g_i_iu_disp     显示值 (mA x 10 + 10000), VOFA+ / J-Scope 用
                               │
                               ▼
-                         VOFA+ @ 1kHz: (disp - 10000) / 10 -> SendScaled(x0.001) -> A
+                         VOFA+ @ 921600 baud (~5.7kHz): (disp - 10000) / 10 -> SendScaled(x0.001) -> A
 ```
 
 ---
@@ -394,11 +394,10 @@ Butterworth Biquad 在这个场景是性价比最高的：足够平坦的通带 
 
 ### VOFA+
 
-- 发送率: **1 kHz** (1ms 间隔)
+- 波特率: **921600**, 全速发送 (DMA 背压), 实际 ~5.7 kHz
 - 协议: JustFloat
 - 数据: `(disp - 10000) / 10` mA -> `x0.001` -> A
-- 波形干净度不如 J-Scope 的原因: 1kHz 下采样 vs J-Scope 的 HSS 直接内存读取
-- 如需继续优化 VOFA+ 显示质量，可在 main.c 发送前加滑动平均
+- 200Hz 电频率约 29 点/周期, 正弦波清晰可辨
 
 ### 修改截止频率
 

@@ -206,10 +206,10 @@ int main(void)
             nbDelay_Start(&s_stcCurDelay);                 /* restart 1ms */
             if (!Usart3_Vofa_IsTxBusy()) {
                 int32_t cur[3];
-                /* g_i_ix_disp = filt_mA * 10 + 500, inverse: (disp - 500) / 10 */
-                cur[0] = (int32_t)(g_i_iu_disp - 500) / 10;   /* IU mA → A */
-                cur[1] = (int32_t)(g_i_iv_disp - 500) / 10;   /* IV mA → A */
-                cur[2] = (int32_t)(g_i_iw_disp - 500) / 10;   /* IW mA → A */
+                /* g_i_ix_disp = filt_mA * 10 + 10000, inverse: (disp - 10000) / 10 */
+                cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA → A */
+                cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA → A */
+                cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA → A */
                 Usart3_Vofa_SendScaled(cur, 3, USART3_VOFA_SCALE_MILLI);
             }
         }

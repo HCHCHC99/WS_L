@@ -32,19 +32,24 @@ volatile int32_t  g_i_iv_filt = 0;
 volatile int32_t  g_i_iw_filt = 0;
 
 /* Display-friendly: mA + 10000, always positive for J-Scope */
-volatile uint16_t g_i_iu_disp = 500;
-volatile uint16_t g_i_iv_disp = 500;
-volatile uint16_t g_i_iw_disp = 500;
+volatile uint16_t g_i_iu_disp = 10000;
+volatile uint16_t g_i_iv_disp = 10000;
+volatile uint16_t g_i_iw_disp = 10000;
 
-/* EMA filter state (Q8: actual_mA × 256) */
-static int32_t s_i32EmaU = 0;
-static int32_t s_i32EmaV = 0;
-static int32_t s_i32EmaW = 0;
-static bool    s_bEmaInit = false;
+/* 2nd-order Butterworth IIR (fc=200Hz, fs=50kHz, -40dB/dec)
+ * Designed in MATLAB: [b,a] = butter(2, 200/25000)
+ * y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2] */
+#define BIQUAD_B0  0.0001551484f
+#define BIQUAD_B1  0.0003102968f
+#define BIQUAD_B2  0.0001551484f
+#define BIQUAD_A1  (-1.9644605802f)   /* -a1 in diff eq = +1.96446*y[n-1] */
+#define BIQUAD_A2  0.9650811739f       /* -a2 in diff eq = -0.96508*y[n-2] */
 
-/* EMA alpha = 8/256 ≈ 3.1%, cutoff ~250Hz at 50kHz sample rate */
-#define I_EMA_ALPHA   8
-#define I_EMA_1MALPHA (256 - I_EMA_ALPHA)  /* 248 */
+/* Biquad state: x[n-1], x[n-2], y[n-1], y[n-2] per phase */
+static float s_fX1U = 0.0f, s_fX2U = 0.0f, s_fY1U = 0.0f, s_fY2U = 0.0f;
+static float s_fX1V = 0.0f, s_fX2V = 0.0f, s_fY1V = 0.0f, s_fY2V = 0.0f;
+static float s_fX1W = 0.0f, s_fX2W = 0.0f, s_fY1W = 0.0f, s_fY2W = 0.0f;
+static bool  s_bBiquadInit = false;
 
 /* Three-phase sum (should be ~0 mA / ~6144 raw) */
 volatile int32_t  g_i_uvw_ma  = 0;
@@ -252,21 +257,36 @@ static void I_IrqCallback(void)
     int16_t i16IV_mA = I_ADC_TO_MA_REF(u16IV, u16ZeroV);
     int16_t i16IW_mA = I_ADC_TO_MA_REF(u16IW, u16ZeroW);
 
-    /* EMA filter (Q8: actual_mA × 256, alpha=8/256≈3.1%) */
-    if (!s_bEmaInit) {
-        s_i32EmaU = (int32_t)i16IU_mA << 8;
-        s_i32EmaV = (int32_t)i16IV_mA << 8;
-        s_i32EmaW = (int32_t)i16IW_mA << 8;
-        s_bEmaInit = true;
+    /* 2nd-order Butterworth IIR (fc=200Hz, fs=50kHz, -40dB/dec) */
+    float fIU, fIV, fIW;
+    if (!s_bBiquadInit) {
+        /* Seed states with first sample (fast settling, no ramp-up) */
+        s_fX1U = s_fX2U = s_fY1U = s_fY2U = (float)i16IU_mA;
+        s_fX1V = s_fX2V = s_fY1V = s_fY2V = (float)i16IV_mA;
+        s_fX1W = s_fX2W = s_fY1W = s_fY2W = (float)i16IW_mA;
+        s_bBiquadInit = true;
+        fIU = (float)i16IU_mA;
+        fIV = (float)i16IV_mA;
+        fIW = (float)i16IW_mA;
     } else {
-        s_i32EmaU = ((I_EMA_1MALPHA * s_i32EmaU) + ((int32_t)i16IU_mA * (I_EMA_ALPHA << 8))) >> 8;
-        s_i32EmaV = ((I_EMA_1MALPHA * s_i32EmaV) + ((int32_t)i16IV_mA * (I_EMA_ALPHA << 8))) >> 8;
-        s_i32EmaW = ((I_EMA_1MALPHA * s_i32EmaW) + ((int32_t)i16IW_mA * (I_EMA_ALPHA << 8))) >> 8;
+        fIU = BIQUAD_B0 * (float)i16IU_mA + BIQUAD_B1 * s_fX1U + BIQUAD_B2 * s_fX2U
+              - BIQUAD_A1 * s_fY1U - BIQUAD_A2 * s_fY2U;
+        fIV = BIQUAD_B0 * (float)i16IV_mA + BIQUAD_B1 * s_fX1V + BIQUAD_B2 * s_fX2V
+              - BIQUAD_A1 * s_fY1V - BIQUAD_A2 * s_fY2V;
+        fIW = BIQUAD_B0 * (float)i16IW_mA + BIQUAD_B1 * s_fX1W + BIQUAD_B2 * s_fX2W
+              - BIQUAD_A1 * s_fY1W - BIQUAD_A2 * s_fY2W;
+        /* Shift input history */
+        s_fX2U = s_fX1U; s_fX1U = (float)i16IU_mA;
+        s_fX2V = s_fX1V; s_fX1V = (float)i16IV_mA;
+        s_fX2W = s_fX1W; s_fX1W = (float)i16IW_mA;
+        /* Shift output history */
+        s_fY2U = s_fY1U; s_fY1U = fIU;
+        s_fY2V = s_fY1V; s_fY1V = fIV;
+        s_fY2W = s_fY1W; s_fY1W = fIW;
     }
-    /* Filtered mA = ema >> 8 */
-    int16_t i16IU_fmA = (int16_t)(s_i32EmaU >> 8);
-    int16_t i16IV_fmA = (int16_t)(s_i32EmaV >> 8);
-    int16_t i16IW_fmA = (int16_t)(s_i32EmaW >> 8);
+    int16_t i16IU_fmA = (int16_t)fIU;
+    int16_t i16IV_fmA = (int16_t)fIV;
+    int16_t i16IW_fmA = (int16_t)fIW;
 
     /* Update internal data structure */
     s_stcIData.u16IU     = u16IU;
@@ -285,12 +305,12 @@ static void I_IrqCallback(void)
     g_i_iu_ma   = i16IU_mA;
     g_i_iv_ma   = i16IV_mA;
     g_i_iw_ma   = i16IW_mA;
-    g_i_iu_filt = s_i32EmaU;  /* Q8: ×256, J-Scope divide by 256 for mA */
-    g_i_iv_filt = s_i32EmaV;
-    g_i_iw_filt = s_i32EmaW;
-    g_i_iu_disp = (uint16_t)((int32_t)i16IU_fmA * 10 + 500);
-    g_i_iv_disp = (uint16_t)((int32_t)i16IV_fmA * 10 + 500);
-    g_i_iw_disp = (uint16_t)((int32_t)i16IW_fmA * 10 + 500);
+    g_i_iu_filt = (int32_t)((float)i16IU_fmA * 256.0f);  /* Q8: ×256 for J-Scope */
+    g_i_iv_filt = (int32_t)((float)i16IV_fmA * 256.0f);
+    g_i_iw_filt = (int32_t)((float)i16IW_fmA * 256.0f);
+    g_i_iu_disp = (uint16_t)((int32_t)i16IU_fmA * 10 + 10000);
+    g_i_iv_disp = (uint16_t)((int32_t)i16IV_fmA * 10 + 10000);
+    g_i_iw_disp = (uint16_t)((int32_t)i16IW_fmA * 10 + 10000);
     g_i_uvw_raw = (int32_t)u16IU + (int32_t)u16IV + (int32_t)u16IW;
     g_i_uvw_ma  = (int32_t)i16IU_mA + (int32_t)i16IV_mA + (int32_t)i16IW_mA;
     g_i_sample_cnt = s_stcIData.u32SampleCount;

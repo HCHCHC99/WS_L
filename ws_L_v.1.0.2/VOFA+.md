@@ -213,7 +213,62 @@ Usart3_Vofa_Runner_SetDataProvider(MyProvider);
 
 ---
 
-## 9. 测试信号
+## 9. 当前数据通道
+
+`main.c` 主循环全速发送（DMA 空闲即发，921600 baud，实际 ~2.9k 帧/秒）:
+
+```c
+if (!Usart3_Vofa_IsTxBusy()) {
+    int32_t cur[7];
+    cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;         /* IU 滤波电流 mA */
+    cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;         /* IV 滤波电流 mA */
+    cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;         /* IW 滤波电流 mA */
+    uint8_t hall = (uint8_t)((g_scope_ha << 2) | (g_scope_hb << 1) | g_scope_hc);
+    cur[3] = (int32_t)hall * 1000;                        /* Hall 组合值 (1~6) */
+    cur[4] = (int32_t)g_scope_ha * 1000;                  /* Hall U pin (0/1) */
+    cur[5] = (int32_t)g_scope_hb * 1000;                  /* Hall V pin (0/1) */
+    cur[6] = (int32_t)g_scope_hc * 1000;                  /* Hall W pin (0/1) */
+    Usart3_Vofa_SendScaled(cur, 7, USART3_VOFA_SCALE_MILLI);  /* ×0.001 → A */
+}
+```
+
+### 通道表
+
+| CH | 数据源 | 含义 | VOFA+ 显示值 |
+|:---:|------|------|------|
+| 1 | `g_i_iu_disp` | IU 滤波电流 (Biquad, fc=200Hz) | 0.xxx A (×0.001 = 真实 A) |
+| 2 | `g_i_iv_disp` | IV 滤波电流 | 同上 |
+| 3 | `g_i_iw_disp` | IW 滤波电流 | 同上 |
+| 4 | `hall` | 霍尔组合值 (0x01~0x06) | 1.0~6.0 (×1000→A) |
+| 5 | `g_scope_ha` | Hall U 引脚电平 (bit2) | 1.0=高, 0.0=低 |
+| 6 | `g_scope_hb` | Hall V 引脚电平 (bit1) | 1.0=高, 0.0=低 |
+| 7 | `g_scope_hc` | Hall W 引脚电平 (bit0) | 1.0=高, 0.0=低 |
+
+### 配置参数
+
+| 项目 | 值 |
+|------|-----|
+| 协议 | JustFloat |
+| 帧大小 | 32 字节 (7×float32 + 4 尾帧) |
+| 波特率 | **921600** |
+| 发送方式 | DMA2 CH0, 全速 (DMA 背压) |
+| 实际帧率 | ~2.9k 帧/秒 |
+| TX buffer | 256B (可扩展到 16 通道 max) |
+
+### 数据来源
+
+| 变量 | 定义位置 | 更新方式 |
+|------|------|------|
+| `g_i_ix_disp` | `ws/I.c` | ADC1 EOCB ISR @50kHz, Biquad 滤波 |
+| `g_scope_ha/hb/hc` | `ws/hall_sensor_3ch.c` | Hall GPIO EXINT ISR, 实时 |
+| `USART3_VOFA_SCALE_MILLI` | `Adp/Usart3_Vofa.h` | 0.001f (int32→float A) |
+
+> **注意**: `g_hall_state` 存的是 FSM 状态机状态（STATE_RUNNING=2），不是霍尔读数。
+> 霍尔实时值用 `g_scope_ha/hb/hc`，在 ISR 中直接从 GPIO 读取。
+
+---
+
+## 10. 测试信号
 
 `test_Vofa.h` 中 `VOFA_TEST_ENABLE` 控制：
 
@@ -232,12 +287,15 @@ TestVofa_Init();
 
 ---
 
-## 10. VOFA+ 上位机操作
+## 11. VOFA+ 上位机操作
 
 1. 协议: **JustFloat**
-2. 串口: **115200-8-N-1**
-3. 打开串口 → 左上角 JustFloat 节点 → 拖 CH1/CH2 到波形图
-4. 右键波形图 → Y 轴调整范围
+2. 串口: **921600-8-N-1**
+3. 打开串口 → 左上角 JustFloat 节点 → 拖 **CH1/CH2/CH3** 到电流波形图
+4. 拖 **CH4/CH5/CH6/CH7** 到霍尔信号波形图
+5. 右键波形图 → Y 轴调整范围
+6. 电流波形 Y 轴单位: **A** (安培), e.g. 0.123 = 123mA
+7. 霍尔波形 Y 轴: 电流图 **0~7** (CH4 组合值), 引脚图 **0~1.5** (CH5/6/7)
 
 ### 常见问题
 
@@ -245,4 +303,5 @@ TestVofa_Init();
 |------|------|
 | JustFloat 无数据 | RawData 确认 hex 尾帧 `00 00 80 7F` |
 | 通道恒为 0 | 检查 Y 轴范围、波形图运行状态 |
+| 霍尔通道不变 | 确认变量为 `g_scope_ha/hb/hc`（非 `g_hall_state`） |
 | FireWater/JustFloat 混用 | 手动选协议，不要用自动检测 |

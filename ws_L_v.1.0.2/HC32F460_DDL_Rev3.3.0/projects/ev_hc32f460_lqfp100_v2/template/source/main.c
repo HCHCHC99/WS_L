@@ -21,6 +21,11 @@
 /* Official Vofa handle (for Vofa_JustFloat / Vofa_Printf etc.) */
 Vofa_HandleTypedef vofa1;
 
+/* Hall sensor raw pins (from hall_sensor_3ch.c ISR, updated in real-time) */
+extern volatile uint8_t g_scope_ha;   /* Hall U, bit2 */
+extern volatile uint8_t g_scope_hb;   /* Hall V, bit1 */
+extern volatile uint8_t g_scope_hc;   /* Hall W, bit0 */
+
 /*=============================================================================
  * Keil Watch ��改变�? (调试接口)
  *=============================================================================*/
@@ -205,12 +210,18 @@ int main(void)
 
         /* ---- VOFA+ USART3: 全速电流 + 心跳 + RX 日志 ---- */
         if (!Usart3_Vofa_IsTxBusy()) {
-            int32_t cur[3];
+            int32_t cur[7];
             /* g_i_ix_disp = filt_mA * 10 + 10000, inverse: (disp - 10000) / 10 */
             cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA → A */
             cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA → A */
             cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA → A */
-            Usart3_Vofa_SendScaled(cur, 3, USART3_VOFA_SCALE_MILLI);
+            /* Hall: reconstruct combined from scope bits (g_scope_ha=bit2, hb=bit1, hc=bit0) */
+            uint8_t hall = (uint8_t)((g_scope_ha << 2) | (g_scope_hb << 1) | g_scope_hc);
+            cur[3] = (int32_t)hall * 1000;                  /* Hall combined ×1000 → A */
+            cur[4] = (int32_t)g_scope_ha * 1000;            /* HU ×1000 → A */
+            cur[5] = (int32_t)g_scope_hb * 1000;            /* HV ×1000 → A */
+            cur[6] = (int32_t)g_scope_hc * 1000;            /* HW ×1000 → A */
+            Usart3_Vofa_SendScaled(cur, 7, USART3_VOFA_SCALE_MILLI);
         }
 
         Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */

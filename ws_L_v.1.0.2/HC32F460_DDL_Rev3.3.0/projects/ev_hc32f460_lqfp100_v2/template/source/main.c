@@ -142,9 +142,9 @@ int main(void)
 
     EventBus_Enable();
 
-    /* ---- 电流 VOFA+ 快速发送 (20ms / 50Hz) ---- */
+    /* ---- 电流 VOFA+ 快速发送 (1ms / 1000Hz) ---- */
     static NonBlockingDelay_t s_stcCurDelay;
-    nbDelay_Init(&s_stcCurDelay, 20);
+    nbDelay_Init(&s_stcCurDelay, 1);
     nbDelay_Start(&s_stcCurDelay);
 
     /* ---- 主循环 ---- */
@@ -203,13 +203,13 @@ int main(void)
 
         /* ---- VOFA+ USART3: 快速电流 (EMA 滤波) + 心跳 + RX 日志 ---- */
         if (nbDelay_IsComplete(&s_stcCurDelay)) {
-            nbDelay_Start(&s_stcCurDelay);                 /* restart 20ms */
+            nbDelay_Start(&s_stcCurDelay);                 /* restart 1ms */
             if (!Usart3_Vofa_IsTxBusy()) {
                 int32_t cur[3];
-                /* g_i_iu_filt is Q8 (mA × 256), >> 8 = filtered mA */
-                cur[0] = (int32_t)(g_i_iu_filt >> 8);      /* IU mA → A */
-                cur[1] = (int32_t)(g_i_iv_filt >> 8);      /* IV mA → A */
-                cur[2] = (int32_t)(g_i_iw_filt >> 8);      /* IW mA → A */
+                /* g_i_ix_disp = filt_mA * 10 + 500, inverse: (disp - 500) / 10 */
+                cur[0] = (int32_t)(g_i_iu_disp - 500) / 10;   /* IU mA → A */
+                cur[1] = (int32_t)(g_i_iv_disp - 500) / 10;   /* IV mA → A */
+                cur[2] = (int32_t)(g_i_iw_disp - 500) / 10;   /* IW mA → A */
                 Usart3_Vofa_SendScaled(cur, 3, USART3_VOFA_SCALE_MILLI);
             }
         }

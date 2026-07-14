@@ -1,21 +1,21 @@
 /**
  *******************************************************************************
  * @file  I.h
- * @brief Current sensing module â€? 3-phase current via ADC1 SEQ_B interrupt mode
+ * @brief Current sensing module ï¿½? 3-phase current via ADC1 SEQ_B interrupt mode
  *
  *        PA5 = ADC1_CH5 = IU  (current sensor U)
  *        PA6 = ADC1_CH6 = IV  (current sensor V)
  *        PA7 = ADC1_CH7 = IW  (current sensor W)
  *
- *        Sensor formula: VOUT = 1650 + IP(A) Ã— 132 (mV)
- *          Â±10A range, 3.3V / 12-bit ADC, zero = 2048 raw
+ *        Sensor formula: VOUT = 1650 + IP(A) Ã— 528 (mV)
+ *          Â±2.5A range, 3.3V / 12-bit ADC, zero = 2048 raw
  *
  *        Trigger chain:
- *          TMR4_3 SCMP2 (PWM peak) â†? AOS_ADC1_1 â†? ADC1_SEQ_B â†? EOCB ISR
+ *          TMR4_3 SCMP2 (PWM peak) ï¿½? AOS_ADC1_1 ï¿½? ADC1_SEQ_B ï¿½? EOCB ISR
  *
  *        ADC1 layout:
- *          SEQ_A (CH0-CH3): BEMF, TMR4_3 SCMP0 â†? AOS_ADC1_0 â†? DMA
- *          SEQ_B (CH5-CH7): Current, TMR4_3 SCMP2 â†? AOS_ADC1_1 â†? ISR
+ *          SEQ_A (CH0-CH3): BEMF, TMR4_3 SCMP0 ï¿½? AOS_ADC1_0 ï¿½? DMA
+ *          SEQ_B (CH5-CH7): Current, TMR4_3 SCMP2 ï¿½? AOS_ADC1_1 ï¿½? ISR
  *******************************************************************************
  */
 
@@ -69,7 +69,7 @@ extern "C" {
 
 /* ===== Current conversion constants ===== */
 #define I_ADC_ZERO                      (2048)      /* ADC raw at 0A (1650mV @ 3.3V/12bit) */
-#define I_MA_PER_ADC                    (391)      /* Fixed-point slope: 3300*1000/(4095*132) â‰? 6.105 mA/count, Ã—256 for shift */
+#define I_MA_PER_ADC                    (391)      /* Fixed-point slope: 3300*1000/(4095*528) â‰ˆ 1.527 mA/count, Ã—256 â‰ˆ 391 */
 #define I_MA_SHIFT                      (8U)        /* Right-shift after multiply */
 
 /* Integer conversion: I_mA = (raw - zero_ref) * 1563 >> 8.  Error < 0.01%. */

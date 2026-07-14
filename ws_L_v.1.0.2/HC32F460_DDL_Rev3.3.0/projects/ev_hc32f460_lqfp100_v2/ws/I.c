@@ -32,9 +32,9 @@ volatile int32_t  g_i_iv_filt = 0;
 volatile int32_t  g_i_iw_filt = 0;
 
 /* Display-friendly: mA + 10000, always positive for J-Scope */
-volatile uint16_t g_i_iu_disp = 10000;
-volatile uint16_t g_i_iv_disp = 10000;
-volatile uint16_t g_i_iw_disp = 10000;
+volatile uint16_t g_i_iu_disp = 500;
+volatile uint16_t g_i_iv_disp = 500;
+volatile uint16_t g_i_iw_disp = 500;
 
 /* EMA filter state (Q8: actual_mA × 256) */
 static int32_t s_i32EmaU = 0;
@@ -288,9 +288,9 @@ static void I_IrqCallback(void)
     g_i_iu_filt = s_i32EmaU;  /* Q8: ×256, J-Scope divide by 256 for mA */
     g_i_iv_filt = s_i32EmaV;
     g_i_iw_filt = s_i32EmaW;
-    g_i_iu_disp = (uint16_t)((int32_t)i16IU_fmA + 10000);
-    g_i_iv_disp = (uint16_t)((int32_t)i16IV_fmA + 10000);
-    g_i_iw_disp = (uint16_t)((int32_t)i16IW_fmA + 10000);
+    g_i_iu_disp = (uint16_t)((int32_t)i16IU_fmA * 10 + 500);
+    g_i_iv_disp = (uint16_t)((int32_t)i16IV_fmA * 10 + 500);
+    g_i_iw_disp = (uint16_t)((int32_t)i16IW_fmA * 10 + 500);
     g_i_uvw_raw = (int32_t)u16IU + (int32_t)u16IV + (int32_t)u16IW;
     g_i_uvw_ma  = (int32_t)i16IU_mA + (int32_t)i16IV_mA + (int32_t)i16IW_mA;
     g_i_sample_cnt = s_stcIData.u32SampleCount;

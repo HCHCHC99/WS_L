@@ -215,53 +215,110 @@ Usart3_Vofa_Runner_SetDataProvider(MyProvider);
 
 ## 9. 当前数据通道
 
-`main.c` 主循环全速发送（DMA 空闲即发，921600 baud，实际 ~2.9k 帧/秒）:
+`main.c` 主循环全速发送（DMA 空闲即发，921600 baud）:
 
 ```c
-if (!Usart3_Vofa_IsTxBusy()) {
-    int32_t cur[7];
-    cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;         /* IU 滤波电流 mA */
-    cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;         /* IV 滤波电流 mA */
-    cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;         /* IW 滤波电流 mA */
-    uint8_t hall = (uint8_t)((g_scope_ha << 2) | (g_scope_hb << 1) | g_scope_hc);
-    cur[3] = (int32_t)hall * 1000;                        /* Hall 组合值 (1~6) */
-    cur[4] = (int32_t)g_scope_ha * 1000;                  /* Hall U pin (0/1) */
-    cur[5] = (int32_t)g_scope_hb * 1000;                  /* Hall V pin (0/1) */
-    cur[6] = (int32_t)g_scope_hc * 1000;                  /* Hall W pin (0/1) */
-    Usart3_Vofa_SendScaled(cur, 7, USART3_VOFA_SCALE_MILLI);  /* ×0.001 → A */
-}
+/* EMA low-pass filter for BEMF display channels (α=0.05, fc≈400Hz @6.25kHz) */
+static float s_fEmaM, s_fEmaU, s_fEmaV, s_fEmaW;
+/* ... EMA update from g_bemf_*_raw ... */
+
+int32_t cur[16];
+cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA → A */
+cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA → A */
+cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA → A */
+uint8_t hall = (uint8_t)((g_scope_ha << 2) | (g_scope_hb << 1) | g_scope_hc);
+cur[3] = (int32_t)hall * 1000;                  /* Hall combined */
+cur[4] = (int32_t)g_scope_ha * 1000;
+cur[5] = (int32_t)g_scope_hb * 1000;
+cur[6] = (int32_t)g_scope_hc * 1000;
+/* BEMF voltage (mV = EMA(raw) × 3300 / 4096) */
+cur[7]  = RAW_TO_MV((int32_t)s_fEmaM) * 1000;   /* M_BEMF (PA0) */
+cur[8]  = RAW_TO_MV((int32_t)s_fEmaU) * 1000;   /* U_BEMF (PA1) */
+cur[9]  = RAW_TO_MV((int32_t)s_fEmaV) * 1000;   /* V_BEMF (PA2) */
+cur[10] = RAW_TO_MV((int32_t)s_fEmaW) * 1000;   /* W_BEMF (PA3) */
+/* BEMF diff: phase - neutral (mV) */
+cur[11] = RAW_TO_MV((int32_t)(s_fEmaU - s_fEmaM)) * 1000;  /* U-M */
+cur[12] = RAW_TO_MV((int32_t)(s_fEmaV - s_fEmaM)) * 1000;  /* V-M */
+cur[13] = RAW_TO_MV((int32_t)(s_fEmaW - s_fEmaM)) * 1000;  /* W-M */
+/* CH14: floating phase BEMF (mV, ISR-updated, EMA-filtered) */
+cur[14] = (int32_t)(s_fEmaWave * 3300.0f / 4096.0f) * 1000;
+/* CH15: U-V line BEMF (mV) */
+cur[15] = RAW_TO_MV((int32_t)(s_fEmaU - s_fEmaV)) * 1000;
+Usart3_Vofa_SendScaled(cur, 16, USART3_VOFA_SCALE_MILLI);
 ```
 
 ### 通道表
 
 | CH | 数据源 | 含义 | VOFA+ 显示值 |
 |:---:|------|------|------|
-| 1 | `g_i_iu_disp` | IU 滤波电流 (Biquad, fc=200Hz) | 0.xxx A (×0.001 = 真实 A) |
-| 2 | `g_i_iv_disp` | IV 滤波电流 | 同上 |
-| 3 | `g_i_iw_disp` | IW 滤波电流 | 同上 |
-| 4 | `hall` | 霍尔组合值 (0x01~0x06) | 1.0~6.0 (×1000→A) |
-| 5 | `g_scope_ha` | Hall U 引脚电平 (bit2) | 1.0=高, 0.0=低 |
-| 6 | `g_scope_hb` | Hall V 引脚电平 (bit1) | 1.0=高, 0.0=低 |
-| 7 | `g_scope_hc` | Hall W 引脚电平 (bit0) | 1.0=高, 0.0=低 |
+| 1 | `g_i_iu_disp` | IU 滤波电流 (Biquad, fc=200Hz) | A |
+| 2 | `g_i_iv_disp` | IV 滤波电流 | A |
+| 3 | `g_i_iw_disp` | IW 滤波电流 | A |
+| 4 | `hall` | 霍尔组合值 (0x01~0x06) | 1.0~6.0 |
+| 5 | `g_scope_ha` | Hall U 引脚电平 (bit2) | 1=高, 0=低 |
+| 6 | `g_scope_hb` | Hall V 引脚电平 (bit1) | 1=高, 0=低 |
+| 7 | `g_scope_hc` | Hall W 引脚电平 (bit0) | 1=高, 0=低 |
+| 8 | `g_bemf_m_raw` | M_BEMF 虚拟中性点 (PA0) | mV (EMA+MA滤波) |
+| 9 | `g_bemf_u_raw` | U_BEMF 相电压 (PA1) | mV (EMA+MA滤波) |
+| 10 | `g_bemf_v_raw` | V_BEMF 相电压 (PA2) | mV (EMA+MA滤波) |
+| 11 | `g_bemf_w_raw` | W_BEMF 相电压 (PA3) | mV (EMA+MA滤波) |
+| 12 | U−M | U 相反电动势 (vs 中性点) | mV |
+| 13 | V−M | V 相反电动势 (vs 中性点) | mV |
+| 14 | W−M | W 相反电动势 (vs 中性点) | mV |
+| **15** | **浮空相 BEMF** | **当前浮空相 vs 中性点 (ISR 自动选相)** | **mV** |
+| **16** | **U−V** | **U-V 线反电动势** | **mV** |
+
+### BEMF 采集架构
+
+```
+电机相线 (MU/MV/MW)
+  │ 47kΩ 上拉, 4.7kΩ 下拉 (11:1 分压)
+  ├── U_BEMF ──[10kΩ]──┐
+  ├── V_BEMF ──[10kΩ]──┼── M_BEM (虚拟中性点)
+  ├── W_BEMF ──[10kΩ]──┘
+  │
+  ↓ PA0~PA3 → ADC1_SEQ_A 四通道同步扫描
+  │ Trigger: TMR4_3 SCMP0 @ PWM 峰值 (中心对齐)
+  │
+  ↓ DMA1 CH0~3 并行搬运 (repeat mode, 8×uint16_t buffer)
+  │
+  ↓ DMA BTC ISR @6.25kHz:
+  │   - 8-tap MA 均值滤波 (Dma_GetAverageValue)
+  │   - 根据 g_scope_step 自动选浮空相 → g_bemf_wave_data
+  │
+  ↓ main loop:
+      - EMA α=0.05 (fc≈400Hz)
+      - mV 换算 (×3300/4096)
+      - JustFloat → VOFA+
+```
+
+### 滤波链路
+
+| 阶段 | 位置 | 类型 | 截止频率 |
+|------|------|------|------|
+| 8-tap MA | Bemf ISR (Dma_GetAverageValue) | FIR | ~6.25kHz first null |
+| EMA α=0.05 | main loop | IIR | ~400Hz |
 
 ### 配置参数
 
 | 项目 | 值 |
 |------|-----|
 | 协议 | JustFloat |
-| 帧大小 | 32 字节 (7×float32 + 4 尾帧) |
+| 帧大小 | 68 字节 (16×float32 + 4 尾帧) |
 | 波特率 | **921600** |
 | 发送方式 | DMA2 CH0, 全速 (DMA 背压) |
 | 实际帧率 | ~2.9k 帧/秒 |
-| TX buffer | 256B (可扩展到 16 通道 max) |
+| TX buffer | 256B (最大 63 通道) |
 
 ### 数据来源
 
 | 变量 | 定义位置 | 更新方式 |
 |------|------|------|
-| `g_i_ix_disp` | `ws/I.c` | ADC1 EOCB ISR @50kHz, Biquad 滤波 |
-| `g_scope_ha/hb/hc` | `ws/hall_sensor_3ch.c` | Hall GPIO EXINT ISR, 实时 |
-| `USART3_VOFA_SCALE_MILLI` | `Adp/Usart3_Vofa.h` | 0.001f (int32→float A) |
+| `g_i_ix_disp` | `ws/I.c` | ADC1 EOCB ISR @50kHz, Biquad fc=200Hz |
+| `g_scope_ha/hb/hc/step` | `ws/hall_sensor_3ch.c` | Hall GPIO EXINT ISR, 实时 |
+| `g_bemf_*_raw` | `ws/Bemf.c` | DMA1 BTC ISR @6.25kHz, 8-tap MA |
+| `g_bemf_wave_data` | `ws/Bemf.c` | DMA1 BTC ISR, 浮空相自动选择 |
+| `USART3_VOFA_SCALE_MILLI` | `Adp/Usart3_Vofa.h` | 0.001f (int32→float) |
 
 > **注意**: `g_hall_state` 存的是 FSM 状态机状态（STATE_RUNNING=2），不是霍尔读数。
 > 霍尔实时值用 `g_scope_ha/hb/hc`，在 ISR 中直接从 GPIO 读取。

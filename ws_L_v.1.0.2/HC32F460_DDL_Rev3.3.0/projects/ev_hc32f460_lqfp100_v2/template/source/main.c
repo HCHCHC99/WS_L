@@ -215,7 +215,7 @@ int main(void)
 
         /* ---- VOFA+ USART3: 全速电流 + 心跳 + RX 日志 ---- */
         if (!Usart3_Vofa_IsTxBusy()) {
-            int32_t cur[15];
+            int32_t cur[16];
 
             /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈400Hz @6.25kHz)
              * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
@@ -256,7 +256,6 @@ int main(void)
             cur[11] = RAW_TO_MV((int32_t)(s_fEmaU - s_fEmaM)) * 1000;  /* U-M mV */
             cur[12] = RAW_TO_MV((int32_t)(s_fEmaV - s_fEmaM)) * 1000;  /* V-M mV */
             cur[13] = RAW_TO_MV((int32_t)(s_fEmaW - s_fEmaM)) * 1000;  /* W-M mV */
-            #undef RAW_TO_MV
             /* CH14: floating phase BEMF (mV, EMA-filtered, auto-selected by Hall step, ISR-updated) */
             {
                 static float s_fEmaWave = 0.0f;
@@ -268,7 +267,10 @@ int main(void)
                 }
                 cur[14] = (int32_t)(s_fEmaWave * 3300.0f / 4096.0f) * 1000;
             }
-            Usart3_Vofa_SendScaled(cur, 15, USART3_VOFA_SCALE_MILLI);
+            /* CH15: U-V line BEMF (mV, EMA-filtered) */
+            cur[15] = RAW_TO_MV((int32_t)(s_fEmaU - s_fEmaV)) * 1000;
+            #undef RAW_TO_MV
+            Usart3_Vofa_SendScaled(cur, 16, USART3_VOFA_SCALE_MILLI);
         }
 
         Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */

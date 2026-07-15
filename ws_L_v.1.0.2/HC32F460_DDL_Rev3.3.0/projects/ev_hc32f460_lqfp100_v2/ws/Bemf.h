@@ -130,6 +130,10 @@ extern volatile uint32_t g_bemf_sample_cnt;
 /* 模块运行状态 (0=停止, 1=运行中) */
 extern volatile uint8_t  g_bemf_running;
 
+/* BEMF 波形数据: 当前浮空相 vs 中性点 ADC 差值 (signed raw)
+ * JScope / VOFA+ 直接读取此变量即可得到梯形波 */
+extern volatile int16_t  g_bemf_wave_data;
+
 /*******************************************************************************
  * Global function prototypes
  ******************************************************************************/
@@ -146,6 +150,14 @@ uint16_t Bemf_GetRawValue(uint8_t u8Channel);
 
 /* 反电动势电压获取 (mV, 相对中性点) */
 int16_t Bemf_GetBemfVoltage(uint8_t u8Phase);  /* 0=U, 1=V, 2=W */
+
+/* 浮空相选择 (六步换相) */
+uint8_t  Bemf_GetFloatingChannel(uint8_t u8Step);       /* 返回浮空相 ADC 通道号 (0=M, 1=U, 2=V, 3=W) */
+uint16_t Bemf_GetFloatingPhaseRaw(uint8_t u8Step);      /* 返回浮空相原始 ADC 值 */
+int16_t  Bemf_GetFloatingPhaseBemf(uint8_t u8Step);      /* 返回浮空相反电动势 (mV) */
+
+/* 更新 BEMF 波形数据 (主循环调用) */
+void Bemf_UpdateWaveData(uint8_t u8Step);                /* 根据当前换相步更新 g_bemf_wave_data */
 
 /* 注册数据就绪回调 (NULL 取消注册) */
 void Bemf_RegisterCallback(bemf_callback_t pfnCallback);

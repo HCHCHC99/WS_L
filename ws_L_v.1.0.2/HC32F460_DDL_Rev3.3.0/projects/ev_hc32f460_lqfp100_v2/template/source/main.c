@@ -25,6 +25,7 @@ Vofa_HandleTypedef vofa1;
 extern volatile uint8_t g_scope_ha;   /* Hall U, bit2 */
 extern volatile uint8_t g_scope_hb;   /* Hall V, bit1 */
 extern volatile uint8_t g_scope_hc;   /* Hall W, bit0 */
+extern volatile uint8_t g_scope_step; /* Current commutation step (0-5) */
 
 /*=============================================================================
  * Keil Watch ��改变�? (调试接口)
@@ -174,6 +175,9 @@ int main(void)
         /* 驱动换相状��? */
         CommRunner_Update();
 
+        /* g_bemf_wave_data 由 Bemf_DataCallback() 在 DMA BTC ISR 中自动更新
+         * (根据 g_scope_step 选择浮空相, 计算 floating_raw - neutral_raw) */
+
         /* CommRunner �? Keil Watch (堵转等内部触发的 STOP 同�回�) */
         {
             int actual = (int)CommRunner_GetMode();
@@ -191,8 +195,9 @@ int main(void)
             if ((u32Now - s_u32LastBemfPrintMs) >= 500) {
                 s_u32LastBemfPrintMs = u32Now;
                 if (g_bemf_running) {
-                    MAIN_D("BEMF: M=%umV U=%dmV V=%dmV W=%dmV cnt=%lu\r\n",
-                           g_bemf_m_mv, g_bemf_u_mv, g_bemf_v_mv, g_bemf_w_mv,
+                    MAIN_D("BEMF: wave=%d step=%u raw: M=%u U=%u V=%u W=%u cnt=%lu\r\n",
+                           g_bemf_wave_data, g_scope_step,
+                           g_bemf_m_raw, g_bemf_u_raw, g_bemf_v_raw, g_bemf_w_raw,
                            g_bemf_sample_cnt);
                 }
             }
@@ -210,7 +215,27 @@ int main(void)
 
         /* ---- VOFA+ USART3: 全速电流 + 心跳 + RX 日志 ---- */
         if (!Usart3_Vofa_IsTxBusy()) {
-            int32_t cur[7];
+            int32_t cur[15];
+
+            /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈400Hz @6.25kHz)
+             * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
+            #define BEMF_EMA_ALPHA  0.05f
+            static float s_fEmaM = 0.0f, s_fEmaU = 0.0f, s_fEmaV = 0.0f, s_fEmaW = 0.0f;
+            static uint8_t s_bEmaInit = 0;
+            if (!s_bEmaInit) {
+                /* Seed filter states with first sample (no ramp-up) */
+                s_fEmaM = (float)g_bemf_m_raw;
+                s_fEmaU = (float)g_bemf_u_raw;
+                s_fEmaV = (float)g_bemf_v_raw;
+                s_fEmaW = (float)g_bemf_w_raw;
+                s_bEmaInit = 1;
+            } else {
+                s_fEmaM = BEMF_EMA_ALPHA * (float)g_bemf_m_raw + (1.0f - BEMF_EMA_ALPHA) * s_fEmaM;
+                s_fEmaU = BEMF_EMA_ALPHA * (float)g_bemf_u_raw + (1.0f - BEMF_EMA_ALPHA) * s_fEmaU;
+                s_fEmaV = BEMF_EMA_ALPHA * (float)g_bemf_v_raw + (1.0f - BEMF_EMA_ALPHA) * s_fEmaV;
+                s_fEmaW = BEMF_EMA_ALPHA * (float)g_bemf_w_raw + (1.0f - BEMF_EMA_ALPHA) * s_fEmaW;
+            }
+
             /* g_i_ix_disp = filt_mA * 10 + 10000, inverse: (disp - 10000) / 10 */
             cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA → A */
             cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA → A */
@@ -221,7 +246,29 @@ int main(void)
             cur[4] = (int32_t)g_scope_ha * 1000;            /* HU ×1000 → A */
             cur[5] = (int32_t)g_scope_hb * 1000;            /* HV ×1000 → A */
             cur[6] = (int32_t)g_scope_hc * 1000;            /* HW ×1000 → A */
-            Usart3_Vofa_SendScaled(cur, 7, USART3_VOFA_SCALE_MILLI);
+            /* BEMF voltage (mV = EMA(raw) × 3300 / 4096, ×1000 → VOFA+ displays mV) */
+            #define RAW_TO_MV(r) ((int32_t)((int32_t)(r) * 3300 / 4096))
+            cur[7]  = RAW_TO_MV((int32_t)s_fEmaM) * 1000;   /* M_BEMF (PA0) mV */
+            cur[8]  = RAW_TO_MV((int32_t)s_fEmaU) * 1000;   /* U_BEMF (PA1) mV */
+            cur[9]  = RAW_TO_MV((int32_t)s_fEmaV) * 1000;   /* V_BEMF (PA2) mV */
+            cur[10] = RAW_TO_MV((int32_t)s_fEmaW) * 1000;   /* W_BEMF (PA3) mV */
+            /* BEMF diff: phase - neutral (mV, from EMA-filtered values) */
+            cur[11] = RAW_TO_MV((int32_t)(s_fEmaU - s_fEmaM)) * 1000;  /* U-M mV */
+            cur[12] = RAW_TO_MV((int32_t)(s_fEmaV - s_fEmaM)) * 1000;  /* V-M mV */
+            cur[13] = RAW_TO_MV((int32_t)(s_fEmaW - s_fEmaM)) * 1000;  /* W-M mV */
+            #undef RAW_TO_MV
+            /* CH14: floating phase BEMF (mV, EMA-filtered, auto-selected by Hall step, ISR-updated) */
+            {
+                static float s_fEmaWave = 0.0f;
+                if (!s_bEmaInit) {
+                    s_fEmaWave = (float)g_bemf_wave_data;
+                } else {
+                    s_fEmaWave = BEMF_EMA_ALPHA * (float)g_bemf_wave_data
+                               + (1.0f - BEMF_EMA_ALPHA) * s_fEmaWave;
+                }
+                cur[14] = (int32_t)(s_fEmaWave * 3300.0f / 4096.0f) * 1000;
+            }
+            Usart3_Vofa_SendScaled(cur, 15, USART3_VOFA_SCALE_MILLI);
         }
 
         Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */

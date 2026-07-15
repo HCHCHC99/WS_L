@@ -13,6 +13,9 @@
 #include "hc32_ll_tmr4.h"
 #include <string.h>
 
+/* Current commutation step from Hall sensor ISR (extern, defined in hall_sensor_3ch.c) */
+extern volatile uint8_t g_scope_step;
+
 /*******************************************************************************
  * Global variables for JScope monitor (accessible via debug probe)
  ******************************************************************************/
@@ -36,6 +39,11 @@ volatile uint32_t g_bemf_sample_cnt = 0;
 
 /* BEMF 模块运行状态 (0=未初始化, 1=运行中) */
 volatile uint8_t  g_bemf_running = 0;
+
+/* BEMF 波形数据: 当前浮空相 vs 中性点的 ADC 差值 (signed raw)
+ * 由 Bemf_UpdateWaveData() 在主循环中更新
+ * JScope / VOFA+ 直接监控此变量即可得到梯形波 */
+volatile int16_t  g_bemf_wave_data = 0;
 
 /*******************************************************************************
  * Local variables ('static')
@@ -201,11 +209,12 @@ static void Bemf_DataCallback(void)
         return;
     }
 
-    /* Read latest values from each DMA buffer */
-    uint16_t u16M = Dma_GetLatestValue(s_au8DmaId[0]);
-    uint16_t u16U = Dma_GetLatestValue(s_au8DmaId[1]);
-    uint16_t u16V = Dma_GetLatestValue(s_au8DmaId[2]);
-    uint16_t u16W = Dma_GetLatestValue(s_au8DmaId[3]);
+    /* Read averaged values from each DMA buffer (8-tap moving average,
+     * -3dB @ 6.25kHz, suppresses PWM switching noise at 100kHz) */
+    uint16_t u16M = Dma_GetAverageValue(s_au8DmaId[0]);
+    uint16_t u16U = Dma_GetAverageValue(s_au8DmaId[1]);
+    uint16_t u16V = Dma_GetAverageValue(s_au8DmaId[2]);
+    uint16_t u16W = Dma_GetAverageValue(s_au8DmaId[3]);
 
     /* Update internal data structure */
     s_stcBemfData.stcLatest.u16M = u16M;
@@ -233,6 +242,18 @@ static void Bemf_DataCallback(void)
     g_bemf_m_mv = (uint16_t)(((uint32_t)u16M * 3300) / 4096);
 
     g_bemf_sample_cnt = s_stcBemfData.u32SampleCount;
+
+    /* ---- Update BEMF waveform data: floating phase - neutral (signed raw ADC) ---- */
+    if (g_scope_step < 6U) {
+        switch (Bemf_GetFloatingChannel(g_scope_step)) {
+            case 1: g_bemf_wave_data = (int16_t)u16U - (int16_t)u16M; break;
+            case 2: g_bemf_wave_data = (int16_t)u16V - (int16_t)u16M; break;
+            case 3: g_bemf_wave_data = (int16_t)u16W - (int16_t)u16M; break;
+            default: g_bemf_wave_data = 0; break;
+        }
+    } else {
+        g_bemf_wave_data = 0;
+    }
 
     /* Invoke user callback if registered */
     if (s_pfnUserCallback != NULL) {
@@ -484,6 +505,94 @@ int16_t Bemf_GetBemfVoltage(uint8_t u8Phase)
     /* Calculate signed difference and convert to mV */
     int16_t i16Diff = (int16_t)u16Phase - (int16_t)u16Neutral;
     return (int16_t)(((int32_t)i16Diff * (int32_t)ADC_VREF * 1000) / (int32_t)ADC_ACCURACY);
+}
+
+/*******************************************************************************
+ * API 实现 - 浮空相选择
+ ******************************************************************************/
+
+/**
+ * @brief  Get the floating phase ADC channel for a given commutation step
+ * @param  u8Step  Commutation step (0–5), per dev_commutation.c
+ * @return ADC channel index (0=M, 1=U, 2=V, 3=W), returns 0 if invalid
+ * @note   Six-step mapping (matches dev_commutation.c state table):
+ *         Step 0 (UH+VL): W floating → channel 3
+ *         Step 1 (UH+WL): V floating → channel 2
+ *         Step 2 (VH+WL): U floating → channel 1
+ *         Step 3 (VH+UL): W floating → channel 3
+ *         Step 4 (WH+UL): V floating → channel 2
+ *         Step 5 (WH+VL): U floating → channel 1
+ */
+uint8_t Bemf_GetFloatingChannel(uint8_t u8Step)
+{
+    static const uint8_t s_au8Map[6] = {
+        3,  /* Step 0 (UH+VL): W floating */
+        2,  /* Step 1 (UH+WL): V floating */
+        1,  /* Step 2 (VH+WL): U floating */
+        3,  /* Step 3 (VH+UL): W floating */
+        2,  /* Step 4 (WH+UL): V floating */
+        1,  /* Step 5 (WH+VL): U floating */
+    };
+    return (u8Step < 6U) ? s_au8Map[u8Step] : 0U;
+}
+
+/**
+ * @brief  Get the raw ADC value of the floating phase for a given step
+ * @param  u8Step  Commutation step (0–5)
+ * @return Raw ADC value (0–4095), 0 if invalid
+ */
+uint16_t Bemf_GetFloatingPhaseRaw(uint8_t u8Step)
+{
+    uint8_t u8Ch = Bemf_GetFloatingChannel(u8Step);
+    if (u8Ch == 0U) {
+        return 0;
+    }
+    return Dma_GetAverageValue(s_au8DmaId[u8Ch]);
+}
+
+/**
+ * @brief  Get BEMF voltage of the floating phase for a given step (mV, relative to neutral)
+ * @param  u8Step  Commutation step (0–5)
+ * @return Signed BEMF voltage in mV
+ */
+int16_t Bemf_GetFloatingPhaseBemf(uint8_t u8Step)
+{
+    uint8_t u8Ch = Bemf_GetFloatingChannel(u8Step);
+    if (u8Ch == 0U || u8Ch >= 4U) {
+        return 0;
+    }
+
+    uint16_t u16Neutral = Dma_GetAverageValue(s_au8DmaId[0]);
+    uint16_t u16Phase   = Dma_GetAverageValue(s_au8DmaId[u8Ch]);
+
+    int16_t i16Diff = (int16_t)u16Phase - (int16_t)u16Neutral;
+    return (int16_t)(((int32_t)i16Diff * (int32_t)ADC_VREF * 1000) / (int32_t)ADC_ACCURACY);
+}
+
+/**
+ * @brief  Update g_bemf_wave_data from the floating phase for the given step
+ * @param  u8Step  Current commutation step (0–5, from Hall sensor)
+ * @note   Call from main loop. Uses DMA buffer average (8-tap MA filter).
+ *         g_bemf_wave_data = (floating_phase_raw - neutral_raw) as signed ADC diff.
+ *         JScope / VOFA+ directly plot this variable for the BEMF trapezoid.
+ */
+void Bemf_UpdateWaveData(uint8_t u8Step)
+{
+    if (u8Step >= 6U || s_au8DmaId[0] == 0xFF) {
+        g_bemf_wave_data = 0;
+        return;
+    }
+
+    uint8_t u8FloatingCh = Bemf_GetFloatingChannel(u8Step);
+    if (u8FloatingCh == 0U || u8FloatingCh >= 4U) {
+        g_bemf_wave_data = 0;
+        return;
+    }
+
+    uint16_t u16Neutral = Dma_GetAverageValue(s_au8DmaId[0]);
+    uint16_t u16Phase   = Dma_GetAverageValue(s_au8DmaId[u8FloatingCh]);
+
+    g_bemf_wave_data = (int16_t)u16Phase - (int16_t)u16Neutral;
 }
 
 /*******************************************************************************

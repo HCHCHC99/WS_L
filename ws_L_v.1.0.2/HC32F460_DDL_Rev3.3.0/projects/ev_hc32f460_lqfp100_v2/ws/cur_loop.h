@@ -28,6 +28,7 @@ extern volatile float g_scope_i_ref;
 extern volatile float g_scope_i_fb;
 extern volatile float g_scope_i_duty;
 extern volatile float g_scope_i_err;
+extern volatile float g_scope_i_ol;
 
 /* Current-loop PID config (volatile, Keil Watch tunable) */
 extern pid_config_t g_cur_pid_cfg;

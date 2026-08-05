@@ -50,6 +50,7 @@ projects/ev_hc32f460_lqfp100_v2/
 │   ├── dev_commutation.c/h       # Six-step commutation state table: step→PWM mode/duty, lazy-update cache
 │   ├── hall_sensor_3ch.c/h       # 3-channel Hall driver: ISR, Hall→step lookup, M-method RPM, J-Scope globals, ISR noise defense
 │   ├── I.c/h                     # 3-phase current sensing: ADC1 SEQ_B (CH5/6/7), PWM-peak triggered, Biquad-filtered, zero-offset calibration
+│   ├── cur_loop.c/h                 # 10kHz current PI loop (mode 10): EOCB-decimated, Timer6 dt, active-phase duty
 │   ├── Bemf.c/h                  # BEMF observer: 4-channel ADC via DMA, PWM-peak triggered sampling (observer-only, no sensorless control)
 ├── Utils/                        # Utilities
 │   ├── param_manager.c/h         # Flash parameter persistence with CRC32 + magic header/tail
@@ -99,6 +100,7 @@ STOP(0) → OPEN_FW(1)/OPEN_RV(2) → open-loop ramp at constant interval
                  OR
        → CALIB(5) → open-loop + Hall edge detection → derive 0° offset table → motor stops automatically
        → CALIB_CW(6)/CALIB_CCW(7) → load derived tables + offsets → closed-loop
+       → CURLOOP_FW(10) → open-loop ramp + Hall closed-loop with 10kHz current PI (duty from ADC ISR)
 ```
 
 - **Hall→Step tables**: The CW table (`s_hall2step_cw`) uses `reverse_map` (sector -90°), CCW table uses `forward_map` (sector +90°). These are **swapped** relative to their names because this motor's CW rotation corresponds to decreasing electrical angle.
@@ -121,7 +123,7 @@ Devices communicate via `EventBus` publish/subscribe with topic-based routing an
 ### Debug Interface (Keil Watch)
 
 Main loop dispatches mode changes via two volatile globals set from the Keil debugger:
-- `comm_mode` (0–9): Commutation mode (modes 8/9 = PID_CW/CCW)
+- `comm_mode` (0–10): Commutation mode (8/9 = PID_CW/CCW, 10 = CURLOOP_FW current PI)
 - `g_comm_duty_pct` (2.0–98.0): PWM duty cycle
 
 `CommRunner_Update()` syncs actual mode back to `comm_mode` for stall-triggered STOP reflection.

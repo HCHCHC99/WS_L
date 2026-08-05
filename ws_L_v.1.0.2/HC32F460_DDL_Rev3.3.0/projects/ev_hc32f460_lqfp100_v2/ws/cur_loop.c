@@ -27,7 +27,7 @@
 #define CURLOOP_DT_FIRST_US  100u  /* assumed 10kHz period for the very first call */
 
 /* Keil Watch: current setpoint (mA) */
-volatile float g_i_ref_ma = 500.0f;
+volatile float g_i_ref_ma = 800.0f;
 
 /* J-Scope observability */
 volatile float g_scope_i_ref  = 0.0f;
@@ -41,13 +41,13 @@ pid_config_t g_cur_pid_cfg = {
     .p_valid      = true,
     .i_valid      = true,
     .d_valid      = false,
-    .kp           = 0.05f,    /* % duty per mA error */
-    .ki           = 0.005f,   /* % duty per (mA*s) */
+    .kp           = 0.2f,     /* % duty per mA error (full authority: 500mA err -> 100%) */
+    .ki           = 0.2f,     /* % duty per (mA*s) */
     .kd           = 0.0f,
     .output_min   = 2.0f,
     .output_max   = 98.0f,
-    .integral_max = 50.0f,
-    .i_term_max   = 10.0f,    /* I contribution clamped to +/-10% */
+    .integral_max = 500.0f,   /* mA*s */
+    .i_term_max   = 20.0f,    /* I contribution clamped to +/-20% */
     .update_ms    = 0,        /* no throttle: run at every decimated call */
 };
 
@@ -77,6 +77,11 @@ static void curloop_isr(const stc_i_data_t *pData)
         s_cnt     = 0;
         s_sum_ma  = 0;
         return;
+    }
+
+    if (s_last_us == 0) {
+        /* fresh activation: reset PI so old integral does not carry over */
+        PID_Reset(&s_pid);
     }
 
     s_sum_ma += curloop_feedback(pData);

@@ -541,6 +541,7 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         mode != COMM_RUNNER_CALIB_CCW &&
         mode != COMM_RUNNER_PID_CW &&
         mode != COMM_RUNNER_PID_CCW &&
+        mode != COMM_RUNNER_CURLOOP_FW &&
         mode == s_mode) return;
 
     s_mode      = mode;
@@ -620,6 +621,15 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
                         s_cfg.ol_fly_ramp_ms, 0);
         s_sub_phase = 0;
         MAIN_D("[CommRunner] Mode=PID_CCW: Calib table + PID speed control CCW");
+        break;
+
+    case COMM_RUNNER_CURLOOP_FW:
+        if (s_hall) hall_3ch_stop(s_hall);
+        calib_build_derived_tables();
+        start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
+                        s_cfg.ol_fly_ramp_ms, 1);
+        s_sub_phase = 0;
+        MAIN_D("[CommRunner] Mode=CURLOOP_FW: fly-start -> closed-loop + current PI");
         break;
     }
 }
@@ -822,6 +832,32 @@ void CommRunner_Update(void)
                                (int)(duty * 10), (int)s_pid.integral);
                     }
                 }
+            }
+        }
+        break;
+    }
+
+
+    /* ---- Current-loop (mode 10): current PI runs in ADC ISR (cur_loop.c) ---- */
+    case COMM_RUNNER_CURLOOP_FW: {
+        if (s_sub_phase == 0) {
+            /* Phase 0: open-loop ramp */
+            open_loop_tick(now, 1);
+
+            uint64_t ramp_elapsed = now - s_ol_ramp_start_us;
+            uint64_t ramp_total   = (uint64_t)s_ol_ramp_duration_ms * 1000UL;
+            if (ramp_elapsed >= ramp_total) {
+                hall_3ch_set_table(s_hall, g_calib_cw_table);
+                hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
+                s_sub_phase = 1;
+                MAIN_D("[CommRunner] CURLOOP fly-start -> closed-loop (current PI active)");
+            }
+        } else {
+            /* Phase 1: closed-loop (Hall ISR driven); duty handled by cur_loop ISR */
+            hall_3ch_update(s_hall);
+            if (hall_3ch_is_stalled(s_hall)) {
+                MAIN_D("[CommRunner] CURLOOP stall, coast");
+                CommRunner_SetMode(COMM_RUNNER_STOP);
             }
         }
         break;

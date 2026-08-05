@@ -39,6 +39,7 @@ typedef struct {
     volatile float      output_min;    /* Output clamp min (e.g. 2.0f) */
     volatile float      output_max;    /* Output clamp max (e.g. 98.0f) */
     volatile float      integral_max;  /* Anti-windup clamp */
+    volatile float      i_term_max;    /* Clamp of I-term output (0 = disabled) */
     volatile uint32_t   update_ms;     /* Minimum update interval (ms) */
 } pid_config_t;
 
@@ -52,6 +53,10 @@ typedef struct {
     float         last_output;
     bool          first_sample;
     uint32_t      last_update_ms;
+    float         p_term;          /* Last P-term output (read-only observability) */
+    float         i_term;          /* Last I-term output (read-only observability) */
+    float         d_term;          /* Last D-term output (read-only observability) */
+    uint32_t      last_update_us;  /* Accumulated us since last executed update (PID_UpdateUs) */
 } pid_state_t;
 
 /*=============================================================================
@@ -66,6 +71,10 @@ void PID_Reset(pid_state_t *pid);
 
 /* Run one PID iteration. Reads live params from cfg each call. */
 float PID_Update(pid_state_t *pid, float setpoint, float measurement);
+
+/* Run one PID iteration with explicit us dt (for fast loops, e.g. current loop).
+ * dt_us = measured time since previous call (clamped internally to 1s). */
+float PID_UpdateUs(pid_state_t *pid, float setpoint, float measurement, uint32_t dt_us);
 
 /* Get last output */
 float PID_GetOutput(const pid_state_t *pid);

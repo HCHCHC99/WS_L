@@ -919,6 +919,11 @@
               <FilePath>..\..\ws\dev_comm_runner.c</FilePath>
             </File>
             <File>
+              <FileName>cur_loop.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\cur_loop.c</FilePath>
+            </File>
+            <File>
               <FileName>I.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\ws\I.c</FilePath>
@@ -1846,6 +1851,11 @@
               <FileName>dev_comm_runner.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\ws\dev_comm_runner.c</FilePath>
+            </File>
+            <File>
+              <FileName>cur_loop.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\cur_loop.c</FilePath>
             </File>
             <File>
               <FileName>I.c</FileName>

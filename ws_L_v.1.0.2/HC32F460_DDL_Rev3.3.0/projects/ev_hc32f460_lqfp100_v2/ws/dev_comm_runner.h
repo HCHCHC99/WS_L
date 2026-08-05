@@ -80,7 +80,7 @@ void           CommRunner_CalibAbort(void);
 /* 配置结构 */
 typedef struct {
     /* PWM 频率 */
-    uint16_t pwm_freq_hz;
+    uint32_t pwm_freq_hz;
 
     /* Hall 传感器配� (传给 hall_3ch_create) */
     hall_3ch_config_t hall_cfg;

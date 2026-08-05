@@ -586,7 +586,7 @@ void TMR4_PWM_SetChannelMode(tmr4_pwm_channel_t channel, tmr4_channel_mode_t mod
  * TMR4_PWM_SetFrequency - Update PWM frequency (Hz)
  *   Recalculates period. All duty values must be re-applied after calling this.
  *=============================================================================*/
-void TMR4_PWM_SetFrequency(uint16_t freq_hz)
+void TMR4_PWM_SetFrequency(uint32_t freq_hz)
 {
     uint32_t u32TimerClock;
 

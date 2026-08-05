@@ -58,7 +58,7 @@ uint16_t Commutation_GetFieldAngle(uint8_t step)
 }
 
 /* Per-channel change detection */
-static uint16_t s_last_freq     = 0U;
+static uint32_t s_last_freq     = 0U;
 static uint8_t  s_last_ch_mode[3] = {0xFFU, 0xFFU, 0xFFU};
 static float    s_last_ch_duty[3] = {0.0f, 0.0f, 0.0f};
 
@@ -83,7 +83,7 @@ void Commutation_Init(void)
  *   When mode is unchanged and only duty differs, calls SetDutyFloat (OCCR only).
  *   When nothing changed for a channel, skips entirely.
  *=============================================================================*/
-void Commutation_Step(uint8_t state, uint16_t freq_hz, float duty_pct)
+void Commutation_Step(uint8_t state, uint32_t freq_hz, float duty_pct)
 {
     int ch;
 

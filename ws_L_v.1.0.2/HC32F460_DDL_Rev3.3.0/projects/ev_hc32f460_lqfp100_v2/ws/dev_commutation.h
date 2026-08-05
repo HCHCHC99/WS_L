@@ -43,7 +43,7 @@
 void Commutation_Init(void);
 
 /* Execute one commutation step (0-5), freq_hz, duty_pct clamped to 2%~98% */
-void Commutation_Step(uint8_t state, uint16_t freq_hz, float duty_pct);
+void Commutation_Step(uint8_t state, uint32_t freq_hz, float duty_pct);
 
 /* All phases to complementary OFF */
 void Commutation_Stop(void);

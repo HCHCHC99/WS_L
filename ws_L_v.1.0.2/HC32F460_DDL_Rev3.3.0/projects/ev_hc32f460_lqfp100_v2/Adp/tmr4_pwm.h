@@ -32,7 +32,7 @@ typedef struct {
     tmr4_output_type_t output_type_u;  /* U channel: Complementary or sync */
     tmr4_output_type_t output_type_v;  /* V channel: Complementary or sync */
     tmr4_output_type_t output_type_w;  /* W channel: Complementary or sync */
-    uint16_t           freq_hz;        /* PWM frequency in Hz */
+    uint32_t           freq_hz;        /* PWM frequency in Hz */
     uint16_t           dead_time_ns;   /* Dead-time in ns (only used by COMPLEMENTARY channels) */
     bool               active_high;    /* true = active high, false = active low */
 } tmr4_pwm_config_t;
@@ -50,7 +50,7 @@ void TMR4_PWM_StopOutput(void);
 void TMR4_PWM_EmergencyStop(void);
 
 /* Set PWM frequency (Hz) — updates counter period. All duties must be re-applied after. */
-void TMR4_PWM_SetFrequency(uint16_t freq_hz);
+void TMR4_PWM_SetFrequency(uint32_t freq_hz);
 
 /* Set duty cycle for a specific channel: 0 = 0.00%, 10000 = 100.00% (legacy) */
 void TMR4_PWM_SetDuty(tmr4_pwm_channel_t channel, uint16_t u16Duty);

@@ -2,7 +2,7 @@
  *******************************************************************************
  * @file  I.c
  * @brief Current sensing module — ADC1 SEQ_B interrupt-mode 3-phase sampling
- *        Triggered at PWM peak via TMR4_3 SCMP2 → AOS_ADC1_1 → ADC1_SEQ_B
+ *        Triggered at PWM peak via TMR4_3 SCMP0 → AOS_ADC1_0 (EVT0, shared with BEMF) → ADC1_SEQ_B
  *******************************************************************************
  */
 
@@ -26,7 +26,7 @@ volatile int16_t  g_i_iu_ma   = 0;
 volatile int16_t  g_i_iv_ma   = 0;
 volatile int16_t  g_i_iw_ma   = 0;
 
-/* EMA-filtered current (Q8 fixed-point: value = actual_mA × 256) */
+/* Biquad-filtered current (Q8 fixed-point: value = actual_mA × 256) */
 volatile int32_t  g_i_iu_filt = 0;
 volatile int32_t  g_i_iv_filt = 0;
 volatile int32_t  g_i_iw_filt = 0;
@@ -36,7 +36,7 @@ volatile uint16_t g_i_iu_disp = 10000;
 volatile uint16_t g_i_iv_disp = 10000;
 volatile uint16_t g_i_iw_disp = 10000;
 
-/* 2nd-order Butterworth IIR (fc=200Hz, fs=50kHz, -40dB/dec)
+/* 2nd-order Butterworth IIR (designed for fc=200Hz @ fs=50kHz; actual ADC trigger is 100kHz, so real fc ≈ 400Hz)
  * Designed in MATLAB: [b,a] = butter(2, 200/25000)
  * y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2] */
 #define BIQUAD_B0  0.0001551484f
@@ -257,7 +257,7 @@ static void I_IrqCallback(void)
     int16_t i16IV_mA = I_ADC_TO_MA_REF(u16IV, u16ZeroV);
     int16_t i16IW_mA = I_ADC_TO_MA_REF(u16IW, u16ZeroW);
 
-    /* 2nd-order Butterworth IIR (fc=200Hz, fs=50kHz, -40dB/dec) */
+    /* 2nd-order Butterworth IIR (designed for fc=200Hz @ fs=50kHz; actual trigger 100kHz → real fc ≈ 400Hz) */
     float fIU, fIV, fIW;
     if (!s_bBiquadInit) {
         /* Seed states with first sample (fast settling, no ramp-up) */
@@ -390,7 +390,7 @@ void I_Init(void)
 
 /**
  * @brief  Blocking zero-offset calibration.
- *         Samples all 3 current channels for 500ms at ~50kHz, computes
+ *         Samples all 3 current channels for 500ms at ~100kHz, computes
  *         per-phase average as the zero reference, and stores the offsets.
  * @note   Must be called AFTER I_Init and BEFORE motor starts.
  *         Blocks for 500ms using tickTimer_DelayMs.

@@ -11,7 +11,7 @@
  *          PA3 = ADC1_CH3 = W_BEMF  (W相反电动势)
  *
  *        数据流:
- *          TMR4_3 UDF (PWM中点) -> AOS -> ADC1_SEQ_A 触发扫描
+ *          TMR4_3 SCMP0 (PWM峰值) -> AOS -> ADC1_SEQ_A 触发扫描
  *          ADC1 EOCA -> AOS -> DMA1_CH0/1/2/3 各自搬运 DR0~DR3
  *          DMA block complete -> 更新数据 -> 可选回调
  *******************************************************************************

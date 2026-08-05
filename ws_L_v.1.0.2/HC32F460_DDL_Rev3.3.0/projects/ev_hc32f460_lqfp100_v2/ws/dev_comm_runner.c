@@ -23,7 +23,7 @@ static const uint8_t s_hall2step_cw[8]  = {0xFF, 5, 3, 4, 1, 0, 2, 0xFF};  /* CW
 static const uint8_t s_hall2step_ccw[8] = {0xFF, 2, 0, 1, 4, 3, 5, 0xFF};  /* CCW: sector +90° */
 
 /* Calibration-derived tables (computed from g_calib_table on mode 6/7 entry) */
-uint8_t g_calib_cw_table[8];   /* g_calib_table + 5 = sector -90°, mode 6 CW (Keil Watch visible) */
+uint8_t g_calib_cw_table[8];   /* g_calib_table + 4 = sector -90°, mode 6 CW (Keil Watch visible) */
 uint8_t g_calib_ccw_table[8];  /* g_calib_table + 2 = sector +90°, mode 7 CCW (Keil Watch visible) */
 
 /*=============================================================================
@@ -504,7 +504,7 @@ void CommRunner_Init(const comm_runner_config_t *cfg)
 
 /*=============================================================================
  * calib_build_derived_tables �?? build CW/CCW tables from g_calib_table.
- * CW: offset +5 (matches s_hall2step_cw)
+ * CW: offset +4 (matches s_hall2step_cw)
  * CCW: offset +2 (matches s_hall2step_ccw)
  *=============================================================================*/
 static void calib_build_derived_tables(void)

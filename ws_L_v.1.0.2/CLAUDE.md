@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-BLDC motor controller firmware for the HC32F460 (HDSC ARM Cortex-M4) MCU on the `ev_hc32f460_lqfp100_v2` evaluation board. Uses 6288T-MNS gate driver, 3-channel Hall-effect sensors (120° placement), trapezoidal 6-step commutation, and RS485/Modbus RTU for external control.
+BLDC motor controller firmware for the HC32F460 (HDSC ARM Cortex-M4) MCU on the `ev_hc32f460_lqfp100_v2` evaluation board. Uses 6288T-MNS gate driver, 3-channel Hall-effect sensors (120° placement), trapezoidal 6-step commutation, and RS485/Modbus RTU for external control (Modbus currently disabled - see Communication Stack status note).
 
 ## Build & Toolchain
 
@@ -48,8 +48,8 @@ projects/ev_hc32f460_lqfp100_v2/
 ├── ws/                           # Workspace — commutation engine
 │   ├── dev_comm_runner.c/h       # Top-level controller: CW/CCW step tables, mode state machine (STOP/OPEN_FW/OPEN_RV/CLOSED_FW/CLOSED_RV/CALIB/CALIB_CW/CALIB_CCW), calibration state machine, flying-start ramp
 │   ├── dev_commutation.c/h       # Six-step commutation state table: step→PWM mode/duty, lazy-update cache
-│   ├── hall_sensor_3ch.c/h       # 3-channel Hall driver: ISR, Hall→step lookup, M-method RPM, J-Scope globals, 5-layer noise defense
-│   ├── I.c/h                     # 3-phase current sensing: ADC1 SEQ_B (CH5/6/7), PWM-peak triggered, EMA-filtered, zero-offset calibration
+│   ├── hall_sensor_3ch.c/h       # 3-channel Hall driver: ISR, Hall→step lookup, M-method RPM, J-Scope globals, ISR noise defense
+│   ├── I.c/h                     # 3-phase current sensing: ADC1 SEQ_B (CH5/6/7), PWM-peak triggered, Biquad-filtered, zero-offset calibration
 │   ├── Bemf.c/h                  # BEMF observer: 4-channel ADC via DMA, PWM-peak triggered sampling (observer-only, no sensorless control)
 ├── Utils/                        # Utilities
 │   ├── param_manager.c/h         # Flash parameter persistence with CRC32 + magic header/tail
@@ -63,7 +63,7 @@ The order in `main.c` is mandatory — modules depend on their predecessors:
 
 ```
 Hardware_Init()        → Clocks, GPIO, AOS (Timer0→ADC1 via AOS_ADC1_0), tick timers
-App_Comm_Init()        → RS485 comms (independent of motor)
+App_Comm_Init()        → RS485 comms (currently disabled - #if 0 in main.c)
 tickTimer_DelayMs(5)   → Let hardware settle
 CommRunner_Init()      → TMR4_PWM_Config + TMR4_PWM_StartOutput (PWM now running!)
 Bemf_Init()            → AOS routing (overwrites AOS_ADC1_0 to TMR4_SCMP0) + ADC1_SEQ_A + DMA
@@ -84,6 +84,9 @@ rs485           → USART4 + PA03 + interrupt + DE direction control
 ```
 
 **Key design principle**: Each layer has strictly bounded knowledge. `App_Comm` doesn't know about RS485 vs CAN. `Protocol_ModbusRtu` doesn't know register meanings. `Comm_HAL` doesn't know protocol format. `rs485` doesn't know about framing. To switch to a different protocol (e.g., CANopen), create a new Protocol layer file implementing the same callback interface and swap it in `App_Comm_Init`. To switch to a different physical layer (e.g., RS232), create a new PHY file implementing the same HW interface signature.
+
+> **Status (2026-08)**: Modbus/RS485 is **currently disabled** in the active build. In `template/source/main.c`, `App_Comm_Init()` is inside `#if 0` and `App_Comm_Poll()` is commented out; PB12/PB13 are used by USART3 (VOFA+ @921600 baud). The Modbus architecture described below still exists in the repo but is not linked into the running firmware.
+
 
 ### Commutation Architecture (CommRunner)
 
@@ -118,7 +121,7 @@ Devices communicate via `EventBus` publish/subscribe with topic-based routing an
 ### Debug Interface (Keil Watch)
 
 Main loop dispatches mode changes via two volatile globals set from the Keil debugger:
-- `comm_mode` (0–7): Commutation mode
+- `comm_mode` (0–9): Commutation mode (modes 8/9 = PID_CW/CCW)
 - `g_comm_duty_pct` (2.0–98.0): PWM duty cycle
 
 `CommRunner_Update()` syncs actual mode back to `comm_mode` for stall-triggered STOP reflection.
@@ -128,7 +131,7 @@ Main loop dispatches mode changes via two volatile globals set from the Keil deb
 - **Device locking**: `dev_motor` uses `block_fwd`/`block_rev` bitmask fields. Multiple devices (overcurrent, RTurn limit) set bits independently; motor runs only when the mask is clear. This provides multi-source arbitration without priority ordering.
 - **Dual protection on overcurrent**: Both `dev_motor` (via `DEV_ID_OVERCUR_FWD`) and `dev_rturn` (via `DEV_ID_RTURN_FWD` + `TOPIC_RTURN_LIMIT`) block forward rotation on overcurrent alarm. If one fails, the other still protects.
 - **Lazy PWM update**: `dev_commutation.c` caches last channel modes and only calls `TMR4_PWM_SetChannelMode()` when the mode actually changes. Same-mode duty-only changes use `TMR4_PWM_SetDutyFloat()`. This avoids unnecessary register writes on every commutation step.
-- **Hall noise defense**: 5-layer filter in ISR: (1) hardware EXTINT filter DIV64, (2) state-unchanged early return, (3) <50µs interval rejection, (4) invalid code 000/111 rejection, (5) step adjacency check (diff must be ±1). PWM noise bursts produce ~13% BAD rate but are safely intercepted.
+- **Hall noise defense**: current ISR keeps only: (1) hardware EXTINT filter DIV64, (2) invalid code 000/111 rejection, (3) step adjacency check (diagnostic only - increments `g_dbg_isr_baddiff`, does not block). The former "state-unchanged early return" and "<50µs interval rejection" layers were removed from `hall_common_handler()`.
 - **Parameter persistence**: `AppParamRecord_t` stored in Flash with `head_magic`/`tail_magic` markers and CRC32 checksum. Supports wear-leveling via erase count tracking. Baud rate changes are persisted and apply on next init.
 - **Incremental DMA init**: `Dma_Init()` was modified to iterate all instances and skip only those already initialized, enabling multiple independent DMA users (BEMF + future modules) without conflicting.
 
@@ -193,9 +196,9 @@ Set `comm_mode = 5` in Keil Watch → wait for `g_calib_status = 2` → verify `
 
 BEMF is **observer-only** — no zero-crossing detection or sensorless commutation. Key design notes:
 
-- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 160µs (6.25kHz).
-- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 50kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
-- **Known issue**: BEMF reads driven phase voltage when motor is stopped. The correct approach is to only read the floating phase during six-step commutation (e.g., step 0 reads V, step 1 reads W, etc.). API `Bemf_GetFloatingPhaseBemf(uint8_t step)` is planned but not yet implemented.
+- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 80µs (12.5kHz) at 100kHz PWM.
+- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 100kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
+- **Known issue**: BEMF reads driven phase voltage when motor is stopped. The correct approach is to only read the **floating phase** during six-step commutation. This is now implemented: `Bemf_GetFloatingChannel()`, `Bemf_GetFloatingPhaseRaw()`, `Bemf_GetFloatingPhaseBemf()`, and `g_bemf_wave_data` is auto-selected in the DMA BTC ISR per `g_scope_step`. Floating-phase mapping (current code): step0 UH+VL→W, step1 UH+WL→V, step2 VH+WL→U, step3 VH+UL→W, step4 WH+UL→V, step5 WH+VL→U.
 - **Voltage calculation ignores resistor divider ratio**: Current mV conversion uses raw `ADC * 3300 / 4096` which gives ADC pin voltage, NOT actual phase voltage. Real circuit has resistor dividers — component values needed from schematic. See `bemf.md` for full details.
 - **PA0–PA3 conflict risk**: PA2 may conflict with USART2 alternate functions.
 
@@ -250,7 +253,10 @@ J-Link + J-Scope in HSS mode, loading `template/MDK/output/debug/template.axf`. 
 - `g_bemf_u_raw`, `g_bemf_v_raw`, `g_bemf_w_raw` — raw ADC
 
 **Current** (in `I.c`):
-- `g_i_iu_filt`, `g_i_iv_filt`, `g_i_iw_filt` — EMA-filtered current (Q8: divide by 256 for mA)
+- `g_i_iu_filt`, `g_i_iv_filt`, `g_i_iw_filt` — Biquad-filtered current (Q8: divide by 256 for mA)
+
+> **Note**: the Biquad coefficients in `ws/I.c` were designed for fs=50kHz (`butter(2, 200/25000)`). With the current 100kHz PWM the ADC1 trigger fires at ~100kHz, so the real -3dB cutoff is ~400Hz (not 200Hz). If 200Hz is required, redesign with `butter(2, 200/50000)`.
+
 - `g_i_iu_disp`, `g_i_iv_disp`, `g_i_iw_disp` — display-friendly (mA + 10000 offset)
 - `g_i_uvw_ma` — three-phase sum (should be ~0)
 

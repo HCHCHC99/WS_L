@@ -20,7 +20,7 @@ typedef enum {
     COMM_RUNNER_CLOSED_FW  = 3,  /* 飞启→闭�正转 */
     COMM_RUNNER_CLOSED_RV  = 4,  /* 飞启→闭�反转 */
     COMM_RUNNER_CALIB      = 5,  /* Open-loop calibration: auto-derive Hall-to-Step 0deg table */
-    COMM_RUNNER_CALIB_CW   = 6,  /* 500ms open-loop -> closed-loop CW  using calib table +5 */
+    COMM_RUNNER_CALIB_CW   = 6,  /* 500ms open-loop -> closed-loop CW  using calib table +4 */
     COMM_RUNNER_CALIB_CCW  = 7,  /* 500ms open-loop -> closed-loop CCW using calib table +2 */
     COMM_RUNNER_PID_CW     = 8,  /* Calib table + Hall closed-loop + PID speed control CW */
     COMM_RUNNER_PID_CCW    = 9,  /* Calib table + Hall closed-loop + PID speed control CCW */
@@ -57,7 +57,7 @@ typedef struct {
 extern volatile calib_status_t      g_calib_status;
 extern volatile calib_error_detail_t g_calib_error;
 extern volatile uint8_t  g_calib_table[8];             /* Hall_state -> step (0-offset); entries 0/7 = 0xFF */
-extern uint8_t  g_calib_cw_table[8];          /* Calib-derived CW table: = (g_calib_table + 5) % 6 (mode 6) */
+extern uint8_t  g_calib_cw_table[8];          /* Calib-derived CW table: = (g_calib_table + 4) % 6 (mode 6) */
 extern uint8_t  g_calib_ccw_table[8];         /* Calib-derived CCW table: = (g_calib_table + 2) % 6 (mode 7) */
 extern volatile uint8_t  g_calib_valid_cycles;         /* Completed valid electrical cycles */
 extern volatile uint8_t  g_calib_total_steps;          /* Total step transitions counted */

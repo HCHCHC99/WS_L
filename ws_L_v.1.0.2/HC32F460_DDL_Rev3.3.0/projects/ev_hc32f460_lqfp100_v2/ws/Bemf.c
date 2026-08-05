@@ -210,7 +210,7 @@ static void Bemf_DataCallback(void)
     }
 
     /* Read averaged values from each DMA buffer (8-tap moving average,
-     * -3dB @ 6.25kHz, suppresses PWM switching noise at 100kHz) */
+     * first null @12.5kHz (fs=100kHz / 8 taps), suppresses PWM switching noise at 100kHz) */
     uint16_t u16M = Dma_GetAverageValue(s_au8DmaId[0]);
     uint16_t u16U = Dma_GetAverageValue(s_au8DmaId[1]);
     uint16_t u16V = Dma_GetAverageValue(s_au8DmaId[2]);

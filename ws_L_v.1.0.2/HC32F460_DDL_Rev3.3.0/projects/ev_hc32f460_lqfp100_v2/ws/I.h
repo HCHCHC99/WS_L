@@ -11,11 +11,11 @@
  *          ±2.5A range, 3.3V / 12-bit ADC, zero = 2048 raw
  *
  *        Trigger chain:
- *          TMR4_3 SCMP2 (PWM peak) �? AOS_ADC1_1 �? ADC1_SEQ_B �? EOCB ISR
+ *          TMR4_3 SCMP0 (PWM peak) → AOS_ADC1_0 (EVT0) → ADC1_SEQ_B → EOCB ISR
  *
  *        ADC1 layout:
  *          SEQ_A (CH0-CH3): BEMF, TMR4_3 SCMP0 �? AOS_ADC1_0 �? DMA
- *          SEQ_B (CH5-CH7): Current, TMR4_3 SCMP2 �? AOS_ADC1_1 �? ISR
+ *          SEQ_B (CH5-CH7): Current, TMR4_3 SCMP0 → AOS_ADC1_0 (EVT0, shared with BEMF) → ISR
  *******************************************************************************
  */
 
@@ -112,7 +112,7 @@ extern volatile int16_t  g_i_iu_ma;
 extern volatile int16_t  g_i_iv_ma;
 extern volatile int16_t  g_i_iw_ma;
 
-/* EMA-filtered current (mA × 256, Q8 fixed-point, J-Scope: value/256 = mA) */
+/* Biquad-filtered current (mA × 256, Q8 fixed-point, J-Scope: value/256 = mA) */
 extern volatile int32_t  g_i_iu_filt;
 extern volatile int32_t  g_i_iv_filt;
 extern volatile int32_t  g_i_iw_filt;

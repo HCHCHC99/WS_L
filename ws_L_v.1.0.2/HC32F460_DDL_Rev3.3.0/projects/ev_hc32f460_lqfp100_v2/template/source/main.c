@@ -142,10 +142,10 @@ int main(void)
     };
     CommRunner_Init(&runner_cfg);
 
-    /* ---- BEMF 初始�? (PWM 已启�?, TMR4_3 正在运行) ---- */
+    /* ---- BEMF 初始化 (PWM 已启动, TMR4_3 正在运行) ---- */
     Bemf_Init();
 
-    /* ---- 电流采样初始�? (ADC1_SEQ_B, PWM peak 触发, 50kHz) ---- */
+    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 100kHz) ---- */
     I_Init();
 
     /* ---- 电流零偏校准 (阻塞500ms, 电机必须静止) ---- */
@@ -153,7 +153,7 @@ int main(void)
 
     EventBus_Enable();
 
-    /* ---- 电流 VOFA+ 全速发送 (DMA 背压, ~720Hz max @115200) ---- */
+    /* ---- 电流 VOFA+ 全速发送 (DMA 背压, ~2.9kHz max @921600, 16ch) ---- */
 
     /* ---- 主循环 ---- */
     static int   s_prev_mode     = -1;
@@ -217,7 +217,7 @@ int main(void)
         if (!Usart3_Vofa_IsTxBusy()) {
             int32_t cur[16];
 
-            /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈400Hz @6.25kHz)
+            /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈100Hz @12.5kHz BTC rate)
              * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
             #define BEMF_EMA_ALPHA  0.05f
             static float s_fEmaM = 0.0f, s_fEmaU = 0.0f, s_fEmaV = 0.0f, s_fEmaW = 0.0f;

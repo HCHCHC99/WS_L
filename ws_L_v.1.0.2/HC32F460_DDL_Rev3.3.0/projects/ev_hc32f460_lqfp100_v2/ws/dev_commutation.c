@@ -146,6 +146,43 @@ void Commutation_Step(uint8_t state, uint16_t freq_hz, float duty_pct)
 
     (void)state;
 }
+uint8_t Commutation_GetPwmChannel(uint8_t step)
+{
+    if (step > 5U) {
+        return 0xFFu;
+    }
+    for (int ch = 0; ch < 3; ch++) {
+        if (s_states[step][ch * 2U] == M_HIGH) {
+            return (uint8_t)ch;
+        }
+    }
+    return 0xFFu;
+}
+
+void Commutation_SetActiveDuty(uint8_t step, float duty_pct)
+{
+    uint8_t ch;
+
+    if (step > 5U) {
+        return;
+    }
+
+    if (duty_pct < COMM_DUTY_MIN_F) {
+        duty_pct = COMM_DUTY_MIN_F;
+    }
+    if (duty_pct > COMM_DUTY_MAX_F) {
+        duty_pct = COMM_DUTY_MAX_F;
+    }
+
+    ch = Commutation_GetPwmChannel(step);
+    if (ch == 0xFFu) {
+        return;
+    }
+
+    TMR4_PWM_SetDutyFloat((tmr4_pwm_channel_t)ch, duty_pct);
+    s_last_ch_duty[ch] = duty_pct;   /* keep lazy-update cache consistent */
+}
+
 
 /*=============================================================================
  * Commutation_Stop - All phases to OFF (both pins LOW → 6288T-MNS both FETs OFF)

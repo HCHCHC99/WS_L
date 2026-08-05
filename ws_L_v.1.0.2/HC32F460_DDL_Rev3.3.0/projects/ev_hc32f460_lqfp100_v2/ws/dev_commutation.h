@@ -53,4 +53,11 @@ const char* Commutation_GetHighPhase(uint8_t step);   /* "UH"/"VH"/"WH" */
 const char* Commutation_GetLowPhase(uint8_t step);    /* "UL"/"VL"/"WL" */
 uint16_t    Commutation_GetFieldAngle(uint8_t step);  /* 0-360 degrees */
 
+/* Return the channel (0=U,1=V,2=W) that carries PWM duty in this step; 0xFF if none */
+uint8_t Commutation_GetPwmChannel(uint8_t step);
+
+/* Mid-step duty update: write OCCR of the active PWM (high-side) channel for this step.
+ * Clamps 2%~98%, keeps per-channel cache consistent. Safe to call from ISR. */
+void Commutation_SetActiveDuty(uint8_t step, float duty_pct);
+
 #endif /* __DEV_COMMUTATION_H__ */

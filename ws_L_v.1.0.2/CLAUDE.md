@@ -198,8 +198,8 @@ Set `comm_mode = 5` in Keil Watch → wait for `g_calib_status = 2` → verify `
 
 BEMF is **observer-only** — no zero-crossing detection or sensorless commutation. Key design notes:
 
-- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 80µs (12.5kHz) at 100kHz PWM.
-- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 100kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
+- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 160µs (6.25kHz) at 50kHz PWM.
+- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 50kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
 - **Known issue**: BEMF reads driven phase voltage when motor is stopped. The correct approach is to only read the **floating phase** during six-step commutation. This is now implemented: `Bemf_GetFloatingChannel()`, `Bemf_GetFloatingPhaseRaw()`, `Bemf_GetFloatingPhaseBemf()`, and `g_bemf_wave_data` is auto-selected in the DMA BTC ISR per `g_scope_step`. Floating-phase mapping (current code): step0 UH+VL→W, step1 UH+WL→V, step2 VH+WL→U, step3 VH+UL→W, step4 WH+UL→V, step5 WH+VL→U.
 - **Voltage calculation ignores resistor divider ratio**: Current mV conversion uses raw `ADC * 3300 / 4096` which gives ADC pin voltage, NOT actual phase voltage. Real circuit has resistor dividers — component values needed from schematic. See `bemf.md` for full details.
 - **PA0–PA3 conflict risk**: PA2 may conflict with USART2 alternate functions.
@@ -257,7 +257,7 @@ J-Link + J-Scope in HSS mode, loading `template/MDK/output/debug/template.axf`. 
 **Current** (in `I.c`):
 - `g_i_iu_filt`, `g_i_iv_filt`, `g_i_iw_filt` — Biquad-filtered current (Q8: divide by 256 for mA)
 
-> **Note**: the Biquad coefficients in `ws/I.c` were designed for fs=50kHz (`butter(2, 200/25000)`). With the current 100kHz PWM the ADC1 trigger fires at ~100kHz, so the real -3dB cutoff is ~400Hz (not 200Hz). If 200Hz is required, redesign with `butter(2, 200/50000)`.
+> **Note**: PWM runs at 50kHz and the Biquad in `ws/I.c` is designed for fs=50kHz (`butter(2, 200/25000)`), so the real -3dB cutoff is 200Hz as designed. The current loop uses a decimated window average of raw `g_i_*_ma`, not the Biquad output.
 
 - `g_i_iu_disp`, `g_i_iv_disp`, `g_i_iw_disp` — display-friendly (mA + 10000 offset)
 - `g_i_uvw_ma` — three-phase sum (should be ~0)

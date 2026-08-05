@@ -3,8 +3,8 @@
  * @file  cur_loop.c
  * @brief 10kHz current PI loop for six-step BLDC (learning)
  *
- *        Mounted on ADC1 EOCB ISR (100kHz) via I_RegisterCallback, decimated
- *        by CURLOOP_DECIMATION (10 -> 10kHz control rate).
+ *        Mounted on ADC1 EOCB ISR (50kHz) via I_RegisterCallback, decimated
+ *        by CURLOOP_DECIMATION (5 -> 10kHz control rate).
  *        Feedback: active high-side phase current (from fixed state table,
  *        selected by g_scope_step), window-averaged over the decimation window.
  *        dt: measured from Timer6 microsecond timestamp.
@@ -21,7 +21,7 @@
 #include "dev_comm_runner.h"
 #include "timer6_timebase.h"
 
-#define CURLOOP_DECIMATION   10u   /* 100kHz / 10 = 10kHz */
+#define CURLOOP_DECIMATION   5u    /* 50kHz / 5 = 10kHz */
 #define CURLOOP_DT_FIRST_US  100u  /* assumed 10kHz period for the very first call */
 
 /* Keil Watch: current setpoint (mA) */

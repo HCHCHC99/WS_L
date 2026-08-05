@@ -28,7 +28,7 @@
 
 ### 2.1 电流检测（`ws/I.c`）
 - ADC1 SEQ_B 在 PWM 峰值触发，EOCB 中断 **100kHz**，每拍更新 `g_i_iu_ma / iv / iw`（**无滤波瞬时 mA**，`I.c:305`）。
-- `g_i_*_filt / disp` 是 Biquad 滤波值：系数按 fs=50kHz 设计，实际采样 100kHz → **真实 fc≈400Hz、相位滞后大，禁止用于控制**，只作显示。
+- `g_i_*_filt / disp` 是 Biquad 滤波值：系数按 fs=50kHz 设计，实际采样 100kHz → **真实 fc≈200Hz、相位滞后大，禁止用于控制**，只作显示。
 - `I_RegisterCallback()` 已存在，回调在 **EOCB ISR 上下文**执行（`I.c:541`）——正好作为电流环挂载点。
 
 ### 2.2 占空比施加路径（`ws/dev_comm_runner.c` / `dev_commutation.c`）
@@ -39,7 +39,7 @@
 - 周期 CPSR 缓冲：`TMR4_PeriodBufCmd(ENABLE)`（`tmr4_pwm.c:221`）。
 - 比较值 OCCR / 比较模式 OCMR 缓冲：`Shadow_ApplyOC()` 统一设为 `TMR4_OC_BUF_COND_PEAK`（`tmr4_pwm.c:60-71`）。
 - DDL 实现：`TMR4_OC_SetCompareValue()` 直写 OCCR，但缓冲模式下硬件在**下一个 PWM 峰值**才搬运生效。
-- 结论：**新占空比在 100kHz 下 ≤10µs 内无毛刺生效**，电流环无需处理影子寄存器。
+- 结论：**新占空比在 50kHz 下 ≤20µs 内无毛刺生效**，电流环无需处理影子寄存器。
 
 ### 2.4 Timer6 µs 时基（`Adp/timer6_timebase.c`）——现成✅
 - PCLK0 200MHz ÷ 64 = **3.125MHz（0.32µs 分辨率）**。
@@ -57,7 +57,7 @@
 
 ### 3.1 电流环节拍：复用 ADC1 EOCB ISR + 抽取计数
 - 挂载点：`I_RegisterCallback()`（100kHz 每拍调用，ISR 上下文）。
-- 抽取：回调内部计数，**每 N 拍执行一次电流环**（N=10 → 10kHz；N=20 → 5kHz，先选 10kHz）。
+- 抽取：回调内部计数，**每 N 拍执行一次电流环**（N=5 → 10kHz；N=10 → 5kHz，先选 10kHz）。
 - 为什么不用主循环 / 新开 200µs 中断：
   - 主循环含 VOFA+ 16 通道发送、BEMF EMA、日志，执行时间不确定，控制周期会抖动；
   - 新开 Timer6 200µs 中断需改 Period + 修 wrap 常量 + NVIC 注册，改动面大且会动到 Hall 依赖的共享时基（不推荐）。
@@ -210,9 +210,9 @@ flowchart LR
 ---
 
 ## 附录 A：本次已确认的硬件/代码事实（避免重复排查）
-- PWM=100kHz（PCLK1=100MHz，TMR4 DIV1，`main.c:107`）。
-- ADC 采样=100kHz；BEMF DMA BTC=12.5kHz（8 点缓冲）。
-- 电流 Biquad 系数按 fs=50kHz 设计 → 真实 fc≈400Hz（控制不用它）。
+- PWM=50kHz（PCLK1=100MHz，TMR4 DIV1，`main.c:107`）。
+- ADC 采样=50kHz；BEMF DMA BTC=6.25kHz（8 点缓冲）。
+- 电流 Biquad 系数按 fs=50kHz 设计 → 真实 fc≈200Hz（控制不用它）。
 - 影子寄存器已配好，占空比在下一个 PWM 峰值生效（≤10µs）。
 - Timer6 µs 时基现成；勿改 Period（wrap 常量硬编码）。
 - 校准流程 mode 5→6/7；反馈相选择查 `s_states` 固定表，与校准表无关。

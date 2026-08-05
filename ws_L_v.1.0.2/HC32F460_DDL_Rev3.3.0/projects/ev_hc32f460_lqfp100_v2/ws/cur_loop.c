@@ -20,6 +20,8 @@
 #include "dev_commutation.h"
 #include "dev_comm_runner.h"
 #include "timer6_timebase.h"
+#include "TickTimer.h"
+#include "rtt_log.h"
 
 #define CURLOOP_DECIMATION   5u    /* 50kHz / 5 = 10kHz */
 #define CURLOOP_DT_FIRST_US  100u  /* assumed 10kHz period for the very first call */
@@ -97,11 +99,26 @@ static void curloop_isr(const stc_i_data_t *pData)
 
         float duty = PID_UpdateUs(&s_pid, g_i_ref_ma, fb, dt_us);
         Commutation_SetActiveDuty(g_scope_step, duty);
+        /* Keep runner s_duty in sync so the next Hall edge re-applies the same
+         * duty instead of the open-loop default (80%). */
+        CommRunner_SetDuty(duty);
 
         g_scope_i_ref  = g_i_ref_ma;
         g_scope_i_fb   = fb;
         g_scope_i_duty = duty;
         g_scope_i_err  = g_i_ref_ma - fb;
+
+        {
+            static uint32_t s_last_dbg = 0;
+            uint32_t now_ms = (uint32_t)tickTimer_GetCount();
+            if ((now_ms - s_last_dbg) >= 500u) {
+                s_last_dbg = now_ms;
+                MAIN_D("[CURLOOP] ref=%d fb=%d err=%d duty=%d%% i=%d dt=%luus step=%u",
+                       (int)g_i_ref_ma, (int)fb, (int)(g_i_ref_ma - fb),
+                       (int)(duty * 10) / 10, (int)s_pid.i_term,
+                       (unsigned long)dt_us, (unsigned)g_scope_step);
+            }
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 #include "TickTimer.h"
+#include "hc32f4xx.h"
 #include <stddef.h>
 
 static volatile uint64_t s_tickCount = 0;
@@ -14,9 +15,9 @@ void tickTimer_Init(void)
 // Systick.c 中添加函数实现
 uint64_t tickTimer_GetRawTick(void) {
     uint64_t tick;
-    //__disable_irq();  // 关中断，避免读取时被中断修改（保证数据完整性）
+    __disable_irq();   /* atomic 64-bit read: block the tick ISR while reading */
     tick = s_tickCount;
-    //__enable_irq();
+    __enable_irq();
     return tick;
 }
 
@@ -24,9 +25,9 @@ uint64_t tickTimer_GetRawTick(void) {
 uint64_t tickTimer_GetCount(void)
 {
     uint64_t tick;
-    //__disable_irq();
+    __disable_irq();   /* atomic 64-bit read: prevents tearing with tickTimer_Update() */
     tick = s_tickCount;
-    //__enable_irq();
+    __enable_irq();
     return tick;
 }
 

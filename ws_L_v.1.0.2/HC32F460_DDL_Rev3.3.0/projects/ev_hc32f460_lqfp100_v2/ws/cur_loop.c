@@ -24,7 +24,6 @@
 #include "rtt_log.h"
 
 #define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average at 50kHz (~100us) */
-#define CURLOOP_DT_FIRST_US  20u    /* assumed 50kHz period for the very first call */
 #define CURLOOP_DUTY_RATE    1.0f  /* max duty change per control cycle (%) */
 
 /* Keil Watch: current setpoint (mA) */
@@ -130,7 +129,10 @@ static void curloop_isr(const stc_i_data_t *pData)
     uint64_t now = Timer6_Timebase_GetTimestamp();
     uint32_t dt_us;
     if (s_last_us == 0) {
-        dt_us = CURLOOP_DT_FIRST_US;
+        /* First call: use the nominal period derived from the ACTUAL PWM config,
+         * so the log matches the real frequency without manual edits. */
+        uint32_t f = CommRunner_GetPwmFreqHz();
+        dt_us = (f != 0u) ? (1000000u / f) : 40u;
     } else {
         dt_us = (uint32_t)(now - s_last_us);
     }

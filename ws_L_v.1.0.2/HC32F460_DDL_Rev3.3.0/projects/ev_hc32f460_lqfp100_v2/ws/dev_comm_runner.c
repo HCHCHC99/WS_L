@@ -658,6 +658,14 @@ comm_runner_mode_t CommRunner_GetMode(void)
 }
 
 /*=============================================================================
+ * CommRunner_GetPwmFreqHz - actual configured PWM frequency (Hz)
+ *=============================================================================*/
+uint32_t CommRunner_GetPwmFreqHz(void)
+{
+    return s_cfg.pwm_freq_hz;
+}
+
+/*=============================================================================
  * CommRunner_SetDuty
  *=============================================================================*/
 void CommRunner_SetDuty(float duty_pct)

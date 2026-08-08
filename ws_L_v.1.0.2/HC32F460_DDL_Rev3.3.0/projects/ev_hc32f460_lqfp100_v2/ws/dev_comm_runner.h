@@ -118,6 +118,9 @@ void CommRunner_SetMode(comm_runner_mode_t mode);
 /* 获取当前模式 */
 comm_runner_mode_t CommRunner_GetMode(void);
 
+/* Actual configured PWM frequency (Hz); 0 if not initialized */
+uint32_t CommRunner_GetPwmFreqHz(void);
+
 /* 动��置占空� (��模式下实时生�) */
 void CommRunner_SetDuty(float duty_pct);
 

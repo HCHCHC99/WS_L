@@ -68,7 +68,7 @@ projects/ev_hc32f460_lqfp100_v2/
 - `MOTOR_LOOP_POSITION_ENABLE` / `MOTOR_LOOP_SPEED_ENABLE` / `MOTOR_LOOP_CURRENT_ENABLE` + `MOTOR_CUR_REF_SRC` + `MOTOR_DUTY_SRC` select current-loop only / speed-loop only / cascade.
 - `comm_mode = 11` (`COMM_RUNNER_CASCADE_FW`) runs the cascade; chain: pos → speed → current → duty.
 - Speed-loop Keil Watch variables: `g_target_rpm`, `g_spd_pid_cfg`; current limit `g_i_ref_max_ma`.
-- Position loop reserved: `g_target_pos` (`pos_loop.c/h` stub, `PosLoop_GetPos()` returns 0).
+- Position loop reserved: `g_target_pos` (runner global variable, used with the `ws/pos_loop.c/h` stub; `PosLoop_GetPos()` returns 0).
 
 ### Init Order (Critical)
 
@@ -113,6 +113,7 @@ STOP(0) → OPEN_FW(1)/OPEN_RV(2) → open-loop ramp at constant interval
        → CALIB(5) → open-loop + Hall edge detection → derive 0° offset table → motor stops automatically
        → CALIB_CW(6)/CALIB_CCW(7) → load derived tables + offsets → closed-loop
        → CURLOOP_FW(10) → timed open loop (calib-anchored, forward/CW table) → current PI (duty from ADC ISR)
+       → CASCADE_FW(11) → macro-topology cascade (speed loop → current loop → duty per motor_config.h)
 ```
 
 - **Hall→Step tables**: The CW table (`s_hall2step_cw`) uses `reverse_map` (sector -90°), CCW table uses `forward_map` (sector +90°). These are **swapped** relative to their names because this motor's CW rotation corresponds to decreasing electrical angle.
@@ -135,7 +136,7 @@ Devices communicate via `EventBus` publish/subscribe with topic-based routing an
 ### Debug Interface (Keil Watch)
 
 Main loop dispatches mode changes via two volatile globals set from the Keil debugger:
-- `comm_mode` (0–10): Commutation mode (8/9 = PID_CW/CCW, 10 = CURLOOP_FW current PI)
+- `comm_mode` (0–11): Commutation mode (8/9 = PID_CW/CCW, 10 = CURLOOP_FW current PI, 11 = CASCADE_FW macro-topology cascade)
 - `g_comm_duty_pct` (2.0–98.0): PWM duty cycle
 
 `CommRunner_Update()` syncs actual mode back to `comm_mode` for stall-triggered STOP reflection.
@@ -210,8 +211,8 @@ Set `comm_mode = 5` in Keil Watch → wait for `g_calib_status = 2` → verify `
 
 BEMF is **observer-only** — no zero-crossing detection or sensorless commutation. Key design notes:
 
-- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 160µs (6.25kHz) at 50kHz PWM.
-- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 50kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
+- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 400µs (2.5kHz) at 20kHz PWM.
+- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 20kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
 - **Known issue**: BEMF reads driven phase voltage when motor is stopped. The correct approach is to only read the **floating phase** during six-step commutation. This is now implemented: `Bemf_GetFloatingChannel()`, `Bemf_GetFloatingPhaseRaw()`, `Bemf_GetFloatingPhaseBemf()`, and `g_bemf_wave_data` is auto-selected in the DMA BTC ISR per `g_scope_step`. Floating-phase mapping (current code): step0 UH+VL→W, step1 UH+WL→V, step2 VH+WL→U, step3 VH+UL→W, step4 WH+UL→V, step5 WH+VL→U.
 - **Voltage calculation ignores resistor divider ratio**: Current mV conversion uses raw `ADC * 3300 / 4096` which gives ADC pin voltage, NOT actual phase voltage. Real circuit has resistor dividers — component values needed from schematic. See `bemf.md` for full details.
 - **PA0–PA3 conflict risk**: PA2 may conflict with USART2 alternate functions.
@@ -269,7 +270,7 @@ J-Link + J-Scope in HSS mode, loading `template/MDK/output/debug/template.axf`. 
 **Current** (in `I.c`):
 - `g_i_iu_filt`, `g_i_iv_filt`, `g_i_iw_filt` — Biquad-filtered current (Q8: divide by 256 for mA)
 
-> **Note**: PWM / ADC / current-loop frequency is set by ONE macro: `MOTOR_PWM_FREQ_HZ` in `ws/motor_config.h` (default 20kHz). The Biquad in `ws/I.c` is designed for fs=50kHz, so the real -3dB cutoff scales as 200Hz ? PWM/50k (display only). The current loop uses a 5-tap sliding average of raw `g_i_*_ma`, not the Biquad output.
+> **Note**: PWM / ADC / current-loop frequency is set by ONE macro: `MOTOR_PWM_FREQ_HZ` in `ws/motor_config.h` (default 20kHz). The Biquad in `ws/I.c` is designed for fs=50kHz, so the real -3dB cutoff scales as 200Hz ? PWM/50k (display only). The current loop uses a sliding average of raw `g_i_*_ma` whose window scales with `MOTOR_PWM_FREQ_HZ` (20kHz → 4 taps), not the Biquad output.
 
 - `g_i_iu_disp`, `g_i_iv_disp`, `g_i_iw_disp` — display-friendly (mA + 10000 offset)
 - `g_i_uvw_ma` — three-phase sum (should be ~0)

@@ -85,7 +85,7 @@ void Commutation_SetActiveDuty(uint8_t state, float duty_pct);
 - 行为：占空比 clamp 2%~98% → 按 `s_states[state]` 找 `D_PWM` 通道 → `TMR4_PWM_SetDutyFloat(ch, duty)` → **同步 `s_last_ch_duty[ch]` 缓存**。
 - 缓存同步是必须的：否则 `Commutation_Step` 的懒更新逻辑会误判"占空比没变"而跳过更新，导致硬件和缓存不一致。
 - 要求：ISR 内调用，保持精简（无 printf、无阻塞）。
-- 生效延迟：≤1 个 PWM 周期（≤20µs），远小于控制周期，视为即时。
+- 生效延迟：≤1 个 PWM 周期（20kHz 下 ≤50µs），远小于控制周期，视为即时。
 
 ### 3.5 电流环 ISR 数据流（示意）
 ```mermaid
@@ -93,7 +93,7 @@ flowchart LR
     PWM["TMR4_3 峰值"] --> ADC["ADC1 SEQ_B"]
     ADC --> ISR["EOCB ISR (20kHz)"]
     ISR --> CB["I_RegisterCallback"]
-    CB --> ACC["滑窗平均 5点"]
+    CB --> ACC["滑窗平均 4点（20k）"]
     ACC -->|"每次 EOCB"| CTL["PID_UpdateUs(dt=Timer6)"]
     CTL --> DUTY["Commutation_SetActiveDuty"]
     DUTY --> OCCR["写 OCCR → 下个峰值生效"]
@@ -213,7 +213,7 @@ flowchart LR
 - PWM/ADC/电流环频率由 **`ws/motor_config.h` 的 `MOTOR_PWM_FREQ_HZ` 单一宏配置**（默认 20kHz；PCLK1=100MHz，TMR4 DIV1）。
 - ADC 采样=20kHz；BEMF DMA BTC=2.5kHz（8 点缓冲）。
 - 电流 Biquad 系数按 fs=50kHz 设计 → 实际 20kHz 下真实 fc≈80Hz（控制不用它）。
-- 影子寄存器已配好，占空比在下一个 PWM 峰值生效（≤10µs）。
+- 影子寄存器已配好，占空比在下一个 PWM 峰值生效（≤50µs）。
 - Timer6 µs 时基现成；勿改 Period（wrap 常量硬编码）。
 - 校准流程 mode 5→6/7；反馈相选择查 `s_states` 固定表，与校准表无关。
 - HB 工程 `timer6_timebase.c/.h` 与当前工程相同，**没有**"200µs 中断"实现；其"200µs"只是 dev_sensor 里 ADC 采样周期的注释。

@@ -217,3 +217,55 @@ flowchart LR
 - Timer6 µs 时基现成；勿改 Period（wrap 常量硬编码）。
 - 校准流程 mode 5→6/7；反馈相选择查 `s_states` 固定表，与校准表无关。
 - HB 工程 `timer6_timebase.c/.h` 与当前工程相同，**没有**"200µs 中断"实现；其"200µs"只是 dev_sensor 里 ADC 采样周期的注释。
+---
+
+## 参数快照（2026-08-09，电流环已闭环可运行）
+
+> 记录时 HEAD：`d6cc468`；工作区 `MOTOR_PWM_FREQ_HZ = 20000u`（本次一并提交）。
+
+### 频率与采样
+| 项 | 值 |
+|---|---|
+| `MOTOR_PWM_FREQ_HZ` | **20000u（20kHz）** |
+| PWM / ADC / 电流环 | 1:1 = 20kHz（每次 EOCB 执行一次 PI） |
+| 反馈滑窗 `CURLOOP_WIN_SIZE` | **4 点（≈200µs）**（自适应：10k=2、20k=4、25k=5、50k=10） |
+
+### 电流环 PID（`g_cur_pid_cfg`，Keil Watch 可在线调）
+| 参数 | 值 | 说明 |
+|---|---|---|
+| enabled / p_valid / i_valid / d_valid | 1 / 1 / 1 / 0 | **PI，D 关** |
+| Kp | **0.1** %/mA | 因 200µs 窗口延迟已从 0.2 下调 |
+| Ki | **0.1** %/(mA·s) | 同上 |
+| Kd | 0.0 | — |
+| output_min / output_max | 2% / 98% | 预驱安全限幅 |
+| integral_max | 500 mA·s | 抗饱和 |
+| i_term_max | 20% | I 项输出独立限幅 |
+| update_ms | 0 | 每拍全速 |
+
+### 反馈与软启动
+| 项 | 值 |
+|---|---|
+| 反馈处理 | 滑窗平均 + 换相沿 blanking（`g_scope_step` 变化即清窗，窗口填满才跑 PID） |
+| 占空比限速 `CURLOOP_DUTY_RATE` | ±1%/拍 |
+| ref 软启动斜坡 `CURLOOP_REF_RAMP_MS` | 1000ms（从交接实测电流爬到 `g_i_ref_ma`） |
+| `g_i_ref_ma` 默认 | 800（测试常用 400） |
+
+### mode 10 流程
+| 阶段 | 配置 |
+|---|---|
+| 开环（定时强拖） | `dir_fw=0`（步序递减），进入时用 `g_calib_table[hall]` 对准起始步；斜坡 20000→3000µs / 2000ms，默认 duty 80% |
+| 闭环 | `g_calib_cw_table`（+4）+ `HALL3_DIR_FORWARD` → 电流环接管 |
+| 堵转 | `stall_timeout_ms = 500`，检测改用 1ms tickTimer + 近回绕防护 |
+
+### VOFA+（19 通道）
+- CH17 = `g_i_ref_ma`（最终目标电流，A）
+- CH18 = `g_scope_i_fb`（当前实测电流，A）
+- CH19 = `g_scope_i_ref`（下一步给定/斜坡，A）
+
+### 调试打印（RTT）
+- `[CURLOOP] ref=.. fb=.. err=.. duty=..% i=.. dt=..us step=..`（每 500ms）
+- `[CURLOOP] STALL: age=..ms rpm=.. step=.. sub=.. ref=.. fb=.. duty_x10=.. err=.. dt=..us`（堵转时）
+
+### 已知待办
+- 50k 下 VOFA 可能被 ISR 饿死（USART3 DMA TC 中断优先级 `DDL_IRQ_PRIO_DEFAULT` 太低，可选改 `DDL_IRQ_PRIO_04`）；
+- 电流环 dt 仍用 Timer6 64 位时间戳（未做原子化，偶发尖峰时优先检查这里）。

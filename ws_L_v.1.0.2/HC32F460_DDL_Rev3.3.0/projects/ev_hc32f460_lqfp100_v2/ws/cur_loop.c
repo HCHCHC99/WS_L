@@ -22,8 +22,18 @@
 #include "timer6_timebase.h"
 #include "TickTimer.h"
 #include "rtt_log.h"
+#include "motor_config.h"
 
-#define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average (window scales with PWM freq) */
+/* Feedback window: keep ~100-200us of averaging across frequencies.
+ * WIN_SIZE scales with MOTOR_PWM_FREQ_HZ so a low-frequency loop does not
+ * get a long time-domain window (which delays the handoff response). */
+#if   MOTOR_PWM_FREQ_HZ >= 50000u
+  #define CURLOOP_WIN_SIZE 5u
+#elif MOTOR_PWM_FREQ_HZ >= 25000u
+  #define CURLOOP_WIN_SIZE 3u
+#else
+  #define CURLOOP_WIN_SIZE 2u
+#endif
 #define CURLOOP_DUTY_RATE    1.0f  /* max duty change per control cycle (%) */
 
 /* Keil Watch: current setpoint (mA) */
@@ -61,6 +71,7 @@ static uint64_t s_last_us = 0;
 static uint8_t  s_inited  = 0;
 static float    s_ol_current_ma = 0.0f;   /* EMA of active-phase current during open-loop ramp */
 static float    s_last_duty      = 80.0f; /* last applied duty (rate-limiter state) */
+static uint8_t  s_last_step     = 0xFFu; /* last g_scope_step seen (edge blanking) */
 
 static int16_t curloop_feedback(const stc_i_data_t *pData)
 {
@@ -107,9 +118,17 @@ static void curloop_isr(const stc_i_data_t *pData)
         s_last_duty  = CommRunner_GetDuty();
         PID_Reset(&s_pid);
         curloop_win_reset();
+        s_last_step  = g_scope_step;
     }
 
-    /* Sliding 5-tap average of the active-phase current (every ADC sample) */
+    /* Commutation edge blanking: on a step change flush the window so feedback
+     * never mixes old/new phase currents (critical at flying-start handoff). */
+    if (g_scope_step != s_last_step) {
+        curloop_win_reset();
+        s_last_step = g_scope_step;
+    }
+
+    /* Sliding window average of the active-phase current (every ADC sample) */
     {
         int16_t fb_inst = curloop_feedback(pData);
         if (s_win_cnt < CURLOOP_WIN_SIZE) {
@@ -123,7 +142,10 @@ static void curloop_isr(const stc_i_data_t *pData)
             s_win_cnt++;
         }
     }
-    float fb = (float)s_win_sum / (float)s_win_cnt;
+    if (s_win_cnt < CURLOOP_WIN_SIZE) {
+        return;   /* window filling / post-edge blanking: no control this cycle */
+    }
+    float fb = (float)s_win_sum / (float)CURLOOP_WIN_SIZE;
 
     Timer6_Timebase_UpdateTimestamp();
     uint64_t now = Timer6_Timebase_GetTimestamp();

@@ -72,6 +72,7 @@ static uint8_t  s_inited  = 0;
 static float    s_ol_current_ma = 0.0f;   /* EMA of active-phase current during open-loop ramp */
 static float    s_last_duty      = 80.0f; /* last applied duty (rate-limiter state) */
 static uint8_t  s_last_step     = 0xFFu; /* last g_scope_step seen (edge blanking) */
+static uint8_t  s_active        = 0;    /* current-loop activation latch */
 
 static int16_t curloop_feedback(const stc_i_data_t *pData)
 {
@@ -95,6 +96,7 @@ static void curloop_isr(const stc_i_data_t *pData)
 {
     if (CommRunner_GetMode() != COMM_RUNNER_CURLOOP_FW) {
         /* mode not current-loop: reset state so restart starts clean */
+        s_active = 0;
         s_last_us = 0;
         curloop_win_reset();
         return;
@@ -105,16 +107,17 @@ static void curloop_isr(const stc_i_data_t *pData)
         float fb_inst = (float)curloop_feedback(pData);
         s_ol_current_ma += (fb_inst - s_ol_current_ma) * 0.02f;   /* EMA, tau~1ms */
         g_scope_i_ol = s_ol_current_ma;
+        s_active = 0;
         s_last_us = 0;
         curloop_win_reset();
         return;
     }
 
-    if (s_last_us == 0) {
-        /* fresh activation: bumpless handoff - start duty from the open-loop duty.
-         * Ref stays at the user-set g_i_ref_ma (open-loop current capture is
-         * unreliable because g_scope_step is not the active commutation step
-         * during the timed ramp). The duty rate limiter smooths the takeover. */
+    if (!s_active) {
+        /* fresh activation (latched once): bumpless handoff - start duty from
+         * the open-loop duty. Ref stays at the user-set g_i_ref_ma. The duty
+         * rate limiter smooths the takeover. */
+        s_active     = 1;
         s_last_duty  = CommRunner_GetDuty();
         PID_Reset(&s_pid);
         curloop_win_reset();

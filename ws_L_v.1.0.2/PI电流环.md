@@ -27,8 +27,8 @@
 ## 2. 现状核对（代码事实，已逐一验证）
 
 ### 2.1 电流检测（`ws/I.c`）
-- ADC1 SEQ_B 在 PWM 峰值触发，EOCB 中断 **100kHz**，每拍更新 `g_i_iu_ma / iv / iw`（**无滤波瞬时 mA**，`I.c:305`）。
-- `g_i_*_filt / disp` 是 Biquad 滤波值：系数按 fs=50kHz 设计，实际采样 100kHz → **真实 fc≈200Hz、相位滞后大，禁止用于控制**，只作显示。
+- ADC1 SEQ_B 在 PWM 峰值触发，EOCB 中断 **50kHz**，每拍更新 `g_i_iu_ma / iv / iw`（**无滤波瞬时 mA**，`I.c:305`）。
+- `g_i_*_filt / disp` 是 Biquad 滤波值：系数按 fs=50kHz 设计，实际采样 50kHz → **真实 fc≈200Hz、相位滞后大，禁止用于控制**，只作显示。
 - `I_RegisterCallback()` 已存在，回调在 **EOCB ISR 上下文**执行（`I.c:541`）——正好作为电流环挂载点。
 
 ### 2.2 占空比施加路径（`ws/dev_comm_runner.c` / `dev_commutation.c`）
@@ -55,9 +55,9 @@
 
 ## 3. 设计决策（A 方案：复用 EOCB ISR + Timer6 dt）
 
-### 3.1 电流环节拍：复用 ADC1 EOCB ISR + 抽取计数
-- 挂载点：`I_RegisterCallback()`（100kHz 每拍调用，ISR 上下文）。
-- 抽取：回调内部计数，**每 N 拍执行一次电流环**（N=5 → 10kHz；N=10 → 5kHz，先选 10kHz）。
+### 3.1 电流环节拍：复用 ADC1 EOCB ISR（与 PWM 1:1，50kHz）
+- 挂载点：`I_RegisterCallback()`（50kHz 每拍调用，ISR 上下文）。
+- 电流环频率 = PWM = ADC = **50kHz**：每次 EOCB 都执行 PI（1:1），反馈用 5 点滑窗平均。
 - 为什么不用主循环 / 新开 200µs 中断：
   - 主循环含 VOFA+ 16 通道发送、BEMF EMA、日志，执行时间不确定，控制周期会抖动；
   - 新开 Timer6 200µs 中断需改 Period + 修 wrap 常量 + NVIC 注册，改动面大且会动到 Hall 依赖的共享时基（不推荐）。
@@ -74,7 +74,7 @@ s_last_us = now;
 
 ### 3.3 反馈相选择
 - 按 `g_scope_step` 查 `s_states`，取 `M_HIGH/D_PWM` 通道（导通相）的电流。
-- 窗口平均：抽取的 N 拍内累加导通相电流，执行时 `avg = sum / N`，天然就是窗口平均。
+- 窗口平均：5 点滑窗（`s_win[5]`，每次采样更新、每次输出），平滑换相纹波。
 - 可选：换相后前 2~3 拍做 blanking（跳过），避开换相尖峰（实现时验证是否需要）。
 - 不用三相平均（浮空相≈0，换相沿有尖峰）。
 
@@ -85,16 +85,16 @@ void Commutation_SetActiveDuty(uint8_t state, float duty_pct);
 - 行为：占空比 clamp 2%~98% → 按 `s_states[state]` 找 `D_PWM` 通道 → `TMR4_PWM_SetDutyFloat(ch, duty)` → **同步 `s_last_ch_duty[ch]` 缓存**。
 - 缓存同步是必须的：否则 `Commutation_Step` 的懒更新逻辑会误判"占空比没变"而跳过更新，导致硬件和缓存不一致。
 - 要求：ISR 内调用，保持精简（无 printf、无阻塞）。
-- 生效延迟：≤1 个 PWM 周期（≤10µs），远小于控制周期，视为即时。
+- 生效延迟：≤1 个 PWM 周期（≤20µs），远小于控制周期，视为即时。
 
 ### 3.5 电流环 ISR 数据流（示意）
 ```mermaid
 flowchart LR
     PWM["TMR4_3 峰值"] --> ADC["ADC1 SEQ_B"]
-    ADC --> ISR["EOCB ISR (100kHz)"]
+    ADC --> ISR["EOCB ISR (50kHz)"]
     ISR --> CB["I_RegisterCallback"]
-    CB --> ACC["累加导通相电流 + 计数"]
-    ACC -->|每 N 拍| CTL["PID_UpdateUs(dt=Timer6)"]
+    CB --> ACC["滑窗平均 5点"]
+    ACC -->|"每次 EOCB"| CTL["PID_UpdateUs(dt=Timer6)"]
     CTL --> DUTY["Commutation_SetActiveDuty"]
     DUTY --> OCCR["写 OCCR → 下个峰值生效"]
 ```
@@ -156,7 +156,7 @@ float PID_UpdateUs(pid_state_t *pid, float setpoint, float measurement, uint32_t
 
 ```mermaid
 flowchart LR
-    REF["g_i_ref_ma (Keil Watch)"] -->|给定| PI["电流 PI (10kHz)"]
+    REF["g_i_ref_ma (Keil Watch)"] -->|给定| PI["电流 PI (50kHz)"]
     FB["导通相电流 (窗口平均)"] -->|反馈| PI
     PI -->|duty 2~98%| DUTY["Commutation_SetActiveDuty"]
     DUTY --> M["电机 (霍尔闭环)"]
@@ -171,7 +171,7 @@ flowchart LR
 - `g_scope_i_ref`、`g_scope_i_fb`、`g_scope_i_duty`、`g_scope_i_err`（volatile float，电流环回调里更新）。
 
 ### 5.4 初始参数建议（学习起点，非最终值）
-- `Kp = 0.05`（% 占空比 / mA），`Ki = 0.005`（% / (mA·s)），`Kd` 关闭，`update_ms = 0`（10kHz 全速）。
+- `Kp = 0.2`（% 占空比 / mA），`Ki = 0.2`（% / (mA·s)），`Kd` 关闭，`update_ms = 0`（50kHz 全速）。
 - `output_min = 2.0`、`output_max = 98.0`、`integral_max = 50.0`、`i_term_max = 10.0`（I 项贡献 ≤ ±10%）。
 
 ---
@@ -202,7 +202,7 @@ flowchart LR
 ---
 
 ## 9. 未决问题（实现前确认）
-1. 电流环速率：先按 10kHz（N=10），若 ISR 耗时/效果不佳改 5kHz（N=20）。
+1. 电流环速率：已实现 50kHz（1:1，每次 EOCB）；若 ISR 负载过高，可改回每 5 拍抽取（10kHz）或降低 PWM。
 2. `g_i_ref_ma` 符号处理：正转模式只允许正给定（负值 clamp 到 0 或允许反转，待定）。
 3. 换相 blanking（2~3 拍跳过）：实现后看波形决定是否需要。
 4. Stage 2（速度环级联）是否本期做：默认**不做**，先保证 Stage 1 调稳。

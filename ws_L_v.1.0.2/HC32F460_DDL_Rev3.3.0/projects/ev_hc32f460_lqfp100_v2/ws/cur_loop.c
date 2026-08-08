@@ -1,12 +1,12 @@
 /**
  *******************************************************************************
  * @file  cur_loop.c
- * @brief 10kHz current PI loop for six-step BLDC (learning)
+ * @brief 50kHz current PI loop for six-step BLDC (learning)
  *
- *        Mounted on ADC1 EOCB ISR (50kHz) via I_RegisterCallback, decimated
- *        by CURLOOP_DECIMATION (5 -> 10kHz control rate).
- *        Feedback: active high-side phase current (from fixed state table,
- *        selected by g_scope_step), window-averaged over the decimation window.
+ *        Mounted on ADC1 EOCB ISR (50kHz, 1:1 with PWM) via I_RegisterCallback.
+ *        Runs the PI on EVERY ADC sample (current loop frequency == PWM frequency).
+ *        Feedback: active high-side phase current (fixed state table, selected by
+ *        g_scope_step), smoothed by a 5-tap sliding average (~100us window).
  *        dt: measured from Timer6 microsecond timestamp.
  *        Output: Commutation_SetActiveDuty() -> OCCR (takes effect at next PWM peak).
  *
@@ -23,9 +23,9 @@
 #include "TickTimer.h"
 #include "rtt_log.h"
 
-#define CURLOOP_DECIMATION   5u    /* 50kHz / 5 = 10kHz */
-#define CURLOOP_DT_FIRST_US  100u  /* assumed 10kHz period for the very first call */
-#define CURLOOP_DUTY_RATE    5.0f  /* max duty change per control cycle (%): smooth handoff */
+#define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average at 50kHz (~100us) */
+#define CURLOOP_DT_FIRST_US  20u   /* assumed 50kHz period for the very first call */
+#define CURLOOP_DUTY_RATE    1.0f  /* max duty change per cycle (%): 50kHz -> ~500%/s slew */
 
 /* Keil Watch: current setpoint (mA) */
 volatile float g_i_ref_ma = 800.0f;
@@ -50,14 +50,16 @@ pid_config_t g_cur_pid_cfg = {
     .output_max   = 98.0f,
     .integral_max = 500.0f,   /* mA*s */
     .i_term_max   = 20.0f,    /* I contribution clamped to +/-20% */
-    .update_ms    = 0,        /* no throttle: run at every decimated call */
+    .update_ms    = 0,        /* no throttle: run on every ADC sample (50kHz) */
 };
 
 static pid_state_t s_pid;
-static int32_t  s_sum_ma   = 0;
-static uint8_t  s_cnt      = 0;
-static uint64_t s_last_us  = 0;
-static uint8_t  s_inited   = 0;
+static int16_t  s_win[CURLOOP_WIN_SIZE];
+static uint8_t  s_win_idx = 0;
+static uint8_t  s_win_cnt = 0;
+static int32_t  s_win_sum = 0;
+static uint64_t s_last_us = 0;
+static uint8_t  s_inited  = 0;
 static float    s_ol_current_ma = 0.0f;   /* EMA of active-phase current during open-loop ramp */
 static float    s_last_duty      = 80.0f; /* last applied duty (rate-limiter state) */
 
@@ -72,13 +74,19 @@ static int16_t curloop_feedback(const stc_i_data_t *pData)
     }
 }
 
+static void curloop_win_reset(void)
+{
+    s_win_idx = 0;
+    s_win_cnt = 0;
+    s_win_sum = 0;
+}
+
 static void curloop_isr(const stc_i_data_t *pData)
 {
     if (CommRunner_GetMode() != COMM_RUNNER_CURLOOP_FW) {
-        /* mode not current-loop: reset window so restart starts clean */
+        /* mode not current-loop: reset state so restart starts clean */
         s_last_us = 0;
-        s_cnt     = 0;
-        s_sum_ma  = 0;
+        curloop_win_reset();
         return;
     }
 
@@ -88,63 +96,72 @@ static void curloop_isr(const stc_i_data_t *pData)
         s_ol_current_ma += (fb_inst - s_ol_current_ma) * 0.02f;   /* EMA, tau~1ms */
         g_scope_i_ol = s_ol_current_ma;
         s_last_us = 0;
-        s_cnt     = 0;
-        s_sum_ma  = 0;
+        curloop_win_reset();
         return;
     }
 
     if (s_last_us == 0) {
-        /* fresh activation: soft-start ref from open-loop current (user's idea),
-         * and bumpless handoff: start duty from the open-loop duty. */
+        /* fresh activation: soft-start ref from open-loop current,
+         * bumpless handoff: start duty from the open-loop duty. */
         float ref0 = s_ol_current_ma * 0.9f;
         if (ref0 < 50.0f) ref0 = 50.0f;
         g_i_ref_ma   = ref0;
         s_last_duty  = CommRunner_GetDuty();
         PID_Reset(&s_pid);
+        curloop_win_reset();
     }
 
-    s_sum_ma += curloop_feedback(pData);
-    s_cnt++;
-
-    if (s_cnt >= CURLOOP_DECIMATION) {
-        s_cnt = 0;
-        float fb = (float)s_sum_ma / (float)CURLOOP_DECIMATION;
-        s_sum_ma = 0;
-
-        Timer6_Timebase_UpdateTimestamp();
-        uint64_t now = Timer6_Timebase_GetTimestamp();
-        uint32_t dt_us;
-        if (s_last_us == 0) {
-            dt_us = CURLOOP_DT_FIRST_US;
+    /* Sliding 5-tap average of the active-phase current (every ADC sample) */
+    {
+        int16_t fb_inst = curloop_feedback(pData);
+        if (s_win_cnt < CURLOOP_WIN_SIZE) {
+            s_win_sum += fb_inst;
         } else {
-            dt_us = (uint32_t)(now - s_last_us);
+            s_win_sum += fb_inst - s_win[s_win_idx];
         }
-        s_last_us = now;
+        s_win[s_win_idx] = fb_inst;
+        s_win_idx = (s_win_idx + 1u) % CURLOOP_WIN_SIZE;
+        if (s_win_cnt < CURLOOP_WIN_SIZE) {
+            s_win_cnt++;
+        }
+    }
+    float fb = (float)s_win_sum / (float)s_win_cnt;
 
-        float duty = PID_UpdateUs(&s_pid, g_i_ref_ma, fb, dt_us);
-        /* rate-limit duty: no 2%<->98% slam at handoff or during tuning */
-        if (duty > s_last_duty + CURLOOP_DUTY_RATE) duty = s_last_duty + CURLOOP_DUTY_RATE;
-        if (duty < s_last_duty - CURLOOP_DUTY_RATE) duty = s_last_duty - CURLOOP_DUTY_RATE;
-        s_last_duty = duty;
-        Commutation_SetActiveDuty(g_scope_step, duty);
-        /* Keep runner s_duty in sync so the next Hall edge re-applies the same duty */
-        CommRunner_SetDuty(duty);
+    Timer6_Timebase_UpdateTimestamp();
+    uint64_t now = Timer6_Timebase_GetTimestamp();
+    uint32_t dt_us;
+    if (s_last_us == 0) {
+        dt_us = CURLOOP_DT_FIRST_US;
+    } else {
+        dt_us = (uint32_t)(now - s_last_us);
+    }
+    s_last_us = now;
 
-        g_scope_i_ref  = g_i_ref_ma;
-        g_scope_i_fb   = fb;
-        g_scope_i_duty = duty;
-        g_scope_i_err  = g_i_ref_ma - fb;
+    float duty = PID_UpdateUs(&s_pid, g_i_ref_ma, fb, dt_us);
 
-        {
-            static uint32_t s_last_dbg = 0;
-            uint32_t now_ms = (uint32_t)tickTimer_GetCount();
-            if ((now_ms - s_last_dbg) >= 500u) {
-                s_last_dbg = now_ms;
-                MAIN_D("[CURLOOP] ref=%d fb=%d err=%d duty=%d%% i=%d dt=%luus step=%u",
-                       (int)g_i_ref_ma, (int)fb, (int)(g_i_ref_ma - fb),
-                       (int)(duty * 10) / 10, (int)s_pid.i_term,
-                       (unsigned long)dt_us, (unsigned)g_scope_step);
-            }
+    /* rate-limit duty: no 2%<->98% slam at handoff or during tuning */
+    if (duty > s_last_duty + CURLOOP_DUTY_RATE) duty = s_last_duty + CURLOOP_DUTY_RATE;
+    if (duty < s_last_duty - CURLOOP_DUTY_RATE) duty = s_last_duty - CURLOOP_DUTY_RATE;
+    s_last_duty = duty;
+
+    Commutation_SetActiveDuty(g_scope_step, duty);
+    /* Keep runner s_duty in sync so the next Hall edge re-applies the same duty */
+    CommRunner_SetDuty(duty);
+
+    g_scope_i_ref  = g_i_ref_ma;
+    g_scope_i_fb   = fb;
+    g_scope_i_duty = duty;
+    g_scope_i_err  = g_i_ref_ma - fb;
+
+    {
+        static uint32_t s_last_dbg = 0;
+        uint32_t now_ms = (uint32_t)tickTimer_GetCount();
+        if ((now_ms - s_last_dbg) >= 500u) {
+            s_last_dbg = now_ms;
+            MAIN_D("[CURLOOP] ref=%d fb=%d err=%d duty=%d%% i=%d dt=%luus step=%u",
+                   (int)g_i_ref_ma, (int)fb, (int)(g_i_ref_ma - fb),
+                   (int)(duty * 10) / 10, (int)s_pid.i_term,
+                   (unsigned long)dt_us, (unsigned)g_scope_step);
         }
     }
 }

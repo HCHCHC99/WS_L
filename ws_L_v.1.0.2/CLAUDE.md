@@ -50,7 +50,7 @@ projects/ev_hc32f460_lqfp100_v2/
 │   ├── dev_commutation.c/h       # Six-step commutation state table: step→PWM mode/duty, lazy-update cache
 │   ├── hall_sensor_3ch.c/h       # 3-channel Hall driver: ISR, Hall→step lookup, M-method RPM, J-Scope globals, ISR noise defense
 │   ├── I.c/h                     # 3-phase current sensing: ADC1 SEQ_B (CH5/6/7), PWM-peak triggered, Biquad-filtered, zero-offset calibration
-│   ├── cur_loop.c/h                 # 10kHz current PI loop (mode 10): EOCB-decimated, Timer6 dt, active-phase duty
+│   ├── cur_loop.c/h                 # 50kHz current PI loop (mode 10): per-EOCB 1:1, 5-tap sliding avg, Timer6 dt
 │   ├── Bemf.c/h                  # BEMF observer: 4-channel ADC via DMA, PWM-peak triggered sampling (observer-only, no sensorless control)
 ├── Utils/                        # Utilities
 │   ├── param_manager.c/h         # Flash parameter persistence with CRC32 + magic header/tail

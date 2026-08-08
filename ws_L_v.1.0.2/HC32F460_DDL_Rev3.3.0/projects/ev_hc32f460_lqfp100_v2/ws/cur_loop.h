@@ -1,10 +1,11 @@
 /**
  *******************************************************************************
  * @file  cur_loop.h
- * @brief 10kHz current PI loop for six-step BLDC (learning)
- *        Mounted on ADC1 EOCB ISR (50kHz) via I_RegisterCallback, decimated
- *        to 10kHz. Feedback = active high-side phase current (fixed state table),
- *        dt = Timer6 us timestamp. Output = Commutation_SetActiveDuty().
+ * @brief 50kHz current PI loop for six-step BLDC (learning)
+ *        Mounted on ADC1 EOCB ISR (50kHz, 1:1 with PWM) via I_RegisterCallback.
+ *        PI runs on every ADC sample. Feedback = active high-side phase current
+ *        (fixed state table) with 5-tap sliding average, dt = Timer6 us timestamp.
+ *        Output = Commutation_SetActiveDuty().
  *        Active only in COMM_RUNNER_CURLOOP_FW mode while hall FSM is RUNNING.
  *******************************************************************************
  */

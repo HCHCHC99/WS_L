@@ -35,6 +35,7 @@
   #define CURLOOP_WIN_SIZE 2u
 #endif
 #define CURLOOP_DUTY_RATE    1.0f  /* max duty change per control cycle (%) */
+#define CURLOOP_REF_RAMP_MS  1000u  /* soft-start: ramp ref to g_i_ref_ma over 1s */
 
 /* Keil Watch: current setpoint (mA) */
 volatile float g_i_ref_ma = 800.0f;
@@ -73,6 +74,9 @@ static float    s_ol_current_ma = 0.0f;   /* EMA of active-phase current during 
 static float    s_last_duty      = 80.0f; /* last applied duty (rate-limiter state) */
 static uint8_t  s_last_step     = 0xFFu; /* last g_scope_step seen (edge blanking) */
 static uint8_t  s_active        = 0;    /* current-loop activation latch */
+static uint8_t  s_ref_ramp_active  = 0;
+static float    s_ref_start        = 0.0f;
+static uint64_t s_ref_ramp_start_us = 0;
 
 static int16_t curloop_feedback(const stc_i_data_t *pData)
 {
@@ -97,6 +101,7 @@ static void curloop_isr(const stc_i_data_t *pData)
     if (CommRunner_GetMode() != COMM_RUNNER_CURLOOP_FW) {
         /* mode not current-loop: reset state so restart starts clean */
         s_active = 0;
+        s_ref_ramp_active = 0;
         s_last_us = 0;
         curloop_win_reset();
         return;
@@ -108,6 +113,7 @@ static void curloop_isr(const stc_i_data_t *pData)
         s_ol_current_ma += (fb_inst - s_ol_current_ma) * 0.02f;   /* EMA, tau~1ms */
         g_scope_i_ol = s_ol_current_ma;
         s_active = 0;
+        s_ref_ramp_active = 0;
         s_last_us = 0;
         curloop_win_reset();
         return;
@@ -122,6 +128,8 @@ static void curloop_isr(const stc_i_data_t *pData)
         PID_Reset(&s_pid);
         curloop_win_reset();
         s_last_step  = g_scope_step;
+        s_ref_ramp_active   = 1;
+        s_ref_ramp_start_us = 0;   /* latched on first PID run using real fb */
     }
 
     /* Commutation edge blanking: on a step change flush the window so feedback
@@ -163,7 +171,24 @@ static void curloop_isr(const stc_i_data_t *pData)
     }
     s_last_us = now;
 
-    float duty = PID_UpdateUs(&s_pid, g_i_ref_ma, fb, dt_us);
+    /* Soft-start ref ramp: start from the real handoff current and ramp to
+     * g_i_ref_ma over CURLOOP_REF_RAMP_MS, so the loop never slams duty. */
+    float ref = g_i_ref_ma;
+    if (s_ref_ramp_active) {
+        if (s_ref_ramp_start_us == 0) {
+            s_ref_start = fb;              /* anchor at actual open-loop current */
+            s_ref_ramp_start_us = now;
+        }
+        uint64_t ramp_el = now - s_ref_ramp_start_us;
+        uint64_t ramp_tot = (uint64_t)CURLOOP_REF_RAMP_MS * 1000UL;
+        float ratio = (ramp_el >= ramp_tot) ? 1.0f : ((float)ramp_el / (float)ramp_tot);
+        ref = s_ref_start + (g_i_ref_ma - s_ref_start) * ratio;
+        if (ratio >= 1.0f) {
+            s_ref_ramp_active = 0;
+        }
+    }
+
+    float duty = PID_UpdateUs(&s_pid, ref, fb, dt_us);
 
     /* rate-limit duty: no 2%<->98% slam at handoff or during tuning */
     if (duty > s_last_duty + CURLOOP_DUTY_RATE) duty = s_last_duty + CURLOOP_DUTY_RATE;
@@ -174,7 +199,7 @@ static void curloop_isr(const stc_i_data_t *pData)
     /* Keep runner s_duty in sync so the next Hall edge re-applies the same duty */
     CommRunner_SetDuty(duty);
 
-    g_scope_i_ref  = g_i_ref_ma;
+    g_scope_i_ref  = ref;
     g_scope_i_fb   = fb;
     g_scope_i_duty = duty;
     g_scope_i_err  = g_i_ref_ma - fb;

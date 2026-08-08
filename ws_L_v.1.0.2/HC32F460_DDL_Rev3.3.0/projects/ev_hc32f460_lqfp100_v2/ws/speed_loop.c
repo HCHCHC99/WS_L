@@ -53,6 +53,9 @@ void SpeedLoop_SetTarget(float target_rpm) { s_target_rpm = target_rpm; }
 float SpeedLoop_Update(float measured_rpm)
 {
     if (!s_inited) SpeedLoop_Init();
+#if MOTOR_LOOP_CURRENT_ENABLE
+    g_spd_pid_cfg.output_max = g_i_ref_max_ma;   /* keep limit live for Keil Watch */
+#endif
     g_scope_spd_rpm = measured_rpm;
     s_output = PID_Update(&s_spd_pid, s_target_rpm, measured_rpm);
     g_scope_spd_ref = s_target_rpm;
@@ -63,10 +66,10 @@ float SpeedLoop_Update(float measured_rpm)
 
 float SpeedLoop_GetOutput(void) { return s_output; }
 
-void SpeedLoop_Seed(float output)
+void SpeedLoop_Seed(float output, float measured_rpm)
 {
     if (!s_inited) SpeedLoop_Init();
-    PID_Reset(&s_spd_pid);
-    s_spd_pid.last_output = output;
+    PID_Seed(&s_spd_pid, s_target_rpm, measured_rpm, output);
     s_output = output;
+    g_scope_spd_out = output;
 }

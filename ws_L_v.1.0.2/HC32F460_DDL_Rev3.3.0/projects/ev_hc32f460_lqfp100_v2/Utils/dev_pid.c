@@ -42,6 +42,32 @@ void PID_Reset(pid_state_t *pid)
     }
 }
 
+void PID_Seed(pid_state_t *pid, float setpoint, float measurement, float output)
+{
+    if (!pid || !pid->cfg || !pid->cfg->enabled) {
+        return;
+    }
+
+    float error = setpoint - measurement;
+    float p_term = pid->cfg->p_valid ? (pid->cfg->kp * error) : 0.0f;
+
+    float integral = 0.0f;
+    if (pid->cfg->i_valid && pid->cfg->ki > 0.0f) {
+        integral = (output - p_term) / pid->cfg->ki;
+        if (integral >  pid->cfg->integral_max) integral =  pid->cfg->integral_max;
+        if (integral < -pid->cfg->integral_max) integral = -pid->cfg->integral_max;
+    }
+
+    pid->integral          = integral;
+    pid->prev_measurement  = measurement;
+    pid->first_sample      = false;
+    pid->last_output       = output;
+    pid->last_update_ms    = (uint32_t)tickTimer_GetCount();  /* next Update throttled -> returns seed */
+    pid->p_term            = p_term;
+    pid->i_term            = pid->cfg->i_valid ? (pid->cfg->ki * integral) : 0.0f;
+    pid->d_term            = 0.0f;
+}
+
 /*=============================================================================
  * PID_Update — parallel-form with anti-windup, derivative-on-measurement.
  *

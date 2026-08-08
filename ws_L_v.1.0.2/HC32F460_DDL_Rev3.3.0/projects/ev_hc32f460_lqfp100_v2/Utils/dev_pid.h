@@ -69,6 +69,10 @@ void PID_Init(pid_state_t *pid, pid_config_t *cfg);
 /* Reset accumulators. Call on mode transitions. */
 void PID_Reset(pid_state_t *pid);
 
+/* Seed controller state so the next output continues from `output`
+ * (bumpless handoff). Back-calculates the integral from the error. */
+void PID_Seed(pid_state_t *pid, float setpoint, float measurement, float output);
+
 /* Run one PID iteration. Reads live params from cfg each call. */
 float PID_Update(pid_state_t *pid, float setpoint, float measurement);
 

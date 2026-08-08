@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+/* speed_loop is main-loop context only */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,8 +29,9 @@ void  SpeedLoop_SetTarget(float target_rpm);
  * Returns output: current ref (mA) when current loop enabled, else duty (%). */
 float SpeedLoop_Update(float measured_rpm);
 float SpeedLoop_GetOutput(void);
-/* Seed output for bumpless handoff (e.g. start from measured current). */
-void  SpeedLoop_Seed(float output);
+/* Seed output for bumpless handoff (e.g. start from measured current).
+ * Call once right before the first SpeedLoop_Update after a restart. */
+void  SpeedLoop_Seed(float output, float measured_rpm);
 
 #ifdef __cplusplus
 }

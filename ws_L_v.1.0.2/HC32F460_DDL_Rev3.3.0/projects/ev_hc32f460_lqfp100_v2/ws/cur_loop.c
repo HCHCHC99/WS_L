@@ -24,7 +24,7 @@
 #include "rtt_log.h"
 
 #define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average at 25kHz (~100us) */
-#define CURLOOP_DT_FIRST_US  40u    /* assumed 25kHz period for the very first call */
+#define CURLOOP_DT_FIRST_US  20u    /* assumed 25kHz period for the very first call */
 #define CURLOOP_DUTY_RATE    1.0f  /* max duty change per control cycle (%) */
 
 /* Keil Watch: current setpoint (mA) */

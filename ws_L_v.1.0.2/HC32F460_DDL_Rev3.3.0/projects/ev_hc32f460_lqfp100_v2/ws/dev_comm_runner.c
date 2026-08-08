@@ -940,6 +940,7 @@ void CommRunner_Update(void)
                     /* Bumpless speed-loop handoff: seed from open-loop current
                      * estimate so phase-1 starts near the open-loop duty. */
                     SpeedLoop_Seed(g_scope_i_ol, hall_3ch_get_rpm(s_hall));
+                    g_cur_ref_ext_ma = SpeedLoop_GetOutput();   /* pre-fill ISR ref for first ~1ms */
 #else
                     /* Speed-only: seed from the open-loop duty so phase-1
                      * starts where the timed ramp left off. */

@@ -120,7 +120,6 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>DLGUARM</Key>
-          <Name>萗?	</Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -376,6 +375,21 @@
           <count>15</count>
           <WinNumber>2</WinNumber>
           <ItemText>g_i_ref_ma</ItemText>
+        </Ww>
+        <Ww>
+          <count>16</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_cur_pid_cfg</ItemText>
+        </Ww>
+        <Ww>
+          <count>17</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_cur_pid_cfg.kp</ItemText>
+        </Ww>
+        <Ww>
+          <count>18</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_cur_pid_cfg.ki</ItemText>
         </Ww>
       </WatchWindow2>
       <Tracepoint>

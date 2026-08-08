@@ -19,6 +19,6 @@
  *     50000u = 50 kHz
  *   其它 8kHz~100kHz 均可（受 ADC 转换时间 / 中断负载限制�??
  * ==========================================================================*/
-#define MOTOR_PWM_FREQ_HZ   10000u
+#define MOTOR_PWM_FREQ_HZ   20000u
 
 #endif /* __MOTOR_CONFIG_H__ */

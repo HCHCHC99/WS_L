@@ -518,7 +518,11 @@ void hall_3ch_update(hall_3ch_handle_t h)
             uint32_t now_ms = (uint32_t)tickTimer_GetCount();
             uint32_t since_pulse_ms = now_ms - inst->last_pulse_tick_ms;  /* modular */
             g_hall_last_pulse_age_ms = since_pulse_ms;
-            if (since_pulse_ms > (uint32_t)inst->config.stall_timeout_ms) {
+            /* Guard: a torn 64-bit tick read can make the difference underflow
+             * by ~1ms (0xFFFFFFFF). Values >= 2^31 are clock jitter/wrap, not a
+             * real 500ms stall - ignore them to avoid false stalls. */
+            if ((since_pulse_ms > (uint32_t)inst->config.stall_timeout_ms) &&
+                (since_pulse_ms < 0x80000000u)) {
                 inst->stalled = 1;
                 inst->state   = STATE_IDLE;
             }

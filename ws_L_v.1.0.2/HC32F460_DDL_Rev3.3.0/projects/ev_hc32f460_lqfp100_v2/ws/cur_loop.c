@@ -189,6 +189,9 @@ static void curloop_isr(const stc_i_data_t *pData)
             s_ref_ramp_active = 0;
         }
     }
+    if (ref < 0.0f) {
+        ref = 0.0f;   /* never command negative current */
+    }
 
     float duty = PID_UpdateUs(&s_pid, ref, fb, dt_us);
 

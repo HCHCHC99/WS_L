@@ -1,4 +1,7 @@
 #include "dev_comm_runner.h"
+#include "motor_config.h"
+#include "speed_loop.h"
+#include "pos_loop.h"
 #include "cur_loop.h"
 #include "dev_commutation.h"
 #include "tmr4_pwm.h"
@@ -6,6 +9,17 @@
 #include "rtt_log.h"
 #include "TickTimer.h"
 #include <string.h>
+
+/* ---- Loop-topology compile-time validation (motor_config.h) ---- */
+#if MOTOR_LOOP_CURRENT_ENABLE && !MOTOR_LOOP_SPEED_ENABLE && (MOTOR_CUR_REF_SRC != CUR_REF_FIXED)
+#error "loop topology: current-only requires MOTOR_CUR_REF_SRC == CUR_REF_FIXED"
+#endif
+#if MOTOR_LOOP_CURRENT_ENABLE && (MOTOR_DUTY_SRC != DUTY_FROM_CURRENT)
+#error "loop topology: current loop enabled requires MOTOR_DUTY_SRC == DUTY_FROM_CURRENT"
+#endif
+#if !MOTOR_LOOP_CURRENT_ENABLE && (MOTOR_DUTY_SRC != DUTY_DIRECT)
+#error "loop topology: speed-only requires MOTOR_DUTY_SRC == DUTY_DIRECT"
+#endif
 
 /*=============================================================================
  * Hall-to-step lookup tables.
@@ -48,6 +62,9 @@ volatile float g_scope_pid_target  = 0.0f;
 volatile float g_scope_pid_error   = 0.0f;
 volatile float g_scope_pid_duty    = 0.0f;
 volatile float g_scope_pid_i_term  = 0.0f;
+
+/* Keil Watch: reserved position-loop target (not used until encoder feedback) */
+volatile float g_target_pos = 0.0f;
 
 /* ��定时变量 (mode 1/2 恒� & mode 3/4 飞启共用��) */
 static uint64_t s_ol_ramp_start_us  = 0;
@@ -484,6 +501,10 @@ void CommRunner_Init(const comm_runner_config_t *cfg)
     }
 
     s_mode        = COMM_RUNNER_STOP;
+
+    SpeedLoop_Init();
+    PosLoop_Init();
+
     s_initialized = 1;
 
     /* ---- PID speed controller (optional) ---- */
@@ -543,6 +564,7 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         mode != COMM_RUNNER_PID_CW &&
         mode != COMM_RUNNER_PID_CCW &&
         mode != COMM_RUNNER_CURLOOP_FW &&
+        mode != COMM_RUNNER_CASCADE_FW &&
         mode == s_mode) return;
 
     s_mode      = mode;
@@ -646,6 +668,27 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         }
         s_sub_phase = 0;
         MAIN_D("[CommRunner] Mode=CURLOOP_FW: timed open loop -> current PI");
+        break;
+
+    case COMM_RUNNER_CASCADE_FW:
+        if (s_hall) hall_3ch_stop(s_hall);
+        calib_build_derived_tables();
+        start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
+                        s_cfg.ol_fly_ramp_ms, 0);
+        if (g_calib_table[1] <= 5u) {
+            uint8_t hall = hall_3ch_read_raw(s_hall);
+            if (hall >= 1u && hall <= 6u && g_calib_table[hall] <= 5u) {
+                s_comm_step = g_calib_table[hall];
+                Commutation_Step((uint8_t)s_comm_step, s_cfg.pwm_freq_hz, s_duty);
+            }
+        }
+        s_sub_phase = 0;
+#if MOTOR_LOOP_CURRENT_ENABLE && (MOTOR_CUR_REF_SRC == CUR_REF_FROM_SPEED)
+        CurLoop_SetExternalRef(true);   /* cascade: speed loop feeds g_cur_ref_ext_ma */
+#else
+        CurLoop_SetExternalRef(false);  /* fixed ref or speed-only: keep g_i_ref_ma path */
+#endif
+        MAIN_D("[CommRunner] Mode=CASCADE_FW: timed open loop -> macro-topology loops");
         break;
     }
 }
@@ -862,8 +905,11 @@ void CommRunner_Update(void)
     }
 
 
-    /* ---- Current-loop (mode 10): timed open loop (forward/CW table) -> current PI (ISR) ---- */
-    case COMM_RUNNER_CURLOOP_FW: {
+    /* ---- Current-loop (mode 10) / cascade (mode 11): timed open loop (forward/CW table) -> current PI (ISR) ---- */
+    case COMM_RUNNER_CURLOOP_FW:
+    case COMM_RUNNER_CASCADE_FW: {
+        int is_cascade = (s_mode == COMM_RUNNER_CASCADE_FW);
+
         if (s_sub_phase == 0) {
             /* Phase 0: timed open loop (timer-driven forced commutation). The
              * calibrated table anchors the start step; Hall takes over at the
@@ -897,6 +943,29 @@ void CommRunner_Update(void)
                        (int)g_scope_i_err,
                        (unsigned long)g_scope_i_dt_us);
                 CommRunner_SetMode(COMM_RUNNER_STOP);
+            }
+            if (is_cascade) {
+                /* Macro-topology chain: pos -> speed -> current -> duty (motor_config.h) */
+#if MOTOR_LOOP_POSITION_ENABLE
+                PosLoop_Update(g_target_pos);
+#endif
+#if MOTOR_LOOP_SPEED_ENABLE
+                {
+                    float spd_ref = s_target_rpm;
+#if MOTOR_LOOP_POSITION_ENABLE && (MOTOR_SPD_REF_SRC == SPD_REF_FROM_POS)
+                    spd_ref = PosLoop_GetOutput();
+#endif
+                    SpeedLoop_SetTarget(spd_ref);
+                    {
+                        float spd_out = SpeedLoop_Update(hall_3ch_get_rpm(s_hall));
+#if MOTOR_LOOP_CURRENT_ENABLE
+                        g_cur_ref_ext_ma = spd_out;   /* speed -> current ref (cur_loop ISR) */
+#else
+                        if (spd_out > 0.0f) { CommRunner_SetDuty(spd_out); }  /* speed-only */
+#endif
+                    }
+                }
+#endif
             }
         }
         break;
@@ -936,11 +1005,12 @@ uint8_t CommRunner_IsStalled(void)
 }
 
 /*=============================================================================
- * CommRunner_CurLoopActive - 1 when mode 10 is in closed-loop phase (current PI on)
+ * CommRunner_CurLoopActive - 1 when mode 10/11 is in closed-loop phase (current PI on)
  *=============================================================================*/
 uint8_t CommRunner_CurLoopActive(void)
 {
-    return (s_mode == COMM_RUNNER_CURLOOP_FW && s_sub_phase == 1) ? 1u : 0u;
+    return ((s_mode == COMM_RUNNER_CURLOOP_FW ||
+             s_mode == COMM_RUNNER_CASCADE_FW) && s_sub_phase == 1) ? 1u : 0u;
 }
 
 /*=============================================================================

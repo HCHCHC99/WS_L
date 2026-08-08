@@ -25,6 +25,7 @@ typedef enum {
     COMM_RUNNER_PID_CW     = 8,  /* Calib table + Hall closed-loop + PID speed control CW */
     COMM_RUNNER_PID_CCW    = 9,  /* Calib table + Hall closed-loop + PID speed control CCW */
     COMM_RUNNER_CURLOOP_FW = 10, /* Fly-start -> Hall closed-loop + current PI (10kHz), CW */
+    COMM_RUNNER_CASCADE_FW = 11, /* Macro-topology closed loop: speed/current per motor_config.h */
 } comm_runner_mode_t;
 
 /*=============================================================================
@@ -136,7 +137,7 @@ float CommRunner_GetRPM(void);
 /* �否�在运� (��模式� Hall 处于 RUNNING 状�) */
 uint8_t CommRunner_IsRunning(void);
 
-/* Current-loop mode (10) phase-1 active: current PI enabled */
+/* Current-loop mode (10/11) phase-1 active: current PI enabled */
 uint8_t CommRunner_CurLoopActive(void);
 
 /* �否堵� */
@@ -145,6 +146,9 @@ uint8_t CommRunner_IsStalled(void);
 /* PID target speed (r/min). Modes 8/9 use this as the PID setpoint. */
 void  CommRunner_SetTargetRPM(float rpm);
 float CommRunner_GetTargetRPM(void);
+
+/* Position-loop target (Keil Watch tunable; reserved - not used until encoder feedback) */
+extern volatile float g_target_pos;
 
 /* J-Scope HSS: PID real-time monitoring */
 extern volatile float g_scope_pid_target;   /* Target RPM */

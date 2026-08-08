@@ -10,7 +10,7 @@
  *        dt: measured from Timer6 microsecond timestamp.
  *        Output: Commutation_SetActiveDuty() -> OCCR (takes effect at next PWM peak).
  *
- *        Active only in COMM_RUNNER_CURLOOP_FW phase 1 (CommRunner_CurLoopActive()).
+ *        Active only in COMM_RUNNER_CURLOOP_FW / COMM_RUNNER_CASCADE_FW phase 1 (CommRunner_CurLoopActive()).
  *******************************************************************************
  */
 
@@ -111,7 +111,8 @@ static void curloop_win_reset(void)
 
 static void curloop_isr(const stc_i_data_t *pData)
 {
-    if (CommRunner_GetMode() != COMM_RUNNER_CURLOOP_FW) {
+    if (CommRunner_GetMode() != COMM_RUNNER_CURLOOP_FW &&
+        CommRunner_GetMode() != COMM_RUNNER_CASCADE_FW) {
         /* mode not current-loop: reset state so restart starts clean */
         s_active = 0;
         s_ref_ramp_active = 0;

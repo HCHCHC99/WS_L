@@ -390,6 +390,11 @@ void hall_3ch_start_flying(hall_3ch_handle_t h, hall3_direction_t dir)
     inst->last_step       = step;
     inst->last_hall_state = hall_state;
     inst->display_step    = step;
+    /* Sync scope variables so cur_loop / debug see the actual step immediately */
+    g_scope_step = step;
+    g_scope_ha = (uint8_t)((hall_state >> 2) & 1u);
+    g_scope_hb = (uint8_t)((hall_state >> 1) & 1u);
+    g_scope_hc = (uint8_t)(hall_state & 1u);
 
     (void)Timer6_Timebase_GetDelta();
 

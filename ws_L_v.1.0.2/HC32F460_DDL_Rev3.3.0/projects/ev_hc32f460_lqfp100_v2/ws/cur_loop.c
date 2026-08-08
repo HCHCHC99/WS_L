@@ -91,7 +91,7 @@ static void curloop_isr(const stc_i_data_t *pData)
     }
 
     if (!CommRunner_CurLoopActive()) {
-        /* phase 0 (table-driven open loop): estimate running current for soft-start ref */
+        /* phase 0 (timed open loop): estimate running current for display only */
         float fb_inst = (float)curloop_feedback(pData);
         s_ol_current_ma += (fb_inst - s_ol_current_ma) * 0.02f;   /* EMA, tau~1ms */
         g_scope_i_ol = s_ol_current_ma;
@@ -101,11 +101,10 @@ static void curloop_isr(const stc_i_data_t *pData)
     }
 
     if (s_last_us == 0) {
-        /* fresh activation: soft-start ref from open-loop current,
-         * bumpless handoff: start duty from the open-loop duty. */
-        float ref0 = s_ol_current_ma * 0.9f;
-        if (ref0 < 50.0f) ref0 = 50.0f;
-        g_i_ref_ma   = ref0;
+        /* fresh activation: bumpless handoff - start duty from the open-loop duty.
+         * Ref stays at the user-set g_i_ref_ma (open-loop current capture is
+         * unreliable because g_scope_step is not the active commutation step
+         * during the timed ramp). The duty rate limiter smooths the takeover. */
         s_last_duty  = CommRunner_GetDuty();
         PID_Reset(&s_pid);
         curloop_win_reset();

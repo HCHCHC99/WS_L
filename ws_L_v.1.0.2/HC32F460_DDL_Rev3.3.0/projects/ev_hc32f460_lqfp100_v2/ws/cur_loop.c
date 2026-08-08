@@ -111,6 +111,10 @@ static void curloop_win_reset(void)
 
 static void curloop_isr(const stc_i_data_t *pData)
 {
+#if !MOTOR_LOOP_CURRENT_ENABLE
+    (void)pData;   /* current loop disabled by topology (speed-only) */
+    return;
+#endif
     if (CommRunner_GetMode() != COMM_RUNNER_CURLOOP_FW &&
         CommRunner_GetMode() != COMM_RUNNER_CASCADE_FW) {
         /* mode not current-loop: reset state so restart starts clean */

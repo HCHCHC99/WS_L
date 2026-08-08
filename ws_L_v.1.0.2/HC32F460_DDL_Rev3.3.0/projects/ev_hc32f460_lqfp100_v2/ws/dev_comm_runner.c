@@ -667,6 +667,7 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
             MAIN_D("[CommRunner] CALIB table invalid, open loop from step 0");
         }
         s_sub_phase = 0;
+        CurLoop_SetExternalRef(false);   /* ensure internal g_i_ref_ma path (no cascade leak) */
         MAIN_D("[CommRunner] Mode=CURLOOP_FW: timed open loop -> current PI");
         break;
 
@@ -680,7 +681,11 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
             if (hall >= 1u && hall <= 6u && g_calib_table[hall] <= 5u) {
                 s_comm_step = g_calib_table[hall];
                 Commutation_Step((uint8_t)s_comm_step, s_cfg.pwm_freq_hz, s_duty);
+                MAIN_D("[CommRunner] CASCADE calib-anchored: hall=0x%02X step=%d",
+                       (unsigned)hall, (int)s_comm_step);
             }
+        } else {
+            MAIN_D("[CommRunner] CALIB table invalid, open loop from step 0");
         }
         s_sub_phase = 0;
 #if MOTOR_LOOP_CURRENT_ENABLE && (MOTOR_CUR_REF_SRC == CUR_REF_FROM_SPEED)
@@ -689,6 +694,9 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         CurLoop_SetExternalRef(false);  /* fixed ref or speed-only: keep g_i_ref_ma path */
 #endif
         MAIN_D("[CommRunner] Mode=CASCADE_FW: timed open loop -> macro-topology loops");
+        break;
+
+    default:
         break;
     }
 }
@@ -926,6 +934,19 @@ void CommRunner_Update(void)
                 }
                 hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
                 s_sub_phase = 1;
+                if (is_cascade) {
+#if MOTOR_LOOP_SPEED_ENABLE
+#if MOTOR_LOOP_CURRENT_ENABLE
+                    /* Bumpless speed-loop handoff: seed from open-loop current
+                     * estimate so phase-1 starts near the open-loop duty. */
+                    SpeedLoop_Seed(g_scope_i_ol, hall_3ch_get_rpm(s_hall));
+#else
+                    /* Speed-only: seed from the open-loop duty so phase-1
+                     * starts where the timed ramp left off. */
+                    SpeedLoop_Seed(s_duty, hall_3ch_get_rpm(s_hall));
+#endif
+#endif
+                }
                 MAIN_D("[CommRunner] CURLOOP ramp done -> closed-loop + current PI");
             }
         } else {

@@ -79,14 +79,16 @@ static float    s_ol_current_ma = 0.0f;   /* EMA of active-phase current during 
 static float    s_last_duty      = 80.0f; /* last applied duty (rate-limiter state) */
 static uint8_t  s_last_step     = 0xFFu; /* last g_scope_step seen (edge blanking) */
 static uint8_t  s_active        = 0;    /* current-loop activation latch */
-static uint8_t  s_ref_ramp_active  = 0;
+static volatile uint8_t  s_ref_ramp_active  = 0;
 static float    s_ref_start        = 0.0f;
-static uint64_t s_ref_ramp_start_us = 0;
+static volatile uint64_t s_ref_ramp_start_us = 0;
 /* Cascade handshake (main loop -> ISR):
  *  engage: write g_cur_ref_ext_ma first, then SetExternalRef(true);
  *  exit:   SetExternalRef(false) first, then switch g_i_ref_ma.
  * g_cur_ref_ext_ma is a 32-bit float: single-instruction read/write on
- * Cortex-M4, so hardware cannot tear it. */
+ * Cortex-M4, so hardware cannot tear it.
+ * PID state is NOT reset on source switch; CURLOOP_DUTY_RATE constrains
+ * the duty transition. */
 static volatile uint8_t s_use_ext_ref = 0;   /* 1 = use g_cur_ref_ext_ma, no ramp */
 
 static int16_t curloop_feedback(const stc_i_data_t *pData)
@@ -126,7 +128,8 @@ static void curloop_isr(const stc_i_data_t *pData)
         g_scope_i_ol = s_ol_current_ma;
         s_active = 0;
         s_ref_ramp_active = 0;
-        s_use_ext_ref = 0;   /* cascade flag must not persist across phase 0 */
+        /* s_use_ext_ref is intentionally NOT cleared here: a cascade preset
+         * made before phase 0 must survive until closed-loop entry. */
         s_last_us = 0;
         curloop_win_reset();
         return;
@@ -261,11 +264,11 @@ float CurLoop_GetRef(void)
 
 void CurLoop_SetExternalRef(bool enable)
 {
-    s_use_ext_ref = enable ? 1 : 0;
     /* Source switch: drop any stale soft-start ramp so a later return to
-     * g_i_ref_ma re-anchors from actual feedback. Clear the 8-bit flag
-     * before the 64-bit timestamp: the ISR only reads the timestamp while
-     * the flag is set, so this ordering avoids a torn 64-bit read. */
+     * g_i_ref_ma re-anchors from actual feedback. Clear s_ref_ramp_active
+     * first (it is the ISR's guard for reading the 64-bit timestamp), then
+     * the timestamp, and switch s_use_ext_ref last. */
     s_ref_ramp_active = 0;
     s_ref_ramp_start_us = 0;
+    s_use_ext_ref = enable ? 1 : 0;
 }

@@ -55,6 +55,7 @@ void SpeedLoop_SetTarget(float target_rpm) { s_target_rpm = target_rpm; }
 float SpeedLoop_Update(float measured_rpm)
 {
     if (!s_inited) SpeedLoop_Init();
+    /* i_term_max/output_max are topology-synced (watch g_i_ref_max_ma); do not tune them directly in Watch */
 #if MOTOR_LOOP_CURRENT_ENABLE
     g_spd_pid_cfg.output_max = g_i_ref_max_ma;
     g_spd_pid_cfg.i_term_max = g_i_ref_max_ma;
@@ -76,6 +77,6 @@ void SpeedLoop_Seed(float output, float measured_rpm)
 {
     if (!s_inited) SpeedLoop_Init();
     PID_Seed(&s_spd_pid, s_target_rpm, measured_rpm, output);
-    s_output = output;
-    g_scope_spd_out = output;
+    s_output = PID_GetOutput(&s_spd_pid);   /* clamped value */
+    g_scope_spd_out = s_output;
 }

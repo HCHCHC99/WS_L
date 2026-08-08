@@ -70,7 +70,8 @@ void PID_Init(pid_state_t *pid, pid_config_t *cfg);
 void PID_Reset(pid_state_t *pid);
 
 /* Seed controller state so the next output continues from `output`
- * (bumpless handoff). Back-calculates the integral from the error. */
+ * (bumpless handoff). Back-calculates the integral from the error.
+ * Output is clamped to [output_min, output_max]; integral back-calc is clamped by i_term_max (if >0) else integral_max. */
 void PID_Seed(pid_state_t *pid, float setpoint, float measurement, float output);
 
 /* Run one PID iteration. Reads live params from cfg each call. */

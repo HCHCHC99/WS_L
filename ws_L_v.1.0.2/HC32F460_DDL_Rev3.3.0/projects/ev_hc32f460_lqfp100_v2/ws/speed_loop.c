@@ -15,8 +15,8 @@ pid_config_t g_spd_pid_cfg = {
     .kd           = 0.0f,
     .output_min   = 2.0f,    /* adjusted by topology at init */
     .output_max   = 98.0f,
-    .integral_max = 200.0f,
-    .i_term_max   = 0.0f,
+    .integral_max = 300000.0f,
+    .i_term_max   = 2.0f,
     .update_ms    = 50,
 };
 
@@ -38,10 +38,12 @@ void SpeedLoop_Init(void)
     /* cascade: output = current reference (mA), 0 .. limit */
     g_spd_pid_cfg.output_min = 0.0f;
     g_spd_pid_cfg.output_max = g_i_ref_max_ma;
+    g_spd_pid_cfg.i_term_max = g_spd_pid_cfg.output_max;
 #else
     /* speed-only: output = duty (%) */
     g_spd_pid_cfg.output_min = 2.0f;
     g_spd_pid_cfg.output_max = 98.0f;
+    g_spd_pid_cfg.i_term_max = g_spd_pid_cfg.output_max;
 #endif
 
     PID_Init(&s_spd_pid, &g_spd_pid_cfg);
@@ -54,7 +56,11 @@ float SpeedLoop_Update(float measured_rpm)
 {
     if (!s_inited) SpeedLoop_Init();
 #if MOTOR_LOOP_CURRENT_ENABLE
-    g_spd_pid_cfg.output_max = g_i_ref_max_ma;   /* keep limit live for Keil Watch */
+    g_spd_pid_cfg.output_max = g_i_ref_max_ma;
+    g_spd_pid_cfg.i_term_max = g_i_ref_max_ma;
+#else
+    g_spd_pid_cfg.output_max = 98.0f;
+    g_spd_pid_cfg.i_term_max = 98.0f;
 #endif
     g_scope_spd_rpm = measured_rpm;
     s_output = PID_Update(&s_spd_pid, s_target_rpm, measured_rpm);

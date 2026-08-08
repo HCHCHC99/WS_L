@@ -48,14 +48,20 @@ void PID_Seed(pid_state_t *pid, float setpoint, float measurement, float output)
         return;
     }
 
+    if (output < pid->cfg->output_min) output = pid->cfg->output_min;
+    if (output > pid->cfg->output_max) output = pid->cfg->output_max;
+
     float error = setpoint - measurement;
     float p_term = pid->cfg->p_valid ? (pid->cfg->kp * error) : 0.0f;
 
     float integral = 0.0f;
     if (pid->cfg->i_valid && pid->cfg->ki > 0.0f) {
         integral = (output - p_term) / pid->cfg->ki;
-        if (integral >  pid->cfg->integral_max) integral =  pid->cfg->integral_max;
-        if (integral < -pid->cfg->integral_max) integral = -pid->cfg->integral_max;
+        float i_clamp = (pid->cfg->i_term_max > 0.0f)
+                      ? (pid->cfg->i_term_max / pid->cfg->ki)
+                      : pid->cfg->integral_max;
+        if (integral >  i_clamp) integral =  i_clamp;
+        if (integral < -i_clamp) integral = -i_clamp;
     }
 
     pid->integral          = integral;
@@ -66,6 +72,7 @@ void PID_Seed(pid_state_t *pid, float setpoint, float measurement, float output)
     pid->p_term            = p_term;
     pid->i_term            = pid->cfg->i_valid ? (pid->cfg->ki * integral) : 0.0f;
     pid->d_term            = 0.0f;
+    pid->last_update_us    = 0;
 }
 
 /*=============================================================================

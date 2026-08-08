@@ -46,17 +46,29 @@ projects/ev_hc32f460_lqfp100_v2/
 │   ├── dev_sensor.c/h            # Current sensor: overcurrent detection (sample-count & time-window modes), hysteresis
 │   ├── dev_hall.c/h, dev_motor_hall.c/h, dev_adc.c/h, dev_voltage.c/h, dev_power.c/h, dev_pwm.c/h, dev_io.c/h
 ├── ws/                           # Workspace — commutation engine
-│   ├── dev_comm_runner.c/h       # Top-level controller: CW/CCW step tables, mode state machine (STOP/OPEN_FW/OPEN_RV/CLOSED_FW/CLOSED_RV/CALIB/CALIB_CW/CALIB_CCW), calibration state machine, flying-start ramp
+│   ├── dev_comm_runner.c/h       # Top-level controller: CW/CCW step tables, mode state machine (STOP/OPEN_FW/OPEN_RV/CLOSED_FW/CLOSED_RV/CALIB/CALIB_CW/CALIB_CCW/PID_CW/PID_CCW/CURLOOP_FW/CASCADE_FW), calibration state machine, flying-start ramp
 │   ├── dev_commutation.c/h       # Six-step commutation state table: step→PWM mode/duty, lazy-update cache
 │   ├── hall_sensor_3ch.c/h       # 3-channel Hall driver: ISR, Hall→step lookup, M-method RPM, J-Scope globals, ISR noise defense
 │   ├── I.c/h                     # 3-phase current sensing: ADC1 SEQ_B (CH5/6/7), PWM-peak triggered, Biquad-filtered, zero-offset calibration
-│   ├── cur_loop.c/h                 # 50kHz current PI loop (mode 10): per-EOCB 1:1, 5-tap sliding avg, Timer6 dt
+│   ├── cur_loop.c/h                 # current PI loop, 1:1 with PWM (frequency=MOTOR_PWM_FREQ_HZ)，mode 10/11 phase 1 激活，级联时给定来自 g_cur_ref_ext_ma
+│   ├── speed_loop.c/h                # 速度环独立模块，主循环 50ms 更新，级联时输出电流给定 mA，速度环 only 时输出占空比
+│   ├── pos_loop.c/h                 # 位置环预留 stub，GetPos 返回 0
 │   ├── Bemf.c/h                  # BEMF observer: 4-channel ADC via DMA, PWM-peak triggered sampling (observer-only, no sensorless control)
 ├── Utils/                        # Utilities
 │   ├── param_manager.c/h         # Flash parameter persistence with CRC32 + magic header/tail
 │   ├── Params.c/h                # Parameter struct + register address definitions (Modbus holding registers)
 │   ├── ring_buf.c/h, msg_queue.c/h, lock.c/h, TickTimer.c/h, rtt_manager.c/h
 ```
+
+### Loop Topology (motor_config.h)
+
+`ws/motor_config.h` is the single source of truth for loop topology and frequency:
+
+- `MOTOR_PWM_FREQ_HZ` sets PWM / ADC / current-loop frequency with ONE macro (1:1, default 20kHz).
+- `MOTOR_LOOP_POSITION_ENABLE` / `MOTOR_LOOP_SPEED_ENABLE` / `MOTOR_LOOP_CURRENT_ENABLE` + `MOTOR_CUR_REF_SRC` + `MOTOR_DUTY_SRC` select current-loop only / speed-loop only / cascade.
+- `comm_mode = 11` (`COMM_RUNNER_CASCADE_FW`) runs the cascade; chain: pos → speed → current → duty.
+- Speed-loop Keil Watch variables: `g_target_rpm`, `g_spd_pid_cfg`; current limit `g_i_ref_max_ma`.
+- Position loop reserved: `g_target_pos` (`pos_loop.c/h` stub, `PosLoop_GetPos()` returns 0).
 
 ### Init Order (Critical)
 
@@ -257,7 +269,7 @@ J-Link + J-Scope in HSS mode, loading `template/MDK/output/debug/template.axf`. 
 **Current** (in `I.c`):
 - `g_i_iu_filt`, `g_i_iv_filt`, `g_i_iw_filt` — Biquad-filtered current (Q8: divide by 256 for mA)
 
-> **Note**: PWM / ADC / current-loop frequency is set by ONE macro: `MOTOR_PWM_FREQ_HZ` in `ws/motor_config.h` (default 25kHz). The Biquad in `ws/I.c` is designed for fs=50kHz, so the real -3dB cutoff scales as 200Hz ? PWM/50k (display only). The current loop uses a 5-tap sliding average of raw `g_i_*_ma`, not the Biquad output.
+> **Note**: PWM / ADC / current-loop frequency is set by ONE macro: `MOTOR_PWM_FREQ_HZ` in `ws/motor_config.h` (default 20kHz). The Biquad in `ws/I.c` is designed for fs=50kHz, so the real -3dB cutoff scales as 200Hz ? PWM/50k (display only). The current loop uses a 5-tap sliding average of raw `g_i_*_ma`, not the Biquad output.
 
 - `g_i_iu_disp`, `g_i_iv_disp`, `g_i_iw_disp` — display-friendly (mA + 10000 offset)
 - `g_i_uvw_ma` — three-phase sum (should be ~0)

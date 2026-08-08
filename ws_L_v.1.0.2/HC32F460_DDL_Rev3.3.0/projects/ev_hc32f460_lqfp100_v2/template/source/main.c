@@ -32,7 +32,7 @@ extern volatile uint8_t g_scope_step; /* Current commutation step (0-5) */
 /*=============================================================================
  * Keil Watch ��改变�?? (调试接口)
  *=============================================================================*/
-volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW */
+volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW 11=CascadeFW */
 volatile float g_comm_duty_pct  = 80.0f; /* Duty cycle 2%~98% */
 
 /* PID speed control �?? Keil Watch variables */

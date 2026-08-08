@@ -50,7 +50,7 @@ projects/ev_hc32f460_lqfp100_v2/
 │   ├── dev_commutation.c/h       # Six-step commutation state table: step→PWM mode/duty, lazy-update cache
 │   ├── hall_sensor_3ch.c/h       # 3-channel Hall driver: ISR, Hall→step lookup, M-method RPM, J-Scope globals, ISR noise defense
 │   ├── I.c/h                     # 3-phase current sensing: ADC1 SEQ_B (CH5/6/7), PWM-peak triggered, Biquad-filtered, zero-offset calibration
-│   ├── cur_loop.c/h                 # 50kHz current PI loop (mode 10): per-EOCB 1:1, 5-tap sliding avg, Timer6 dt
+│   ├── cur_loop.c/h                 # 10kHz current PI loop (mode 10): per-EOCB 1:1, 5-tap sliding avg, Timer6 dt
 │   ├── Bemf.c/h                  # BEMF observer: 4-channel ADC via DMA, PWM-peak triggered sampling (observer-only, no sensorless control)
 ├── Utils/                        # Utilities
 │   ├── param_manager.c/h         # Flash parameter persistence with CRC32 + magic header/tail
@@ -198,8 +198,8 @@ Set `comm_mode = 5` in Keil Watch → wait for `g_calib_status = 2` → verify `
 
 BEMF is **observer-only** — no zero-crossing detection or sensorless commutation. Key design notes:
 
-- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 160µs (6.25kHz) at 50kHz PWM.
-- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 50kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
+- **4-channel DMA**: ADC1 CH0–CH3 via DMA1 CH0–CH3, 8-sample buffer per channel. BTC interrupt fires every 800µs (1.25kHz) at 10kHz PWM.
+- **Trigger**: TMR4_3 SCMP0 at PWM counter peak (center-aligned triangle wave, 10kHz). EVT channel shares UH PWM channel — separate register sets, no known conflict.
 - **Known issue**: BEMF reads driven phase voltage when motor is stopped. The correct approach is to only read the **floating phase** during six-step commutation. This is now implemented: `Bemf_GetFloatingChannel()`, `Bemf_GetFloatingPhaseRaw()`, `Bemf_GetFloatingPhaseBemf()`, and `g_bemf_wave_data` is auto-selected in the DMA BTC ISR per `g_scope_step`. Floating-phase mapping (current code): step0 UH+VL→W, step1 UH+WL→V, step2 VH+WL→U, step3 VH+UL→W, step4 WH+UL→V, step5 WH+VL→U.
 - **Voltage calculation ignores resistor divider ratio**: Current mV conversion uses raw `ADC * 3300 / 4096` which gives ADC pin voltage, NOT actual phase voltage. Real circuit has resistor dividers — component values needed from schematic. See `bemf.md` for full details.
 - **PA0–PA3 conflict risk**: PA2 may conflict with USART2 alternate functions.
@@ -257,7 +257,7 @@ J-Link + J-Scope in HSS mode, loading `template/MDK/output/debug/template.axf`. 
 **Current** (in `I.c`):
 - `g_i_iu_filt`, `g_i_iv_filt`, `g_i_iw_filt` — Biquad-filtered current (Q8: divide by 256 for mA)
 
-> **Note**: PWM runs at 50kHz and the Biquad in `ws/I.c` is designed for fs=50kHz (`butter(2, 200/25000)`), so the real -3dB cutoff is 200Hz as designed. The current loop uses a decimated window average of raw `g_i_*_ma`, not the Biquad output.
+> **Note**: PWM runs at 10kHz; the Biquad in `ws/I.c` is designed for fs=50kHz (`butter(2, 200/25000)`), so the real -3dB cutoff is ~40Hz (display only). The current loop uses a 5-tap sliding average of raw `g_i_*_ma`, not the Biquad output.
 
 - `g_i_iu_disp`, `g_i_iv_disp`, `g_i_iw_disp` — display-friendly (mA + 10000 offset)
 - `g_i_uvw_ma` — three-phase sum (should be ~0)

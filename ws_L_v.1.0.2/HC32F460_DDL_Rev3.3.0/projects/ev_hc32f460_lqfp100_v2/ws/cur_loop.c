@@ -10,7 +10,7 @@
  *        dt: measured from Timer6 microsecond timestamp.
  *        Output: Commutation_SetActiveDuty() -> OCCR (takes effect at next PWM peak).
  *
- *        Active only in COMM_RUNNER_CURLOOP_FW mode while hall FSM is RUNNING.
+ *        Active only in COMM_RUNNER_CURLOOP_FW phase 1 (CommRunner_CurLoopActive()).
  *******************************************************************************
  */
 
@@ -90,8 +90,8 @@ static void curloop_isr(const stc_i_data_t *pData)
         return;
     }
 
-    if (!CommRunner_IsRunning()) {
-        /* open-loop ramp phase: estimate running current for soft-start ref */
+    if (!CommRunner_CurLoopActive()) {
+        /* phase 0 (table-driven open loop): estimate running current for soft-start ref */
         float fb_inst = (float)curloop_feedback(pData);
         s_ol_current_ma += (fb_inst - s_ol_current_ma) * 0.02f;   /* EMA, tau~1ms */
         g_scope_i_ol = s_ol_current_ma;

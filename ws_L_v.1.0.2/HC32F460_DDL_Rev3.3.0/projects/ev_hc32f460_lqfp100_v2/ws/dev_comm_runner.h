@@ -133,6 +133,9 @@ float CommRunner_GetRPM(void);
 /* �否�在运� (��模式� Hall 处于 RUNNING 状�) */
 uint8_t CommRunner_IsRunning(void);
 
+/* Current-loop mode (10) phase-1 active: current PI enabled */
+uint8_t CommRunner_CurLoopActive(void);
+
 /* �否堵� */
 uint8_t CommRunner_IsStalled(void);
 

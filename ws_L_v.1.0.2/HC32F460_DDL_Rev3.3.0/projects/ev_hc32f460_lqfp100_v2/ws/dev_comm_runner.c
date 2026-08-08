@@ -626,10 +626,20 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
     case COMM_RUNNER_CURLOOP_FW:
         if (s_hall) hall_3ch_stop(s_hall);
         calib_build_derived_tables();
-        start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
-                        s_cfg.ol_fly_ramp_ms, 1);
-        s_sub_phase = 0;
-        MAIN_D("[CommRunner] Mode=CURLOOP_FW: fly-start -> closed-loop + current PI");
+        /* Table-driven open loop: commutate by Hall using the calibrated table
+         * (g_calib_cw_table = g_calib_table + 4). Fall back to the hardcoded
+         * forward table if calibration is invalid. */
+        if (g_calib_table[1] > 5u) {
+            MAIN_D("[CommRunner] CALIB table invalid, using hardcoded s_hall2step_cw");
+            hall_3ch_set_table(s_hall, s_hall2step_cw);
+        } else {
+            hall_3ch_set_table(s_hall, g_calib_cw_table);
+        }
+        hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
+        s_sub_phase          = 0;
+        s_ol_ramp_duration_ms = s_cfg.ol_fly_ramp_ms;
+        s_ol_ramp_start_us    = Timer6_Timebase_GetTimestamp();
+        MAIN_D("[CommRunner] Mode=CURLOOP_FW: table-driven open loop -> current PI");
         break;
     }
 }
@@ -838,19 +848,23 @@ void CommRunner_Update(void)
     }
 
 
-    /* ---- Current-loop (mode 10): current PI runs in ADC ISR (cur_loop.c) ---- */
+    /* ---- Current-loop (mode 10): table-driven open loop -> current PI (ISR) ---- */
     case COMM_RUNNER_CURLOOP_FW: {
         if (s_sub_phase == 0) {
-            /* Phase 0: open-loop ramp */
-            open_loop_tick(now, 1);
-
+            /* Phase 0: table-driven open loop. Hall ISR already commutates using
+             * the calibrated table at fixed s_duty; here only monitor and advance
+             * to phase 1 after the configured open-loop duration. */
+            hall_3ch_update(s_hall);
+            if (hall_3ch_is_stalled(s_hall)) {
+                MAIN_D("[CommRunner] CURLOOP stall, coast");
+                CommRunner_SetMode(COMM_RUNNER_STOP);
+                break;
+            }
             uint64_t ramp_elapsed = now - s_ol_ramp_start_us;
             uint64_t ramp_total   = (uint64_t)s_ol_ramp_duration_ms * 1000UL;
             if (ramp_elapsed >= ramp_total) {
-                hall_3ch_set_table(s_hall, g_calib_cw_table);
-                hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
                 s_sub_phase = 1;
-                MAIN_D("[CommRunner] CURLOOP fly-start -> closed-loop (current PI active)");
+                MAIN_D("[CommRunner] CURLOOP phase0 done -> current PI active");
             }
         } else {
             /* Phase 1: closed-loop (Hall ISR driven); duty handled by cur_loop ISR */
@@ -894,6 +908,14 @@ uint8_t CommRunner_IsStalled(void)
 {
     if (!s_hall) return 0;
     return hall_3ch_is_stalled(s_hall);
+}
+
+/*=============================================================================
+ * CommRunner_CurLoopActive - 1 when mode 10 is in closed-loop phase (current PI on)
+ *=============================================================================*/
+uint8_t CommRunner_CurLoopActive(void)
+{
+    return (s_mode == COMM_RUNNER_CURLOOP_FW && s_sub_phase == 1) ? 1u : 0u;
 }
 
 /*=============================================================================

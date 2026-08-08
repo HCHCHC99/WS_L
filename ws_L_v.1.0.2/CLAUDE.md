@@ -100,7 +100,7 @@ STOP(0) → OPEN_FW(1)/OPEN_RV(2) → open-loop ramp at constant interval
                  OR
        → CALIB(5) → open-loop + Hall edge detection → derive 0° offset table → motor stops automatically
        → CALIB_CW(6)/CALIB_CCW(7) → load derived tables + offsets → closed-loop
-       → CURLOOP_FW(10) → open-loop ramp + Hall closed-loop with 10kHz current PI (duty from ADC ISR)
+       → CURLOOP_FW(10) → table-driven open loop (Hall + calibrated table, fixed duty) → current PI (duty from ADC ISR)
 ```
 
 - **Hall→Step tables**: The CW table (`s_hall2step_cw`) uses `reverse_map` (sector -90°), CCW table uses `forward_map` (sector +90°). These are **swapped** relative to their names because this motor's CW rotation corresponds to decreasing electrical angle.

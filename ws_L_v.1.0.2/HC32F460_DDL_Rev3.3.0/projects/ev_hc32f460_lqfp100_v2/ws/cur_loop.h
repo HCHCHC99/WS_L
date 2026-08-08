@@ -41,6 +41,10 @@ void CurLoop_Init(void);
 void  CurLoop_SetRef(float ma);
 float CurLoop_GetRef(void);
 
+/* Cascade mode: current setpoint comes from g_cur_ref_ext_ma (no soft-start ramp) */
+void CurLoop_SetExternalRef(bool enable);
+extern volatile float g_cur_ref_ext_ma;
+
 #ifdef __cplusplus
 }
 #endif

@@ -41,6 +41,9 @@
 /* Keil Watch: current setpoint (mA) */
 volatile float g_i_ref_ma = 800.0f;
 
+/* Cascade external current reference (written by the chain/speed loop) */
+volatile float g_cur_ref_ext_ma = 0.0f;
+
 /* J-Scope observability */
 volatile float g_scope_i_ref  = 0.0f;
 volatile float g_scope_i_fb   = 0.0f;
@@ -79,6 +82,7 @@ static uint8_t  s_active        = 0;    /* current-loop activation latch */
 static uint8_t  s_ref_ramp_active  = 0;
 static float    s_ref_start        = 0.0f;
 static uint64_t s_ref_ramp_start_us = 0;
+static uint8_t s_use_ext_ref = 0;   /* 1 = use g_cur_ref_ext_ma, no ramp */
 
 static int16_t curloop_feedback(const stc_i_data_t *pData)
 {
@@ -174,20 +178,24 @@ static void curloop_isr(const stc_i_data_t *pData)
     s_last_us = now;
     g_scope_i_dt_us = dt_us;
 
-    /* Soft-start ref ramp: start from the real handoff current and ramp to
-     * g_i_ref_ma over CURLOOP_REF_RAMP_MS, so the loop never slams duty. */
-    float ref = g_i_ref_ma;
-    if (s_ref_ramp_active) {
-        if (s_ref_ramp_start_us == 0) {
-            s_ref_start = fb;              /* anchor at actual open-loop current */
-            s_ref_ramp_start_us = now;
-        }
-        uint64_t ramp_el = now - s_ref_ramp_start_us;
-        uint64_t ramp_tot = (uint64_t)CURLOOP_REF_RAMP_MS * 1000UL;
-        float ratio = (ramp_el >= ramp_tot) ? 1.0f : ((float)ramp_el / (float)ramp_tot);
-        ref = s_ref_start + (g_i_ref_ma - s_ref_start) * ratio;
-        if (ratio >= 1.0f) {
-            s_ref_ramp_active = 0;
+    /* Current setpoint: cascade mode uses external ref (no ramp); else soft-start ramp */
+    float ref;
+    if (s_use_ext_ref) {
+        ref = g_cur_ref_ext_ma;
+    } else {
+        ref = g_i_ref_ma;
+        if (s_ref_ramp_active) {
+            if (s_ref_ramp_start_us == 0) {
+                s_ref_start = fb;              /* anchor at actual open-loop current */
+                s_ref_ramp_start_us = now;
+            }
+            uint64_t ramp_el = now - s_ref_ramp_start_us;
+            uint64_t ramp_tot = (uint64_t)CURLOOP_REF_RAMP_MS * 1000UL;
+            float ratio = (ramp_el >= ramp_tot) ? 1.0f : ((float)ramp_el / (float)ramp_tot);
+            ref = s_ref_start + (g_i_ref_ma - s_ref_start) * ratio;
+            if (ratio >= 1.0f) {
+                s_ref_ramp_active = 0;
+            }
         }
     }
     if (ref < 0.0f) {
@@ -241,4 +249,9 @@ void CurLoop_SetRef(float ma)
 float CurLoop_GetRef(void)
 {
     return g_i_ref_ma;
+}
+
+void CurLoop_SetExternalRef(bool enable)
+{
+    s_use_ext_ref = enable ? 1 : 0;
 }

@@ -626,20 +626,25 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
     case COMM_RUNNER_CURLOOP_FW:
         if (s_hall) hall_3ch_stop(s_hall);
         calib_build_derived_tables();
-        /* Table-driven open loop: commutate by Hall using the calibrated table
-         * (g_calib_cw_table = g_calib_table + 4). Fall back to the hardcoded
-         * forward table if calibration is invalid. */
-        if (g_calib_table[1] > 5u) {
-            MAIN_D("[CommRunner] CALIB table invalid, using hardcoded s_hall2step_cw");
-            hall_3ch_set_table(s_hall, s_hall2step_cw);
+        /* Timed open loop anchored to the calibrated 0-deg table: start from the
+         * aligned step for the current Hall position, then the timer ramp advances
+         * steps in the calibration direction (dir_fw=1). Keeps reliable forced
+         * startup while matching the calibrated direction. */
+        start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
+                        s_cfg.ol_fly_ramp_ms, 1);
+        if (g_calib_table[1] <= 5u) {
+            uint8_t hall = hall_3ch_read_raw(s_hall);
+            if (hall >= 1u && hall <= 6u && g_calib_table[hall] <= 5u) {
+                s_comm_step = g_calib_table[hall];
+                Commutation_Step((uint8_t)s_comm_step, s_cfg.pwm_freq_hz, s_duty);
+                MAIN_D("[CommRunner] CURLOOP calib-anchored: hall=0x%02X step=%d",
+                       (unsigned)hall, (int)s_comm_step);
+            }
         } else {
-            hall_3ch_set_table(s_hall, g_calib_cw_table);
+            MAIN_D("[CommRunner] CALIB table invalid, open loop from step 0");
         }
-        hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
-        s_sub_phase          = 0;
-        s_ol_ramp_duration_ms = s_cfg.ol_fly_ramp_ms;
-        s_ol_ramp_start_us    = Timer6_Timebase_GetTimestamp();
-        MAIN_D("[CommRunner] Mode=CURLOOP_FW: table-driven open loop -> current PI");
+        s_sub_phase = 0;
+        MAIN_D("[CommRunner] Mode=CURLOOP_FW: timed open loop -> current PI");
         break;
     }
 }
@@ -848,23 +853,25 @@ void CommRunner_Update(void)
     }
 
 
-    /* ---- Current-loop (mode 10): table-driven open loop -> current PI (ISR) ---- */
+    /* ---- Current-loop (mode 10): timed open loop -> current PI (ISR) ---- */
     case COMM_RUNNER_CURLOOP_FW: {
         if (s_sub_phase == 0) {
-            /* Phase 0: table-driven open loop. Hall ISR already commutates using
-             * the calibrated table at fixed s_duty; here only monitor and advance
-             * to phase 1 after the configured open-loop duration. */
-            hall_3ch_update(s_hall);
-            if (hall_3ch_is_stalled(s_hall)) {
-                MAIN_D("[CommRunner] CURLOOP stall, coast");
-                CommRunner_SetMode(COMM_RUNNER_STOP);
-                break;
-            }
+            /* Phase 0: timed open loop (timer-driven forced commutation). The
+             * calibrated table anchors the start step; Hall takes over at the
+             * end of the ramp for closed-loop + current PI. */
+            open_loop_tick(now, 1);
+
             uint64_t ramp_elapsed = now - s_ol_ramp_start_us;
             uint64_t ramp_total   = (uint64_t)s_ol_ramp_duration_ms * 1000UL;
             if (ramp_elapsed >= ramp_total) {
+                if (g_calib_table[1] > 5u) {
+                    hall_3ch_set_table(s_hall, s_hall2step_cw);
+                } else {
+                    hall_3ch_set_table(s_hall, g_calib_cw_table);
+                }
+                hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
                 s_sub_phase = 1;
-                MAIN_D("[CommRunner] CURLOOP phase0 done -> current PI active");
+                MAIN_D("[CommRunner] CURLOOP ramp done -> closed-loop + current PI");
             }
         } else {
             /* Phase 1: closed-loop (Hall ISR driven); duty handled by cur_loop ISR */

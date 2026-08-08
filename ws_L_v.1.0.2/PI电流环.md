@@ -151,7 +151,7 @@ float PID_UpdateUs(pid_state_t *pid, float setpoint, float measurement, uint32_t
 
 ### 5.1 Stage 1：独立电流环模式（学习调参）
 - 新增 `comm_runner_mode_t`：`COMM_RUNNER_CURLOOP_FW = 10`。
-- 行为：**开环阶段直接用霍尔校准表驱动换相**（`g_calib_cw_table`，固定占空比，持续 `ol_fly_ramp_ms`），随后**电流环接管占空比**，给定为 Keil Watch 全局 `g_i_ref_ma`（有符号 mA）。
+- 行为：**开环阶段为定时强拖**，进入时用校准表 `g_calib_table` 对准起始步，方向与校准一致；ramp 结束后切 `g_calib_cw_table` 闭环 + **电流环接管占空比**，给定为 Keil Watch 全局 `g_i_ref_ma`（有符号 mA）。
 - 新增全局：`volatile float g_i_ref_ma = 800.0f;`（cur_loop.c，Keil Watch 可改）。
 
 ```mermaid

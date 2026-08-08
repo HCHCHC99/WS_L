@@ -82,7 +82,12 @@ static uint8_t  s_active        = 0;    /* current-loop activation latch */
 static uint8_t  s_ref_ramp_active  = 0;
 static float    s_ref_start        = 0.0f;
 static uint64_t s_ref_ramp_start_us = 0;
-static uint8_t s_use_ext_ref = 0;   /* 1 = use g_cur_ref_ext_ma, no ramp */
+/* Cascade handshake (main loop -> ISR):
+ *  engage: write g_cur_ref_ext_ma first, then SetExternalRef(true);
+ *  exit:   SetExternalRef(false) first, then switch g_i_ref_ma.
+ * g_cur_ref_ext_ma is a 32-bit float: single-instruction read/write on
+ * Cortex-M4, so hardware cannot tear it. */
+static volatile uint8_t s_use_ext_ref = 0;   /* 1 = use g_cur_ref_ext_ma, no ramp */
 
 static int16_t curloop_feedback(const stc_i_data_t *pData)
 {
@@ -108,6 +113,7 @@ static void curloop_isr(const stc_i_data_t *pData)
         /* mode not current-loop: reset state so restart starts clean */
         s_active = 0;
         s_ref_ramp_active = 0;
+        s_use_ext_ref = 0;   /* cascade flag must not persist across mode/stop */
         s_last_us = 0;
         curloop_win_reset();
         return;
@@ -120,6 +126,7 @@ static void curloop_isr(const stc_i_data_t *pData)
         g_scope_i_ol = s_ol_current_ma;
         s_active = 0;
         s_ref_ramp_active = 0;
+        s_use_ext_ref = 0;   /* cascade flag must not persist across phase 0 */
         s_last_us = 0;
         curloop_win_reset();
         return;
@@ -216,7 +223,7 @@ static void curloop_isr(const stc_i_data_t *pData)
     g_scope_i_ref  = ref;
     g_scope_i_fb   = fb;
     g_scope_i_duty = duty;
-    g_scope_i_err  = g_i_ref_ma - fb;
+    g_scope_i_err  = ref - fb;
 
     {
         static uint32_t s_last_dbg = 0;
@@ -224,7 +231,7 @@ static void curloop_isr(const stc_i_data_t *pData)
         if ((now_ms - s_last_dbg) >= 500u) {
             s_last_dbg = now_ms;
             MAIN_D("[CURLOOP] ref=%d fb=%d err=%d duty=%d%% i=%d dt=%luus step=%u",
-                   (int)g_i_ref_ma, (int)fb, (int)(g_i_ref_ma - fb),
+                   (int)ref, (int)fb, (int)(ref - fb),
                    (int)(duty * 10) / 10, (int)s_pid.i_term,
                    (unsigned long)dt_us, (unsigned)g_scope_step);
         }
@@ -238,6 +245,7 @@ void CurLoop_Init(void)
     }
     PID_Init(&s_pid, &g_cur_pid_cfg);
     I_RegisterCallback(curloop_isr);
+    s_use_ext_ref = 0;   /* never start with a stale cascade reference */
     s_inited = 1;
 }
 
@@ -254,4 +262,10 @@ float CurLoop_GetRef(void)
 void CurLoop_SetExternalRef(bool enable)
 {
     s_use_ext_ref = enable ? 1 : 0;
+    /* Source switch: drop any stale soft-start ramp so a later return to
+     * g_i_ref_ma re-anchors from actual feedback. Clear the 8-bit flag
+     * before the 64-bit timestamp: the ISR only reads the timestamp while
+     * the flag is set, so this ordering avoids a torn 64-bit read. */
+    s_ref_ramp_active = 0;
+    s_ref_ramp_start_us = 0;
 }

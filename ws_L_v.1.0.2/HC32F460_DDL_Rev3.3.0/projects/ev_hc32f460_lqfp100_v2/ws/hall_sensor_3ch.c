@@ -52,6 +52,7 @@ typedef struct hall_3ch_instance_t {
     volatile uint32_t last_pulse_interval;
     volatile uint64_t last_pulse_time_us;
     volatile uint32_t pulse_counter;
+    volatile uint32_t last_pulse_tick_ms;  /* 1ms tick at last Hall pulse (stall detect, atomic) */
     volatile uint32_t last_counter;     /* per-instance, not shared across ISR channels */
 
     /* RPM: M-method (pulse count over time window) */
@@ -230,6 +231,7 @@ static void hall_common_handler(uint8_t ch)
         inst->last_hall_state  = state;
         inst->last_step        = step;
         inst->last_pulse_time_us = Timer6_Timebase_GetTimestamp();
+        inst->last_pulse_tick_ms  = (uint32_t)tickTimer_GetCount();
         inst->pulse_counter++;
         return;
     }
@@ -251,6 +253,7 @@ static void hall_common_handler(uint8_t ch)
     inst->last_step              = step;
     inst->last_pulse_interval = delta;
     inst->last_pulse_time_us     = Timer6_Timebase_GetTimestamp();
+    inst->last_pulse_tick_ms     = (uint32_t)tickTimer_GetCount();
     inst->pulse_counter++;
 
     /* Normalized display step: always ±1 per transition (internal use) */
@@ -344,6 +347,7 @@ void hall_3ch_start(hall_3ch_handle_t h, hall3_direction_t dir)
     inst->target_dir  = dir;
     inst->stalled     = 0;
     inst->last_pulse_time_us = Timer6_Timebase_GetTimestamp();
+    inst->last_pulse_tick_ms  = (uint32_t)tickTimer_GetCount();
 
     inst->last_pulse_count   = inst->pulse_counter;
     inst->last_rpm_update_us = inst->last_pulse_time_us;
@@ -366,6 +370,7 @@ void hall_3ch_start_flying(hall_3ch_handle_t h, hall3_direction_t dir)
     inst->target_dir  = dir;
     inst->stalled     = 0;
     inst->last_pulse_time_us = Timer6_Timebase_GetTimestamp();
+    inst->last_pulse_tick_ms  = (uint32_t)tickTimer_GetCount();
 
     inst->last_pulse_count   = inst->pulse_counter;
     inst->last_rpm_update_us = inst->last_pulse_time_us;
@@ -507,9 +512,13 @@ void hall_3ch_update(hall_3ch_handle_t h)
 
     case STATE_RUNNING:
         if (inst->config.stall_timeout_ms > 0) {
-            uint64_t since_pulse = now - inst->last_pulse_time_us;
-            g_hall_last_pulse_age_ms = (uint32_t)(since_pulse / 1000UL);
-            if (since_pulse > (uint64_t)inst->config.stall_timeout_ms * 1000UL) {
+            /* Stall detect on the 1ms tickTimer (32-bit, atomic read) - the 64-bit
+             * Timer6 us timestamp is written by multiple contexts and can tear,
+             * which previously caused false stalls (age=14 days). */
+            uint32_t now_ms = (uint32_t)tickTimer_GetCount();
+            uint32_t since_pulse_ms = now_ms - inst->last_pulse_tick_ms;  /* modular */
+            g_hall_last_pulse_age_ms = since_pulse_ms;
+            if (since_pulse_ms > (uint32_t)inst->config.stall_timeout_ms) {
                 inst->stalled = 1;
                 inst->state   = STATE_IDLE;
             }

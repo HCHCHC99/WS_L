@@ -35,8 +35,8 @@ extern "C" {
 /** Max single TX frame (matches Usart3_IO TX buffer) */
 #define USART3_VOFA_TX_MAX         (256U)
 
-/** Max channels in one JustFloat frame (limited by TX buffer) */
-#define USART3_VOFA_MAX_CHANNELS   (16U)
+/** Max channels in one JustFloat frame (limited by TX buffer 256B: 24ch = 100B) */
+#define USART3_VOFA_MAX_CHANNELS   (24U)
 
 /** Default scale: int32 x 0.001 (mV->V, mA->A, mdeg->deg, ...) */
 #define USART3_VOFA_SCALE_MILLI    (0.001f)

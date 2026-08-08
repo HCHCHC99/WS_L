@@ -103,7 +103,7 @@ RTT/
 ```
 帧格式: [float32 LE × N] + [0x00, 0x00, 0x80, 0x7F]
 尾帧:   0x7F800000 (IEEE754 +Infinity)
-最大通道: 16 (受 TX buffer 256B 限制)
+最大通道: 24 (受 TX buffer 256B 限制)
 发送:    DMA 非阻塞
 数据约定: MCU 用 int32_t×1000，发前 ×0.001f 转 float
 ```
@@ -267,6 +267,9 @@ Usart3_Vofa_SendScaled(cur, 16, USART3_VOFA_SCALE_MILLI);
 | 14 | W−M | W 相反电动势 (vs 中性点) | mV |
 | **15** | **浮空相 BEMF** | **当前浮空相 vs 中性点 (ISR 自动选相)** | **mV** |
 | **16** | **U−V** | **U-V 线反电动势** | **mV** |
+| **17** | `g_i_ref_ma` | 电流环**最终目标电流** | A |
+| **18** | `g_scope_i_fb` | 电流环**当前实测电流** | A |
+| **19** | `g_scope_i_ref` | 电流环**下一步给定（斜坡中）** | A |
 
 ### BEMF 采集架构
 
@@ -304,7 +307,7 @@ Usart3_Vofa_SendScaled(cur, 16, USART3_VOFA_SCALE_MILLI);
 | 项目 | 值 |
 |------|-----|
 | 协议 | JustFloat |
-| 帧大小 | 68 字节 (16×float32 + 4 尾帧) |
+| 帧大小 | 80 字节 (19×float32 + 4 尾帧) |
 | 波特率 | **921600** |
 | 发送方式 | DMA2 CH0, 全速 (DMA 背压) |
 | 实际帧率 | ~2.9k 帧/秒 |

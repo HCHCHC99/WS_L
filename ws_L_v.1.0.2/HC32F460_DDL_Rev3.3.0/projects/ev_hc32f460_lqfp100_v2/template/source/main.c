@@ -220,7 +220,7 @@ int main(void)
 
         /* ---- VOFA+ USART3: 全速电�? + 心跳 + RX 日志 ---- */
         if (!Usart3_Vofa_IsTxBusy()) {
-            int32_t cur[16];
+            int32_t cur[19];
 
             /* EMA low-pass filter for BEMF display channels (α=0.05; fc/BTC rate scale with MOTOR_PWM_FREQ_HZ)
              * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
@@ -274,8 +274,12 @@ int main(void)
             }
             /* CH15: U-V line BEMF (mV, EMA-filtered) */
             cur[15] = RAW_TO_MV((int32_t)(s_fEmaU - s_fEmaV)) * 1000;
+            /* Current-loop channels (mA; SCALE_MILLI -> A) */
+            cur[16] = (int32_t)g_i_ref_ma;     /* CH16: final target current */
+            cur[17] = (int32_t)g_scope_i_fb;   /* CH17: measured current */
+            cur[18] = (int32_t)g_scope_i_ref;  /* CH18: next-step (ramped) current setpoint */
             #undef RAW_TO_MV
-            Usart3_Vofa_SendScaled(cur, 16, USART3_VOFA_SCALE_MILLI);
+            Usart3_Vofa_SendScaled(cur, 19, USART3_VOFA_SCALE_MILLI);
         }
 
         Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */

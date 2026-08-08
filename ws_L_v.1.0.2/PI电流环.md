@@ -57,7 +57,7 @@
 
 ### 3.1 电流环节拍：复用 ADC1 EOCB ISR（与 PWM 1:1，50kHz）
 - 挂载点：`I_RegisterCallback()`（50kHz 每拍调用，ISR 上下文）。
-- 电流环频率 = PWM = ADC = **50kHz**：每次 EOCB 都执行 PI（1:1），反馈用 5 点滑窗平均。
+- 电流环频率 = PWM = ADC（由 `MOTOR_PWM_FREQ_HZ` 决定）：每次 EOCB 都执行 PI（1:1），反馈用 ~200µs 滑窗平均。
 - 为什么不用主循环 / 新开 200µs 中断：
   - 主循环含 VOFA+ 16 通道发送、BEMF EMA、日志，执行时间不确定，控制周期会抖动；
   - 新开 Timer6 200µs 中断需改 Period + 修 wrap 常量 + NVIC 注册，改动面大且会动到 Hall 依赖的共享时基（不推荐）。
@@ -74,7 +74,7 @@ s_last_us = now;
 
 ### 3.3 反馈相选择
 - 按 `g_scope_step` 查 `s_states`，取 `M_HIGH/D_PWM` 通道（导通相）的电流。
-- 窗口平均：5 点滑窗（`s_win[5]`，每次采样更新、每次输出），平滑换相纹波。
+- 窗口平均：~200µs 时间窗口（点数随频率自适应：10k=2、20k=4、25k=5、50k=10），每次采样更新、每次输出，平滑换相纹波。
 - 可选：换相后前 2~3 拍做 blanking（跳过），避开换相尖峰（实现时验证是否需要）。
 - 不用三相平均（浮空相≈0，换相沿有尖峰）。
 
@@ -171,7 +171,7 @@ flowchart LR
 - `g_scope_i_ref`、`g_scope_i_fb`、`g_scope_i_duty`、`g_scope_i_err`（volatile float，电流环回调里更新）。
 
 ### 5.4 初始参数建议（学习起点，非最终值）
-- `Kp = 0.2`（% 占空比 / mA），`Ki = 0.2`（% / (mA·s)），`Kd` 关闭，`update_ms = 0`（50kHz 全速）。
+- `Kp = 0.1`（% 占空比 / mA），`Ki = 0.1`（% / (mA·s)），`Kd` 关闭，`update_ms = 0`（=随 PWM 频率全速，见 `MOTOR_PWM_FREQ_HZ`）。
 - `output_min = 2.0`、`output_max = 98.0`、`integral_max = 50.0`、`i_term_max = 10.0`（I 项贡献 ≤ ±10%）。
 
 ---

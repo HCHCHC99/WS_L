@@ -24,13 +24,14 @@
 #include "rtt_log.h"
 #include "motor_config.h"
 
-/* Feedback window: keep ~100-200us of averaging across frequencies.
- * WIN_SIZE scales with MOTOR_PWM_FREQ_HZ so a low-frequency loop does not
- * get a long time-domain window (which delays the handoff response). */
+/* Feedback window: keep a ~200us time-domain average across frequencies.
+ * WIN_SIZE scales with MOTOR_PWM_FREQ_HZ (50k->10, 25k->5, 20k->4, 10k->2). */
 #if   MOTOR_PWM_FREQ_HZ >= 50000u
-  #define CURLOOP_WIN_SIZE 5u
+  #define CURLOOP_WIN_SIZE 10u
 #elif MOTOR_PWM_FREQ_HZ >= 25000u
-  #define CURLOOP_WIN_SIZE 3u
+  #define CURLOOP_WIN_SIZE 5u
+#elif MOTOR_PWM_FREQ_HZ >= 20000u
+  #define CURLOOP_WIN_SIZE 4u
 #else
   #define CURLOOP_WIN_SIZE 2u
 #endif
@@ -54,8 +55,8 @@ pid_config_t g_cur_pid_cfg = {
     .p_valid      = true,
     .i_valid      = true,
     .d_valid      = false,
-    .kp           = 0.2f,     /* % duty per mA error (full authority: 500mA err -> 100%) */
-    .ki           = 0.2f,     /* % duty per (mA*s) */
+    .kp           = 0.1f,     /* % duty per mA error (lowered: feedback window +200us delay) */
+    .ki           = 0.1f,     /* % duty per (mA*s) */
     .kd           = 0.0f,
     .output_min   = 2.0f,
     .output_max   = 98.0f,

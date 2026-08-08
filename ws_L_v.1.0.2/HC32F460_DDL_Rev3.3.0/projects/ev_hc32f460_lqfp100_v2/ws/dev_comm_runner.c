@@ -1,4 +1,5 @@
 #include "dev_comm_runner.h"
+#include "cur_loop.h"
 #include "dev_commutation.h"
 #include "tmr4_pwm.h"
 #include "timer6_timebase.h"
@@ -885,7 +886,16 @@ void CommRunner_Update(void)
             /* Phase 1: closed-loop (Hall ISR driven); duty handled by cur_loop ISR */
             hall_3ch_update(s_hall);
             if (hall_3ch_is_stalled(s_hall)) {
-                MAIN_D("[CommRunner] CURLOOP stall, coast");
+                MAIN_D("[CURLOOP] STALL: age=%lums rpm=%d step=%u sub=%d ref=%d fb=%d duty_x10=%d err=%d dt=%luus",
+                       (unsigned long)g_hall_last_pulse_age_ms,
+                       (int)hall_3ch_get_rpm(s_hall),
+                       (unsigned)g_scope_step,
+                       (int)s_sub_phase,
+                       (int)g_scope_i_ref,
+                       (int)g_scope_i_fb,
+                       (int)(g_scope_i_duty * 10.0f),
+                       (int)g_scope_i_err,
+                       (unsigned long)g_scope_i_dt_us);
                 CommRunner_SetMode(COMM_RUNNER_STOP);
             }
         }

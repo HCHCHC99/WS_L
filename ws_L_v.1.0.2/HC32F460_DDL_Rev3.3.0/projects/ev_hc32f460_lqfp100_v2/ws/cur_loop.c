@@ -46,6 +46,7 @@ volatile float g_scope_i_fb   = 0.0f;
 volatile float g_scope_i_duty = 0.0f;
 volatile float g_scope_i_err  = 0.0f;
 volatile float g_scope_i_ol   = 0.0f;   /* open-loop phase current estimate (mA) */
+volatile uint32_t g_scope_i_dt_us = 0;    /* last current-loop dt (us) */
 
 /* Current-loop PI config (Keil Watch tunable) */
 pid_config_t g_cur_pid_cfg = {
@@ -170,6 +171,7 @@ static void curloop_isr(const stc_i_data_t *pData)
         dt_us = (uint32_t)(now - s_last_us);
     }
     s_last_us = now;
+    g_scope_i_dt_us = dt_us;
 
     /* Soft-start ref ramp: start from the real handoff current and ramp to
      * g_i_ref_ma over CURLOOP_REF_RAMP_MS, so the loop never slams duty. */

@@ -94,6 +94,7 @@ volatile uint8_t  g_scope_hb     = 0;
 volatile uint8_t  g_scope_hc     = 0;
 volatile uint8_t  g_scope_step   = 0;
 volatile int16_t  g_scope_rpm    = 0;
+volatile uint32_t g_hall_last_pulse_age_ms = 0;  /* last Hall pulse age (ms) for stall debug */
 
 /* ISR debug counters */
 static volatile uint32_t g_dbg_isr_fire      = 0;
@@ -507,6 +508,7 @@ void hall_3ch_update(hall_3ch_handle_t h)
     case STATE_RUNNING:
         if (inst->config.stall_timeout_ms > 0) {
             uint64_t since_pulse = now - inst->last_pulse_time_us;
+            g_hall_last_pulse_age_ms = (uint32_t)(since_pulse / 1000UL);
             if (since_pulse > (uint64_t)inst->config.stall_timeout_ms * 1000UL) {
                 inst->stalled = 1;
                 inst->state   = STATE_IDLE;

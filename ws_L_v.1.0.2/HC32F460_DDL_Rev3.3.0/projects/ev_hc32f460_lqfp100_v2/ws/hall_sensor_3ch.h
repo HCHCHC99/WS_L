@@ -71,5 +71,6 @@ extern volatile uint8_t g_scope_hb;     /* Hall B ��ƽ (0/1) */
 extern volatile uint8_t g_scope_hc;     /* Hall C ��ƽ (0/1) */
 extern volatile uint8_t g_scope_step;   /* ��ǰ���ಽ (0-5) */
 extern volatile int16_t g_scope_rpm;    /* �˲���ת�� */
+extern volatile uint32_t g_hall_last_pulse_age_ms;  /* last Hall pulse age (ms) */
 
 #endif

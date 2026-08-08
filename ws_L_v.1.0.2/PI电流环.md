@@ -269,3 +269,54 @@ flowchart LR
 ### 已知待办
 - 50k 下 VOFA 可能被 ISR 饿死（USART3 DMA TC 中断优先级 `DDL_IRQ_PRIO_DEFAULT` 太低，可选改 `DDL_IRQ_PRIO_04`）；
 - 电流环 dt 仍用 Timer6 64 位时间戳（未做原子化，偶发尖峰时优先检查这里）。
+
+---
+
+## 环拓扑架构（2026-08-09，已确认）
+
+### 目标
+用"配置宏 + 链路接线层"自由选择控制结构：**电流环 only / 速度环 only / 速度+电流级联**，并**预留位置环**。每个环独立模块、输入源可配、输出目标可配。
+
+### 链路（四级，位置环预留）
+
+```
+目标位置 ─→ [位置环·预留] ─→ 目标转速 ─→ [速度环] ─→ 目标电流 ─→ [电流环] ─→ 占空比 ─→ 电机
+   ↑            ↑               ↑            ↑             ↑            ↑
+ 外部给定    位置反馈(编码器)  g_target_rpm  转速反馈      固定/速度环   电流反馈
+              (未来接入)                    (霍尔M法)
+```
+
+### 主配置宏（`ws/motor_config.h` 扩展）
+```c
+#define MOTOR_LOOP_POSITION_ENABLE   0     /* 位置环（预留，默认关） */
+#define MOTOR_POS_REF_SRC            POS_REF_EXTERNAL
+#define MOTOR_LOOP_SPEED_ENABLE      1
+#define MOTOR_SPD_REF_SRC            SPD_REF_TARGET_RPM  /* 或 SPD_REF_FROM_POS(预留) */
+#define MOTOR_LOOP_CURRENT_ENABLE    1
+#define MOTOR_CUR_REF_SRC            CUR_REF_FROM_SPEED  /* 或 CUR_REF_FIXED */
+#define MOTOR_DUTY_SRC               DUTY_FROM_CURRENT   /* 或 DUTY_DIRECT */
+```
+
+### 组合表
+| 组合 | POS | SPD | CUR | CUR_REF_SRC | DUTY_SRC |
+|---|---|---|---|---|---|
+| 电流环 only | 0 | 0 | 1 | FIXED | FROM_CURRENT |
+| 速度环 only | 0 | 1 | 0 | — | DIRECT(速度环输出=duty) |
+| 速度+电流 | 0 | 1 | 1 | FROM_SPEED | FROM_CURRENT |
+| 位置+速度+电流(预留) | 1 | 1 | 1 | FROM_SPEED | FROM_CURRENT |
+
+### 模块划分
+| 模块 | 职责 | 接口 |
+|---|---|---|
+| `dev_pid.c` | 通用 PID（已具备） | `PID_Init/Update/UpdateUs` |
+| `ws/speed_loop.c/h` | 速度环（慢，主循环） | `SpeedLoop_Update(rpm)`、`SetTarget`、`GetOutput`、`g_spd_pid_cfg` |
+| `ws/cur_loop.c/h` | 电流环（快，ISR） | 新增外部给定入口 `CurLoop_SetExternalRef` |
+| `ws/pos_loop.c/h` | 位置环（预留 stub） | `PosLoop_Update/GetPos/GetOutput` |
+| `motor_config.h` | 频率 + 环拓扑宏 | — |
+| runner / 链路层 | 接线：慢环主循环、快环 ISR | — |
+
+### 关键设计点
+- 速度环在主循环（`update_ms≈20~50ms`），电流环在 ISR（20k），天然两级速度，无需调度器；
+- 级联模式下电流环**不做 ref 斜坡**（斜坡会跟速度环打架），保留 duty 限速与 blanking；
+- 速度环输出语义随拓扑：电流环开 → i_ref(mA, 0~`g_i_ref_max_ma`)；电流环关 → duty(%, 2~98)；
+- 位置环现在不启用：`pos_loop.c` 为 stub（GetPos 返回 0），链路钩子 `#if` 保护，接编码器后填实现 + 改宏即可。

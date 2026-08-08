@@ -853,7 +853,7 @@ void CommRunner_Update(void)
     }
 
 
-    /* ---- Current-loop (mode 10): timed open loop (forward/CCW table) -> current PI (ISR) ---- */
+    /* ---- Current-loop (mode 10): timed open loop (forward/CW table) -> current PI (ISR) ---- */
     case COMM_RUNNER_CURLOOP_FW: {
         if (s_sub_phase == 0) {
             /* Phase 0: timed open loop (timer-driven forced commutation). The
@@ -865,11 +865,11 @@ void CommRunner_Update(void)
             uint64_t ramp_total   = (uint64_t)s_ol_ramp_duration_ms * 1000UL;
             if (ramp_elapsed >= ramp_total) {
                 if (g_calib_table[1] > 5u) {
-                    hall_3ch_set_table(s_hall, s_hall2step_ccw);
+                    hall_3ch_set_table(s_hall, s_hall2step_cw);
                 } else {
-                    hall_3ch_set_table(s_hall, g_calib_ccw_table);
+                    hall_3ch_set_table(s_hall, g_calib_cw_table);
                 }
-                hall_3ch_start_flying(s_hall, HALL3_DIR_REVERSE);
+                hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
                 s_sub_phase = 1;
                 MAIN_D("[CommRunner] CURLOOP ramp done -> closed-loop + current PI");
             }

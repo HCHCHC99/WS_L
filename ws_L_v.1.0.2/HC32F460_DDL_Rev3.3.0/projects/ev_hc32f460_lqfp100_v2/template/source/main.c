@@ -105,7 +105,7 @@ int main(void)
 
     /* ---- 换相控制器初始化 ---- */
     static const comm_runner_config_t runner_cfg = {
-        .pwm_freq_hz       = 10000,
+        .pwm_freq_hz       = 25000,
 
         /* Hall 传感器配�?: 3�?, PA10=U, PA9=V, PA8=W, 3对极 */
         .hall_cfg = {
@@ -146,13 +146,13 @@ int main(void)
     /* ---- BEMF 初始化 (PWM 已启动, TMR4_3 正在运行) ---- */
     Bemf_Init();
 
-    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 10kHz) ---- */
+    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 25kHz) ---- */
     I_Init();
 
     /* ---- 电流零偏校准 (阻塞500ms, 电机必须静止) ---- */
     I_Calibrate();
 
-    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 10kHz 抽取) ---- */
+    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 25kHz 抽取) ---- */
     CurLoop_Init();
 
     EventBus_Enable();
@@ -221,7 +221,7 @@ int main(void)
         if (!Usart3_Vofa_IsTxBusy()) {
             int32_t cur[16];
 
-            /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈10Hz @1.25kHz BTC rate)
+            /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈25Hz @3.125kHz BTC rate)
              * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
             #define BEMF_EMA_ALPHA  0.05f
             static float s_fEmaM = 0.0f, s_fEmaU = 0.0f, s_fEmaV = 0.0f, s_fEmaW = 0.0f;

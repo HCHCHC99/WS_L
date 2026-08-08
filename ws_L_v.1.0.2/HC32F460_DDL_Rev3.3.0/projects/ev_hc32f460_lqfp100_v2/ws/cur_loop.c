@@ -1,12 +1,12 @@
 /**
  *******************************************************************************
  * @file  cur_loop.c
- * @brief 10kHz current PI loop for six-step BLDC (learning)
+ * @brief 25kHz current PI loop for six-step BLDC (learning)
  *
- *        Mounted on ADC1 EOCB ISR (10kHz, 1:1 with PWM) via I_RegisterCallback.
+ *        Mounted on ADC1 EOCB ISR (25kHz, 1:1 with PWM) via I_RegisterCallback.
  *        Runs the PI on EVERY ADC sample (current loop frequency == PWM frequency).
  *        Feedback: active high-side phase current (fixed state table, selected by
- *        g_scope_step), smoothed by a 5-tap sliding average (~500us window).
+ *        g_scope_step), smoothed by a 5-tap sliding average (~200us window).
  *        dt: measured from Timer6 microsecond timestamp.
  *        Output: Commutation_SetActiveDuty() -> OCCR (takes effect at next PWM peak).
  *
@@ -23,9 +23,9 @@
 #include "TickTimer.h"
 #include "rtt_log.h"
 
-#define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average at 10kHz (~100us) */
-#define CURLOOP_DT_FIRST_US  100u   /* assumed 10kHz period for the very first call */
-#define CURLOOP_DUTY_RATE    1.0f  /* max duty change per cycle (%): 10kHz -> ~500%/s slew */
+#define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average at 25kHz (~100us) */
+#define CURLOOP_DT_FIRST_US  40u    /* assumed 25kHz period for the very first call */
+#define CURLOOP_DUTY_RATE    1.0f  /* max duty change per control cycle (%) */
 
 /* Keil Watch: current setpoint (mA) */
 volatile float g_i_ref_ma = 800.0f;
@@ -50,7 +50,7 @@ pid_config_t g_cur_pid_cfg = {
     .output_max   = 98.0f,
     .integral_max = 500.0f,   /* mA*s */
     .i_term_max   = 20.0f,    /* I contribution clamped to +/-20% */
-    .update_ms    = 0,        /* no throttle: run on every ADC sample (10kHz) */
+    .update_ms    = 0,        /* no throttle: run on every ADC sample (25kHz) */
 };
 
 static pid_state_t s_pid;

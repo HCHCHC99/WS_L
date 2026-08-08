@@ -29,15 +29,15 @@ extern volatile uint8_t g_scope_hc;   /* Hall W, bit0 */
 extern volatile uint8_t g_scope_step; /* Current commutation step (0-5) */
 
 /*=============================================================================
- * Keil Watch ��改变�?? (调试接口)
+ * Keil Watch ��改变�?? (调试接口)
  *=============================================================================*/
 volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW */
 volatile float g_comm_duty_pct  = 80.0f; /* Duty cycle 2%~98% */
 
-/* PID speed control �?? Keil Watch variables */
+/* PID speed control �?? Keil Watch variables */
 volatile float g_target_rpm       = 3000.0f;
 
-/* PID config �?? all fields volatile, Keil Watch can modify at runtime */
+/* PID config �?? all fields volatile, Keil Watch can modify at runtime */
 pid_config_t g_pid_cfg = {
     .enabled      = true,
     .p_valid      = true,
@@ -52,14 +52,14 @@ pid_config_t g_pid_cfg = {
     .update_ms    = 50,
 };
 
-/* �?? PWM 全局变量 (dev_motor 模块引用, 不可删除) */
+/* �?? PWM 全局变量 (dev_motor 模块引用, 不可删除) */
 pwm_t g_motor_pwm_ch1;
 pwm_t g_motor_pwm_ch2;
 pwm_t g_motor_pwm_ch3;
 pwm_t g_motor_pwm_ch4;
 
 /*=============================================================================
- * Hall 映射�?? (16�?? × 8�??)
+ * Hall 映射�?? (16�?? × 8�??)
  *   0~5: 同� (霍尔+1=磁场CW)
  *   6~11: 偏移 (霍尔+1=磁场CCW)
  *   12: 实测校准 CW
@@ -69,11 +69,11 @@ pwm_t g_motor_pwm_ch4;
  *=============================================================================*/
 int main(void)
 {
-    /* ---- �件初始�?? ---- */
+    /* ---- �件初始�?? ---- */
     Hardware_Init();
 
 #if 0  /* RS485 Modbus disabled, PB12/PB13 now used for USART3 */
-    /* ---- 通信�?? (RS485 + Modbus RTU) ---- */
+    /* ---- 通信�?? (RS485 + Modbus RTU) ---- */
     static const App_Comm_Config_t comm_cfg = {
         .phy.baudrate     = 9600,
         .phy.dir_polarity = 0,
@@ -87,8 +87,8 @@ int main(void)
     };
     App_Comm_Init(&comm_cfg);
 #endif  /* RS485 Modbus disabled */
-    /* ---- USART3 + VOFA+ 初始�? ---- */
-    /* VOFA+ 全�?: 921600 baud, ~5760 frame/s max */
+    /* ---- USART3 + VOFA+ 初始�? ---- */
+    /* VOFA+ 全�?: 921600 baud, ~5760 frame/s max */
     {
         Usart3_HW_Config_t cfg = USART3_HW_CONFIG_DEFAULT;
         cfg.baudrate = 921600;
@@ -105,9 +105,9 @@ int main(void)
 
     /* ---- 换相控制器初始化 ---- */
     static const comm_runner_config_t runner_cfg = {
-        .pwm_freq_hz       = 50000,
+        .pwm_freq_hz       = 10000,
 
-        /* Hall 传感器配�??: 3�??, PA10=U, PA9=V, PA8=W, 3对极 */
+        /* Hall 传感器配�??: 3�??, PA10=U, PA9=V, PA8=W, 3对极 */
         .hall_cfg = {
             .port      = {GPIO_PORT_A, GPIO_PORT_A, GPIO_PORT_A},
             .pin       = {GPIO_PIN_10, GPIO_PIN_09, GPIO_PIN_08},
@@ -116,9 +116,9 @@ int main(void)
             .irq_src   = {INT_SRC_PORT_EIRQ10, INT_SRC_PORT_EIRQ9, INT_SRC_PORT_EIRQ8},
             .irq_priority = DDL_IRQ_PRIO_02,
             .pole_pairs   = 3,
-            /* 默��场对齐�??: step0�??0x01, 磁场正向 */
+            /* 默��场对齐�??: step0�??0x01, 磁场正向 */
             .hall_to_step = {0xFF,1,3,2,5,0,4,0xFF},
-            /* on_step/on_fault �?? CommRunner 内部覆写 */
+            /* on_step/on_fault �?? CommRunner 内部覆写 */
             .on_step      = NULL,
             .on_fault     = NULL,
             .align_step        = 0,
@@ -132,7 +132,7 @@ int main(void)
         .ol_const_target_us = 5000,
         .ol_const_ramp_ms   = 3000,
 
-        /* 飞启�� (mode 3/4): 167�??1111 RPM, 2s 斜坡 */
+        /* 飞启�� (mode 3/4): 167�??1111 RPM, 2s 斜坡 */
         .ol_fly_start_us    = 20000,
         .ol_fly_target_us   = 3000,
         .ol_fly_ramp_ms     = 2000,
@@ -143,30 +143,30 @@ int main(void)
     };
     CommRunner_Init(&runner_cfg);
 
-    /* ---- BEMF 初始�? (PWM 已启�?, TMR4_3 正在运行) ---- */
+    /* ---- BEMF 初始�? (PWM 已启�?, TMR4_3 正在运行) ---- */
     Bemf_Init();
 
-    /* ---- 电流采样初始�? (ADC1_SEQ_B, PWM peak 触发, 25kHz) ---- */
+    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 10kHz) ---- */
     I_Init();
 
     /* ---- 电流零偏校准 (阻塞500ms, 电机必须静止) ---- */
     I_Calibrate();
 
-    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 25kHz 抽取) ---- */
+    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 10kHz 抽取) ---- */
     CurLoop_Init();
 
     EventBus_Enable();
 
-    /* ---- 电流 VOFA+ 全速发�? (DMA 背压, ~2.9kHz max @921600, 16ch) ---- */
+    /* ---- 电流 VOFA+ 全速发�? (DMA 背压, ~2.9kHz max @921600, 16ch) ---- */
 
-    /* ---- 主循�? ---- */
+    /* ---- 主循�? ---- */
     static int   s_prev_mode     = -1;
     static float s_prev_duty     = 80.0f;
 
     while (1) {
 //         App_Comm_Poll();
 
-        /* Keil Watch �?? CommRunner (调试�??/Modbus 下发的模式切�??) */
+        /* Keil Watch �?? CommRunner (调试�??/Modbus 下发的模式切�??) */
         if (comm_mode != s_prev_mode) {
             s_prev_mode = comm_mode;
             CommRunner_SetMode((comm_runner_mode_t)comm_mode);
@@ -176,13 +176,13 @@ int main(void)
             CommRunner_SetDuty(g_comm_duty_pct);
         }
 
-        /* 驱动换相状��?? */
+        /* 驱动换相状��?? */
         CommRunner_Update();
 
-        /* g_bemf_wave_data �? Bemf_DataCallback() �? DMA BTC ISR 中自动更�?
-         * (根据 g_scope_step 选择浮空�?, 计算 floating_raw - neutral_raw) */
+        /* g_bemf_wave_data �? Bemf_DataCallback() �? DMA BTC ISR 中自动更�?
+         * (根据 g_scope_step 选择浮空�?, 计算 floating_raw - neutral_raw) */
 
-        /* CommRunner �?? Keil Watch (堵转等内部触发的 STOP 同�回�) */
+        /* CommRunner �?? Keil Watch (堵转等内部触发的 STOP 同�回�) */
         {
             int actual = (int)CommRunner_GetMode();
             if (actual != comm_mode) {
@@ -191,7 +191,7 @@ int main(void)
             }
         }
 
-        /* ---- BEMF 数据读取 (�??500ms打印一次观察数�??) ---- */
+        /* ---- BEMF 数据读取 (�??500ms打印一次观察数�??) ---- */
 #ifdef BEMF_PERIODIC_DBG
         {
             static uint32_t s_u32LastBemfPrintMs = 0;
@@ -217,11 +217,11 @@ int main(void)
             }
         }
 
-        /* ---- VOFA+ USART3: 全速电�? + 心跳 + RX 日志 ---- */
+        /* ---- VOFA+ USART3: 全速电�? + 心跳 + RX 日志 ---- */
         if (!Usart3_Vofa_IsTxBusy()) {
             int32_t cur[16];
 
-            /* EMA low-pass filter for BEMF display channels (α=0.05, fc�?25Hz @3.125kHz BTC rate)
+            /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈10Hz @1.25kHz BTC rate)
              * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
             #define BEMF_EMA_ALPHA  0.05f
             static float s_fEmaM = 0.0f, s_fEmaU = 0.0f, s_fEmaV = 0.0f, s_fEmaW = 0.0f;
@@ -241,16 +241,16 @@ int main(void)
             }
 
             /* g_i_ix_disp = filt_mA * 10 + 10000, inverse: (disp - 10000) / 10 */
-            cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA �? A */
-            cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA �? A */
-            cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA �? A */
+            cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA �? A */
+            cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA �? A */
+            cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA �? A */
             /* Hall: reconstruct combined from scope bits (g_scope_ha=bit2, hb=bit1, hc=bit0) */
             uint8_t hall = (uint8_t)((g_scope_ha << 2) | (g_scope_hb << 1) | g_scope_hc);
-            cur[3] = (int32_t)hall * 1000;                  /* Hall combined ×1000 �? A */
-            cur[4] = (int32_t)g_scope_ha * 1000;            /* HU ×1000 �? A */
-            cur[5] = (int32_t)g_scope_hb * 1000;            /* HV ×1000 �? A */
-            cur[6] = (int32_t)g_scope_hc * 1000;            /* HW ×1000 �? A */
-            /* BEMF voltage (mV = EMA(raw) × 3300 / 4096, ×1000 �? VOFA+ displays mV) */
+            cur[3] = (int32_t)hall * 1000;                  /* Hall combined ×1000 �? A */
+            cur[4] = (int32_t)g_scope_ha * 1000;            /* HU ×1000 �? A */
+            cur[5] = (int32_t)g_scope_hb * 1000;            /* HV ×1000 �? A */
+            cur[6] = (int32_t)g_scope_hc * 1000;            /* HW ×1000 �? A */
+            /* BEMF voltage (mV = EMA(raw) × 3300 / 4096, ×1000 �? VOFA+ displays mV) */
             #define RAW_TO_MV(r) ((int32_t)((int32_t)(r) * 3300 / 4096))
             cur[7]  = RAW_TO_MV((int32_t)s_fEmaM) * 1000;   /* M_BEMF (PA0) mV */
             cur[8]  = RAW_TO_MV((int32_t)s_fEmaU) * 1000;   /* U_BEMF (PA1) mV */

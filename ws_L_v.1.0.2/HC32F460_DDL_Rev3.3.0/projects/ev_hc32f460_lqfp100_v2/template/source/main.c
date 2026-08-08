@@ -275,9 +275,9 @@ int main(void)
             /* CH15: U-V line BEMF (mV, EMA-filtered) */
             cur[15] = RAW_TO_MV((int32_t)(s_fEmaU - s_fEmaV)) * 1000;
             /* Current-loop channels (mA; SCALE_MILLI -> A) */
-            cur[16] = (int32_t)g_i_ref_ma;     /* CH16: final target current */
-            cur[17] = (int32_t)g_scope_i_fb;   /* CH17: measured current */
-            cur[18] = (int32_t)g_scope_i_ref;  /* CH18: next-step (ramped) current setpoint */
+            cur[16] = (int32_t)g_i_ref_ma;     /* 17th float: final target current (mA) */
+            cur[17] = (int32_t)g_scope_i_fb;   /* 18th float: measured current (mA) */
+            cur[18] = (int32_t)g_scope_i_ref;  /* 19th float: next-step (ramped) current setpoint (mA) */
             #undef RAW_TO_MV
             Usart3_Vofa_SendScaled(cur, 19, USART3_VOFA_SCALE_MILLI);
         }

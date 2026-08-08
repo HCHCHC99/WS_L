@@ -1,8 +1,8 @@
 /**
  *******************************************************************************
  * @file  cur_loop.h
- * @brief 50kHz current PI loop for six-step BLDC (learning)
- *        Mounted on ADC1 EOCB ISR (50kHz, 1:1 with PWM) via I_RegisterCallback.
+ * @brief Current PI loop, 1:1 with PWM (frequency: MOTOR_PWM_FREQ_HZ)
+ *        Mounted on ADC1 EOCB ISR (1:1 with PWM) via I_RegisterCallback.
  *        PI runs on every ADC sample. Feedback = active high-side phase current
  *        (fixed state table) with 5-tap sliding average, dt = Timer6 us timestamp.
  *        Output = Commutation_SetActiveDuty().

@@ -257,7 +257,7 @@ J-Link + J-Scope in HSS mode, loading `template/MDK/output/debug/template.axf`. 
 **Current** (in `I.c`):
 - `g_i_iu_filt`, `g_i_iv_filt`, `g_i_iw_filt` — Biquad-filtered current (Q8: divide by 256 for mA)
 
-> **Note**: PWM runs at 50kHz; the Biquad in `ws/I.c` is designed for fs=50kHz (`butter(2, 200/25000)`), so the real -3dB cutoff is 200Hz as designed (display only). The current loop uses a 5-tap sliding average of raw `g_i_*_ma`, not the Biquad output.
+> **Note**: PWM / ADC / current-loop frequency is set by ONE macro: `MOTOR_PWM_FREQ_HZ` in `ws/motor_config.h` (default 25kHz). The Biquad in `ws/I.c` is designed for fs=50kHz, so the real -3dB cutoff scales as 200Hz ? PWM/50k (display only). The current loop uses a 5-tap sliding average of raw `g_i_*_ma`, not the Biquad output.
 
 - `g_i_iu_disp`, `g_i_iv_disp`, `g_i_iw_disp` — display-friendly (mA + 10000 offset)
 - `g_i_uvw_ma` — three-phase sum (should be ~0)

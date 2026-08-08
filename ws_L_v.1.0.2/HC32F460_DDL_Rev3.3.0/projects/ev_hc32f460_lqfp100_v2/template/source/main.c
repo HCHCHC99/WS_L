@@ -13,6 +13,7 @@
 #include "dev_comm_runner.h"
 #include "Bemf.h"
 #include "I.h"
+#include "motor_config.h"
 #include "cur_loop.h"
 #include "Usart3_Vofa.h"
 #include "Usart3_Vofa_Runner.h"
@@ -105,7 +106,7 @@ int main(void)
 
     /* ---- 换相控制器初始化 ---- */
     static const comm_runner_config_t runner_cfg = {
-        .pwm_freq_hz       = 50000,
+        .pwm_freq_hz       = MOTOR_PWM_FREQ_HZ,
 
         /* Hall 传感器配�??: 3�??, PA10=U, PA9=V, PA8=W, 3对极 */
         .hall_cfg = {
@@ -146,13 +147,13 @@ int main(void)
     /* ---- BEMF 初始�? (PWM 已启�?, TMR4_3 正在运行) ---- */
     Bemf_Init();
 
-    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 50kHz) ---- */
+    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 频率见 MOTOR_PWM_FREQ_HZ) ---- */
     I_Init();
 
     /* ---- 电流零偏校准 (阻塞500ms, 电机必须静止) ---- */
     I_Calibrate();
 
-    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 50kHz 抽取) ---- */
+    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 频率见 MOTOR_PWM_FREQ_HZ) ---- */
     CurLoop_Init();
 
     EventBus_Enable();
@@ -221,7 +222,7 @@ int main(void)
         if (!Usart3_Vofa_IsTxBusy()) {
             int32_t cur[16];
 
-            /* EMA low-pass filter for BEMF display channels (α=0.05, fc≈50Hz @6.25kHz BTC rate)
+            /* EMA low-pass filter for BEMF display channels (α=0.05; fc/BTC rate scale with MOTOR_PWM_FREQ_HZ)
              * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
             #define BEMF_EMA_ALPHA  0.05f
             static float s_fEmaM = 0.0f, s_fEmaU = 0.0f, s_fEmaV = 0.0f, s_fEmaW = 0.0f;

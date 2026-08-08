@@ -36,7 +36,7 @@ volatile uint16_t g_i_iu_disp = 10000;
 volatile uint16_t g_i_iv_disp = 10000;
 volatile uint16_t g_i_iw_disp = 10000;
 
-/* 2nd-order Butterworth IIR (fc=200Hz @ fs=50kHz design; actual sampling 50kHz -> real fc~200Hz, display only)
+/* 2nd-order Butterworth IIR (fc=200Hz @ fs=50kHz design; actual sampling = PWM freq (MOTOR_PWM_FREQ_HZ); real fc = 200Hz x PWM/50k, display only)
  * Designed in MATLAB: [b,a] = butter(2, 200/25000)
  * y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2] */
 #define BIQUAD_B0  0.0001551484f
@@ -257,7 +257,7 @@ static void I_IrqCallback(void)
     int16_t i16IV_mA = I_ADC_TO_MA_REF(u16IV, u16ZeroV);
     int16_t i16IW_mA = I_ADC_TO_MA_REF(u16IW, u16ZeroW);
 
-    /* 2nd-order Butterworth IIR (fc=200Hz @ fs=50kHz design; actual sampling 50kHz -> real fc~200Hz, display only) */
+    /* 2nd-order Butterworth IIR (fc=200Hz @ fs=50kHz design; actual sampling = PWM freq (MOTOR_PWM_FREQ_HZ); real fc = 200Hz x PWM/50k, display only) */
     float fIU, fIV, fIW;
     if (!s_bBiquadInit) {
         /* Seed states with first sample (fast settling, no ramp-up) */
@@ -390,7 +390,7 @@ void I_Init(void)
 
 /**
  * @brief  Blocking zero-offset calibration.
- *         Samples all 3 current channels for 500ms at ~50kHz, computes
+ *         Samples all 3 current channels for 500ms at PWM rate (MOTOR_PWM_FREQ_HZ), computes
  *         per-phase average as the zero reference, and stores the offsets.
  * @note   Must be called AFTER I_Init and BEFORE motor starts.
  *         Blocks for 500ms using tickTimer_DelayMs.

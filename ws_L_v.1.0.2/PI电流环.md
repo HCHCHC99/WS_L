@@ -210,7 +210,7 @@ flowchart LR
 ---
 
 ## 附录 A：本次已确认的硬件/代码事实（避免重复排查）
-- PWM=50kHz（PCLK1=100MHz，TMR4 DIV1，`main.c:107`）。
+- PWM/ADC/电流环频率由 **`ws/motor_config.h` 的 `MOTOR_PWM_FREQ_HZ` 单一宏配置**（默认 25kHz；PCLK1=100MHz，TMR4 DIV1）。
 - ADC 采样=50kHz；BEMF DMA BTC=6.25kHz（8 点缓冲）。
 - 电流 Biquad 系数按 fs=50kHz 设计 → 真实 fc≈200Hz（控制不用它）。
 - 影子寄存器已配好，占空比在下一个 PWM 峰值生效（≤10µs）。

@@ -1,12 +1,12 @@
 /**
  *******************************************************************************
  * @file  cur_loop.c
- * @brief 50kHz current PI loop for six-step BLDC (learning)
+ * @brief Current PI loop, 1:1 with PWM (frequency: MOTOR_PWM_FREQ_HZ)
  *
- *        Mounted on ADC1 EOCB ISR (50kHz, 1:1 with PWM) via I_RegisterCallback.
+ *        Mounted on ADC1 EOCB ISR (1:1 with PWM) via I_RegisterCallback.
  *        Runs the PI on EVERY ADC sample (current loop frequency == PWM frequency).
  *        Feedback: active high-side phase current (fixed state table, selected by
- *        g_scope_step), smoothed by a 5-tap sliding average (~100us window).
+ *        g_scope_step), smoothed by a 5-tap sliding average (window = 5 / PWM freq).
  *        dt: measured from Timer6 microsecond timestamp.
  *        Output: Commutation_SetActiveDuty() -> OCCR (takes effect at next PWM peak).
  *
@@ -23,7 +23,7 @@
 #include "TickTimer.h"
 #include "rtt_log.h"
 
-#define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average at 50kHz (~100us) */
+#define CURLOOP_WIN_SIZE     5u    /* 5-tap sliding average (window scales with PWM freq) */
 #define CURLOOP_DUTY_RATE    1.0f  /* max duty change per control cycle (%) */
 
 /* Keil Watch: current setpoint (mA) */
@@ -49,7 +49,7 @@ pid_config_t g_cur_pid_cfg = {
     .output_max   = 98.0f,
     .integral_max = 500.0f,   /* mA*s */
     .i_term_max   = 20.0f,    /* I contribution clamped to +/-20% */
-    .update_ms    = 0,        /* no throttle: run on every ADC sample (50kHz) */
+    .update_ms    = 0,        /* no throttle: run on every ADC sample (PWM rate) */
 };
 
 static pid_state_t s_pid;

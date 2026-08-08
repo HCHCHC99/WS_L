@@ -627,11 +627,11 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         if (s_hall) hall_3ch_stop(s_hall);
         calib_build_derived_tables();
         /* Timed open loop anchored to the calibrated 0-deg table: start from the
-         * aligned step for the current Hall position, then the timer ramp advances
-         * steps in the calibration direction (dir_fw=1). Keeps reliable forced
-         * startup while matching the calibrated direction. */
+         * aligned step for the current Hall position, then the timer ramp steps
+         * DOWNWARD (dir_fw=0) - i.e. opposite to the calibration direction, which
+         * matches the hardcoded forward (CW) rotation the user expects. */
         start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
-                        s_cfg.ol_fly_ramp_ms, 1);
+                        s_cfg.ol_fly_ramp_ms, 0);
         if (g_calib_table[1] <= 5u) {
             uint8_t hall = hall_3ch_read_raw(s_hall);
             if (hall >= 1u && hall <= 6u && g_calib_table[hall] <= 5u) {
@@ -853,23 +853,23 @@ void CommRunner_Update(void)
     }
 
 
-    /* ---- Current-loop (mode 10): timed open loop -> current PI (ISR) ---- */
+    /* ---- Current-loop (mode 10): timed open loop (forward/CCW table) -> current PI (ISR) ---- */
     case COMM_RUNNER_CURLOOP_FW: {
         if (s_sub_phase == 0) {
             /* Phase 0: timed open loop (timer-driven forced commutation). The
              * calibrated table anchors the start step; Hall takes over at the
              * end of the ramp for closed-loop + current PI. */
-            open_loop_tick(now, 1);
+            open_loop_tick(now, 0);
 
             uint64_t ramp_elapsed = now - s_ol_ramp_start_us;
             uint64_t ramp_total   = (uint64_t)s_ol_ramp_duration_ms * 1000UL;
             if (ramp_elapsed >= ramp_total) {
                 if (g_calib_table[1] > 5u) {
-                    hall_3ch_set_table(s_hall, s_hall2step_cw);
+                    hall_3ch_set_table(s_hall, s_hall2step_ccw);
                 } else {
-                    hall_3ch_set_table(s_hall, g_calib_cw_table);
+                    hall_3ch_set_table(s_hall, g_calib_ccw_table);
                 }
-                hall_3ch_start_flying(s_hall, HALL3_DIR_FORWARD);
+                hall_3ch_start_flying(s_hall, HALL3_DIR_REVERSE);
                 s_sub_phase = 1;
                 MAIN_D("[CommRunner] CURLOOP ramp done -> closed-loop + current PI");
             }

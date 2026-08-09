@@ -36,6 +36,9 @@ extern volatile uint32_t g_scope_i_dt_us;
 /* Feedback smoothing (Keil Watch tunable): 1.0 = off, 0.1 = heavy */
 extern volatile float g_cur_fb_alpha;
 
+/* Debug print interval (ms) for [CURLOOP] log; 0 = off */
+extern volatile uint32_t g_cur_dbg_ms;
+
 /* Current-loop PID config (volatile, Keil Watch tunable) */
 extern pid_config_t g_cur_pid_cfg;
 

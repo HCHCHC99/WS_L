@@ -60,6 +60,9 @@ volatile uint32_t g_scope_i_dt_us = 0;    /* last current-loop dt (us) */
  * only), 0.1 = heavy 1st-order low-pass on the windowed feedback. */
 volatile float g_cur_fb_alpha = 1.0f;
 
+/* Debug print interval (ms) for the [CURLOOP] log; 0 = off (Keil Watch tunable) */
+volatile uint32_t g_cur_dbg_ms = 20;
+
 /* Current-loop PI config (Keil Watch tunable) */
 pid_config_t g_cur_pid_cfg = {
     .enabled      = true,
@@ -197,6 +200,7 @@ static void curloop_isr(const stc_i_data_t *pData)
         return;   /* window filling / post-edge blanking: no control this cycle */
     }
     float fb = (float)s_win_sum / (float)CURLOOP_WIN_SIZE;
+    float fb_raw = fb;   /* pre-smoothing windowed average (diagnostic) */
 
     /* Optional 1st-order smoothing (g_cur_fb_alpha tunable in Keil Watch).
      * Primed on the first full-window sample so there is no start-up transient. */
@@ -268,12 +272,18 @@ static void curloop_isr(const stc_i_data_t *pData)
     {
         static uint32_t s_last_dbg = 0;
         uint32_t now_ms = (uint32_t)tickTimer_GetCount();
-        if ((now_ms - s_last_dbg) >= 500u) {
+        uint32_t dbg_ms = g_cur_dbg_ms;
+        if (dbg_ms > 0u && (now_ms - s_last_dbg) >= dbg_ms) {
             s_last_dbg = now_ms;
-            MAIN_D("[CURLOOP] ref=%d fb=%d err=%d duty=%d%% i=%d dt=%luus step=%u",
-                   (int)ref, (int)fb, (int)(ref - fb),
+            MAIN_D("[CURLOOP] tus=%lu dt=%lu step=%u ref=%d fb=%d raw=%d err=%d duty=%d%% i=%d kp=%d ki=%d al=%d",
+                   (unsigned long)(now & 0xFFFFFFFFul),
+                   (unsigned long)dt_us,
+                   (unsigned)g_scope_step,
+                   (int)ref, (int)fb, (int)fb_raw, (int)(ref - fb),
                    (int)(duty * 10) / 10, (int)s_pid.i_term,
-                   (unsigned long)dt_us, (unsigned)g_scope_step);
+                   (int)(g_cur_pid_cfg.kp * 1000.0f),
+                   (int)(g_cur_pid_cfg.ki * 1000.0f),
+                   (int)(g_cur_fb_alpha * 100.0f));
         }
     }
 }

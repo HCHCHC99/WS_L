@@ -63,6 +63,10 @@ extern "C" {
 #define BEMF_ADC_PERIPH_CLK             (FCG3_PERIPH_ADC1)
 #define BEMF_ADC_SEQA_HARDTRIG          (ADC_HARDTRIG_EVT0)
 
+/* EXPERIMENT: set 0 to disable ADC1 SEQ_A (BEMF) trigger so current sampling
+ * (SEQ_B) runs alone at a fixed PWM-peak instant; set 1 to restore BEMF. */
+#define BEMF_SEQA_TRIGGER_ENABLE        0
+
 /* ===== DMA 配置 ===== */
 #define BEMF_DMA_UNIT                   (DMA_UNIT_1)            /* 使用 DMA1 */
 #define BEMF_DMA_CH_M                   (0U)                    /* DMA1 CH0 -> M_BEMF */

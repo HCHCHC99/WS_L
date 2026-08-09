@@ -368,9 +368,13 @@ static void Bemf_TriggerConfig(void)
 {
     /* ADC1 SEQ_A 使用硬件触发 (EVT0, 由 AOS 路由到 TMR4_3 SCMP0) */
     ADC_TriggerConfig(BEMF_ADC_UNIT, ADC_SEQ_A, BEMF_ADC_SEQA_HARDTRIG);
+#if BEMF_SEQA_TRIGGER_ENABLE
     ADC_TriggerCmd(BEMF_ADC_UNIT, ADC_SEQ_A, ENABLE);
-
     BEMF_Adp_DEBUG("ADC1 SEQ_A hardware trigger enabled (via AOS: TMR4_3_SCMP0)\r\n");
+#else
+    ADC_TriggerCmd(BEMF_ADC_UNIT, ADC_SEQ_A, DISABLE);
+    BEMF_Adp_DEBUG("ADC1 SEQ_A trigger DISABLED (experiment: current-only sampling)\r\n");
+#endif
 }
 
 /*******************************************************************************

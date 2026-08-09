@@ -43,7 +43,7 @@
 #define CURLOOP_REF_RAMP_MS  1000u  /* soft-start: ramp ref to g_i_ref_ma over 1s */
 
 /* Keil Watch: current setpoint (mA) */
-volatile float g_i_ref_ma = 800.0f;
+volatile float g_i_ref_ma = 150.0f;
 
 /* Cascade external current reference (written by the chain/speed loop) */
 volatile float g_cur_ref_ext_ma = 0.0f;

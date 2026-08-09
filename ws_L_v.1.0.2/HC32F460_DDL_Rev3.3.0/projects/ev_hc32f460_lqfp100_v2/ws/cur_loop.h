@@ -28,6 +28,7 @@ extern volatile float g_i_ref_ma;
 /* J-Scope observability (updated in ADC ISR at control rate) */
 extern volatile float g_scope_i_ref;
 extern volatile float g_scope_i_fb;
+extern volatile float g_scope_i_fb_raw;   /* pre-smoothing windowed average */
 extern volatile float g_scope_i_duty;
 extern volatile float g_scope_i_err;
 extern volatile float g_scope_i_ol;

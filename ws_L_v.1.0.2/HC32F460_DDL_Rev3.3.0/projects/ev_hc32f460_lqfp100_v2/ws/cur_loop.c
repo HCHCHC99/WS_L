@@ -51,6 +51,7 @@ volatile float g_cur_ref_ext_ma = 0.0f;
 /* J-Scope observability */
 volatile float g_scope_i_ref  = 0.0f;
 volatile float g_scope_i_fb   = 0.0f;
+volatile float g_scope_i_fb_raw= 0.0f;   /* pre-smoothing windowed average */
 volatile float g_scope_i_duty = 0.0f;
 volatile float g_scope_i_err  = 0.0f;
 volatile float g_scope_i_ol   = 0.0f;   /* open-loop phase current estimate (mA) */
@@ -58,7 +59,7 @@ volatile uint32_t g_scope_i_dt_us = 0;    /* last current-loop dt (us) */
 
 /* Feedback smoothing (Keil Watch tunable): 1.0 = no extra smoothing (window
  * only), 0.1 = heavy 1st-order low-pass on the windowed feedback. */
-volatile float g_cur_fb_alpha = 1.0f;
+volatile float g_cur_fb_alpha = 0.3f;   /* default: moderate smoothing; 1.0=off, 0.1=heavy */
 
 /* Debug print interval (ms) for the [CURLOOP] log; 0 = off (Keil Watch tunable) */
 volatile uint32_t g_cur_dbg_ms = 20;
@@ -266,6 +267,7 @@ static void curloop_isr(const stc_i_data_t *pData)
 
     g_scope_i_ref  = ref;
     g_scope_i_fb   = fb;
+    g_scope_i_fb_raw= fb_raw;
     g_scope_i_duty = duty;
     g_scope_i_err  = ref - fb;
 

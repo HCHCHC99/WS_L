@@ -933,6 +933,16 @@
               <FileType>1</FileType>
               <FilePath>..\..\ws\Bemf.c</FilePath>
             </File>
+            <File>
+              <FileName>pos_loop.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\pos_loop.c</FilePath>
+            </File>
+            <File>
+              <FileName>speed_loop.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\speed_loop.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1866,6 +1876,16 @@
               <FileName>Bemf.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\ws\Bemf.c</FilePath>
+            </File>
+            <File>
+              <FileName>pos_loop.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\pos_loop.c</FilePath>
+            </File>
+            <File>
+              <FileName>speed_loop.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\speed_loop.c</FilePath>
             </File>
           </Files>
         </Group>

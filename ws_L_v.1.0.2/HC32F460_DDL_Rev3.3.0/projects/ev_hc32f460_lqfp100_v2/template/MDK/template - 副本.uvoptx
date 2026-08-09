@@ -120,6 +120,7 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>DLGUARM</Key>
+          <Name>??#</Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -299,97 +300,107 @@
         <Ww>
           <count>0</count>
           <WinNumber>2</WinNumber>
-          <ItemText>commu_num</ItemText>
+          <ItemText>comm_mode</ItemText>
         </Ww>
         <Ww>
           <count>1</count>
           <WinNumber>2</WinNumber>
-          <ItemText>comm_mode,0x0A</ItemText>
+          <ItemText>g_target_rpm</ItemText>
         </Ww>
         <Ww>
           <count>2</count>
           <WinNumber>2</WinNumber>
-          <ItemText>ch</ItemText>
+          <ItemText>g_i_ref_max_ma</ItemText>
         </Ww>
         <Ww>
           <count>3</count>
           <WinNumber>2</WinNumber>
-          <ItemText>hall_table_index</ItemText>
+          <ItemText>g_scope_spd_ref</ItemText>
         </Ww>
         <Ww>
           <count>4</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_hall_rpm</ItemText>
+          <ItemText>g_scope_spd_rpm</ItemText>
         </Ww>
         <Ww>
           <count>5</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_comm_duty_pct</ItemText>
+          <ItemText>g_scope_spd_err</ItemText>
         </Ww>
         <Ww>
           <count>6</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_calib_status</ItemText>
+          <ItemText>g_scope_spd_out</ItemText>
         </Ww>
         <Ww>
           <count>7</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_calib_total_steps</ItemText>
+          <ItemText>g_scope_i_ref</ItemText>
         </Ww>
         <Ww>
           <count>8</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_calib_valid_cycles</ItemText>
+          <ItemText>g_scope_i_fb</ItemText>
         </Ww>
         <Ww>
           <count>9</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_target_rpm</ItemText>
+          <ItemText>g_scope_i_duty</ItemText>
         </Ww>
         <Ww>
           <count>10</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_pid_cfg,0x0A</ItemText>
+          <ItemText>g_scope_i_err</ItemText>
         </Ww>
         <Ww>
           <count>11</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_pid_target</ItemText>
+          <ItemText>g_scope_rpm,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>12</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_pid_error</ItemText>
+          <ItemText>g_spd_pid_cfg</ItemText>
         </Ww>
         <Ww>
           <count>13</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_pid_i_term</ItemText>
+          <ItemText>g_spd_pid_cfg.kp</ItemText>
         </Ww>
         <Ww>
           <count>14</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_pid_duty</ItemText>
+          <ItemText>g_spd_pid_cfg.ki</ItemText>
         </Ww>
         <Ww>
           <count>15</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_i_ref_ma</ItemText>
+          <ItemText>g_cur_pid_cfg</ItemText>
         </Ww>
         <Ww>
           <count>16</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_pid_cfg</ItemText>
+          <ItemText>g_cur_pid_cfg.kp</ItemText>
         </Ww>
         <Ww>
           <count>17</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_pid_cfg.kp</ItemText>
+          <ItemText>g_cur_pid_cfg.ki</ItemText>
         </Ww>
         <Ww>
           <count>18</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_pid_cfg.ki</ItemText>
+          <ItemText>g_i_ref_ma</ItemText>
+        </Ww>
+        <Ww>
+          <count>19</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_cur_pid_cfg.i_valid</ItemText>
+        </Ww>
+        <Ww>
+          <count>20</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_cur_fb_alpha</ItemText>
         </Ww>
       </WatchWindow2>
       <Tracepoint>
@@ -1872,6 +1883,30 @@
       <bDave2>0</bDave2>
       <PathWithFileName>..\..\ws\Bemf.c</PathWithFileName>
       <FilenameWithoutPath>Bemf.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>10</GroupNumber>
+      <FileNumber>102</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\..\ws\pos_loop.c</PathWithFileName>
+      <FilenameWithoutPath>pos_loop.c</FilenameWithoutPath>
+      <RteFlg>0</RteFlg>
+      <bShared>0</bShared>
+    </File>
+    <File>
+      <GroupNumber>10</GroupNumber>
+      <FileNumber>103</FileNumber>
+      <FileType>1</FileType>
+      <tvExp>0</tvExp>
+      <tvExpOptDlg>0</tvExpOptDlg>
+      <bDave2>0</bDave2>
+      <PathWithFileName>..\..\ws\speed_loop.c</PathWithFileName>
+      <FilenameWithoutPath>speed_loop.c</FilenameWithoutPath>
       <RteFlg>0</RteFlg>
       <bShared>0</bShared>
     </File>

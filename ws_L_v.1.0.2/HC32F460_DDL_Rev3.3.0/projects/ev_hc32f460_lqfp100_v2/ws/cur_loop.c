@@ -24,18 +24,22 @@
 #include "rtt_log.h"
 #include "motor_config.h"
 
-/* Feedback window: keep a ~200us time-domain average across frequencies.
- * WIN_SIZE scales with MOTOR_PWM_FREQ_HZ (50k->10, 25k->5, 20k->4, 10k->2). */
+/* Feedback window: keep a ~400us time-domain average across frequencies.
+ * WIN_SIZE scales with MOTOR_PWM_FREQ_HZ (50k->20, 25k->10, 20k->8, 10k->4). */
 #if   MOTOR_PWM_FREQ_HZ >= 50000u
-  #define CURLOOP_WIN_SIZE 10u
+  #define CURLOOP_WIN_SIZE 20u
 #elif MOTOR_PWM_FREQ_HZ >= 25000u
-  #define CURLOOP_WIN_SIZE 5u
+  #define CURLOOP_WIN_SIZE 10u
 #elif MOTOR_PWM_FREQ_HZ >= 20000u
-  #define CURLOOP_WIN_SIZE 4u
+  #define CURLOOP_WIN_SIZE 8u
 #else
-  #define CURLOOP_WIN_SIZE 2u
+  #define CURLOOP_WIN_SIZE 4u
 #endif
-#define CURLOOP_DUTY_RATE    1.0f  /* max duty change per control cycle (%) */
+/* Skip this many ADC samples after a commutation edge: keep the window free of
+ * transient / wrong-phase samples (the first PWM cycle after an edge still uses
+ * the old PWM state, so the active-phase selection is stale). */
+#define CURLOOP_BLANK_SKIP   3u
+#define CURLOOP_DUTY_RATE    20.0f  /* max duty change per control cycle (%) */
 #define CURLOOP_REF_RAMP_MS  1000u  /* soft-start: ramp ref to g_i_ref_ma over 1s */
 
 /* Keil Watch: current setpoint (mA) */
@@ -51,6 +55,10 @@ volatile float g_scope_i_duty = 0.0f;
 volatile float g_scope_i_err  = 0.0f;
 volatile float g_scope_i_ol   = 0.0f;   /* open-loop phase current estimate (mA) */
 volatile uint32_t g_scope_i_dt_us = 0;    /* last current-loop dt (us) */
+
+/* Feedback smoothing (Keil Watch tunable): 1.0 = no extra smoothing (window
+ * only), 0.1 = heavy 1st-order low-pass on the windowed feedback. */
+volatile float g_cur_fb_alpha = 1.0f;
 
 /* Current-loop PI config (Keil Watch tunable) */
 pid_config_t g_cur_pid_cfg = {
@@ -79,6 +87,9 @@ static float    s_ol_current_ma = 0.0f;   /* EMA of active-phase current during 
 static float    s_last_duty      = 80.0f; /* last applied duty (rate-limiter state) */
 static uint8_t  s_last_step     = 0xFFu; /* last g_scope_step seen (edge blanking) */
 static uint8_t  s_active        = 0;    /* current-loop activation latch */
+static uint8_t  s_blank_skip    = 0;    /* commutation blanking: remaining skipped samples */
+static float    s_fb_smooth     = 0.0f; /* 1st-order smoothed feedback */
+static uint8_t  s_fb_smooth_init= 0;    /* smoothing primed from first full-window sample */
 static volatile uint8_t  s_ref_ramp_active  = 0;
 static float    s_ref_start        = 0.0f;
 static volatile uint64_t s_ref_ramp_start_us = 0;
@@ -151,13 +162,21 @@ static void curloop_isr(const stc_i_data_t *pData)
         s_last_step  = g_scope_step;
         s_ref_ramp_active   = 1;
         s_ref_ramp_start_us = 0;   /* latched on first PID run using real fb */
+        s_fb_smooth_init = 0;   /* prime smoothing from first full-window sample */
+        s_blank_skip     = 0;
     }
 
-    /* Commutation edge blanking: on a step change flush the window so feedback
-     * never mixes old/new phase currents (critical at flying-start handoff). */
+    /* Commutation edge blanking: on a step change flush the window and skip a
+     * few samples so feedback never mixes old/new phase currents (the first PWM
+     * cycle after an edge still drives the old state -> wrong-phase samples). */
     if (g_scope_step != s_last_step) {
         curloop_win_reset();
         s_last_step = g_scope_step;
+        s_blank_skip = CURLOOP_BLANK_SKIP;
+    }
+    if (s_blank_skip > 0u) {
+        s_blank_skip--;
+        return;   /* post-edge blanking: no window fill / no control this cycle */
     }
 
     /* Sliding window average of the active-phase current (every ADC sample) */
@@ -178,6 +197,19 @@ static void curloop_isr(const stc_i_data_t *pData)
         return;   /* window filling / post-edge blanking: no control this cycle */
     }
     float fb = (float)s_win_sum / (float)CURLOOP_WIN_SIZE;
+
+    /* Optional 1st-order smoothing (g_cur_fb_alpha tunable in Keil Watch).
+     * Primed on the first full-window sample so there is no start-up transient. */
+    if (s_fb_smooth_init) {
+        float alpha = g_cur_fb_alpha;
+        if (alpha < 0.0f) alpha = 0.0f;
+        if (alpha > 1.0f) alpha = 1.0f;
+        s_fb_smooth += alpha * (fb - s_fb_smooth);
+        fb = s_fb_smooth;
+    } else {
+        s_fb_smooth = fb;
+        s_fb_smooth_init = 1;
+    }
 
     Timer6_Timebase_UpdateTimestamp();
     uint64_t now = Timer6_Timebase_GetTimestamp();

@@ -4,7 +4,8 @@
  * @brief Current PI loop, 1:1 with PWM (frequency: MOTOR_PWM_FREQ_HZ)
  *        Mounted on ADC1 EOCB ISR (1:1 with PWM) via I_RegisterCallback.
  *        PI runs on every ADC sample. Feedback = active high-side phase current
- *        (fixed state table) with 5-tap sliding average, dt = Timer6 us timestamp.
+ *        (fixed state table) with ~400us sliding average (8 taps @20k) plus a
+ *        tunable 1st-order smoother (g_cur_fb_alpha), dt = Timer6 us timestamp.
  *        Output = Commutation_SetActiveDuty().
  *        Active only in COMM_RUNNER_CURLOOP_FW mode while hall FSM is RUNNING.
  *******************************************************************************
@@ -31,6 +32,9 @@ extern volatile float g_scope_i_duty;
 extern volatile float g_scope_i_err;
 extern volatile float g_scope_i_ol;
 extern volatile uint32_t g_scope_i_dt_us;
+
+/* Feedback smoothing (Keil Watch tunable): 1.0 = off, 0.1 = heavy */
+extern volatile float g_cur_fb_alpha;
 
 /* Current-loop PID config (volatile, Keil Watch tunable) */
 extern pid_config_t g_cur_pid_cfg;

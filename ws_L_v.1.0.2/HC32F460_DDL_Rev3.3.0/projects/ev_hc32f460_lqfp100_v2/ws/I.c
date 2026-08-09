@@ -21,20 +21,20 @@ volatile uint16_t g_i_iu_raw  = 0;
 volatile uint16_t g_i_iv_raw  = 0;
 volatile uint16_t g_i_iw_raw  = 0;
 
-/* Current in mA (signed) */
-volatile int16_t  g_i_iu_ma   = 0;
-volatile int16_t  g_i_iv_ma   = 0;
-volatile int16_t  g_i_iw_ma   = 0;
+/* Current in mA (signed, float for J-Scope) */
+volatile float    g_i_iu_ma   = 0.0f;
+volatile float    g_i_iv_ma   = 0.0f;
+volatile float    g_i_iw_ma   = 0.0f;
 
 /* Float mirrors of the Biquad-filtered per-phase current, mA (J-Scope: signed, no int16 wrap-around) */
 volatile float   g_scope_iu_ma = 0.0f;
 volatile float   g_scope_iv_ma = 0.0f;
 volatile float   g_scope_iw_ma = 0.0f;
 
-/* Biquad-filtered current (Q8 fixed-point: value = actual_mA × 256) */
-volatile int32_t  g_i_iu_filt = 0;
-volatile int32_t  g_i_iv_filt = 0;
-volatile int32_t  g_i_iw_filt = 0;
+/* Biquad-filtered current (mA, float for J-Scope) */
+volatile float    g_i_iu_filt = 0.0f;
+volatile float    g_i_iv_filt = 0.0f;
+volatile float    g_i_iw_filt = 0.0f;
 
 /* Display-friendly: mA + 10000, always positive for J-Scope */
 volatile uint16_t g_i_iu_disp = 10000;
@@ -57,7 +57,7 @@ static float s_fX1W = 0.0f, s_fX2W = 0.0f, s_fY1W = 0.0f, s_fY2W = 0.0f;
 static bool  s_bBiquadInit = false;
 
 /* Three-phase sum (should be ~0 mA / ~6144 raw) */
-volatile int32_t  g_i_uvw_ma  = 0;
+volatile float    g_i_uvw_ma  = 0.0f;
 volatile int32_t  g_i_uvw_raw  = 0;
 
 /* Sample count */
@@ -307,20 +307,20 @@ static void I_IrqCallback(void)
     g_i_iu_raw  = u16IU;
     g_i_iv_raw  = u16IV;
     g_i_iw_raw  = u16IW;
-    g_i_iu_ma   = i16IU_mA;
-    g_i_iv_ma   = i16IV_mA;
-    g_i_iw_ma   = i16IW_mA;
+    g_i_iu_ma   = (float)i16IU_mA;
+    g_i_iv_ma   = (float)i16IV_mA;
+    g_i_iw_ma   = (float)i16IW_mA;
     g_scope_iu_ma = (float)i16IU_fmA;   /* filtered mA (Biquad output) */
     g_scope_iv_ma = (float)i16IV_fmA;
     g_scope_iw_ma = (float)i16IW_fmA;
-    g_i_iu_filt = (int32_t)((float)i16IU_fmA * 256.0f);  /* Q8: ×256 for J-Scope */
-    g_i_iv_filt = (int32_t)((float)i16IV_fmA * 256.0f);
-    g_i_iw_filt = (int32_t)((float)i16IW_fmA * 256.0f);
+    g_i_iu_filt = (float)i16IU_fmA;   /* filtered mA, direct */
+    g_i_iv_filt = (float)i16IV_fmA;
+    g_i_iw_filt = (float)i16IW_fmA;
     g_i_iu_disp = (uint16_t)((int32_t)i16IU_fmA * 10 + 10000);
     g_i_iv_disp = (uint16_t)((int32_t)i16IV_fmA * 10 + 10000);
     g_i_iw_disp = (uint16_t)((int32_t)i16IW_fmA * 10 + 10000);
     g_i_uvw_raw = (int32_t)u16IU + (int32_t)u16IV + (int32_t)u16IW;
-    g_i_uvw_ma  = (int32_t)i16IU_mA + (int32_t)i16IV_mA + (int32_t)i16IW_mA;
+    g_i_uvw_ma  = (float)i16IU_mA + (float)i16IV_mA + (float)i16IW_mA;
     g_i_sample_cnt = s_stcIData.u32SampleCount;
 
     /* Invoke user callback if registered */

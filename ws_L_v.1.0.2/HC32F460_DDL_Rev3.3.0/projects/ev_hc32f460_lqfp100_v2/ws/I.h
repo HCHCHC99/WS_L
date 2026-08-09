@@ -107,28 +107,28 @@ extern volatile uint16_t g_i_iu_raw;
 extern volatile uint16_t g_i_iv_raw;
 extern volatile uint16_t g_i_iw_raw;
 
-/* Current values (mA, signed) */
-extern volatile int16_t  g_i_iu_ma;
-extern volatile int16_t  g_i_iv_ma;
-extern volatile int16_t  g_i_iw_ma;
+/* Current values (mA, signed, float) */
+extern volatile float    g_i_iu_ma;
+extern volatile float    g_i_iv_ma;
+extern volatile float    g_i_iw_ma;
 
 /* Float mirrors (J-Scope friendly: signed, no int16 wrap-around) */
 extern volatile float   g_scope_iu_ma;
 extern volatile float   g_scope_iv_ma;
 extern volatile float   g_scope_iw_ma;
 
-/* Biquad-filtered current (mA × 256, Q8 fixed-point, J-Scope: value/256 = mA) */
-extern volatile int32_t  g_i_iu_filt;
-extern volatile int32_t  g_i_iv_filt;
-extern volatile int32_t  g_i_iw_filt;
+/* Biquad-filtered current (mA, float for J-Scope) */
+extern volatile float    g_i_iu_filt;
+extern volatile float    g_i_iv_filt;
+extern volatile float    g_i_iw_filt;
 
 /* Display-friendly: mA + 10000 offset (always positive, J-Scope safe). Subtract 10000 for real value. */
 extern volatile uint16_t g_i_iu_disp;
 extern volatile uint16_t g_i_iv_disp;
 extern volatile uint16_t g_i_iw_disp;
 
-/* Sum of three phases (should be ~0 mA / ~6144 raw) */
-extern volatile int32_t  g_i_uvw_ma;
+/* Sum of three phases (should be ~0 mA) */
+extern volatile float    g_i_uvw_ma;
 extern volatile int32_t  g_i_uvw_raw;
 
 /* Sample count */

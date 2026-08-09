@@ -112,6 +112,11 @@ extern volatile int16_t  g_i_iu_ma;
 extern volatile int16_t  g_i_iv_ma;
 extern volatile int16_t  g_i_iw_ma;
 
+/* Float mirrors (J-Scope friendly: signed, no int16 wrap-around) */
+extern volatile float   g_scope_iu_ma;
+extern volatile float   g_scope_iv_ma;
+extern volatile float   g_scope_iw_ma;
+
 /* Biquad-filtered current (mA × 256, Q8 fixed-point, J-Scope: value/256 = mA) */
 extern volatile int32_t  g_i_iu_filt;
 extern volatile int32_t  g_i_iv_filt;

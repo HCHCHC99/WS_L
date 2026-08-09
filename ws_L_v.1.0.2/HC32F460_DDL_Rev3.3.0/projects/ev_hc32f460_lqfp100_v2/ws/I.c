@@ -26,6 +26,11 @@ volatile int16_t  g_i_iu_ma   = 0;
 volatile int16_t  g_i_iv_ma   = 0;
 volatile int16_t  g_i_iw_ma   = 0;
 
+/* Float mirrors of the latest per-phase current (J-Scope: signed, no int16 wrap-around) */
+volatile float   g_scope_iu_ma = 0.0f;
+volatile float   g_scope_iv_ma = 0.0f;
+volatile float   g_scope_iw_ma = 0.0f;
+
 /* Biquad-filtered current (Q8 fixed-point: value = actual_mA × 256) */
 volatile int32_t  g_i_iu_filt = 0;
 volatile int32_t  g_i_iv_filt = 0;
@@ -305,6 +310,9 @@ static void I_IrqCallback(void)
     g_i_iu_ma   = i16IU_mA;
     g_i_iv_ma   = i16IV_mA;
     g_i_iw_ma   = i16IW_mA;
+    g_scope_iu_ma = (float)i16IU_mA;
+    g_scope_iv_ma = (float)i16IV_mA;
+    g_scope_iw_ma = (float)i16IW_mA;
     g_i_iu_filt = (int32_t)((float)i16IU_fmA * 256.0f);  /* Q8: ×256 for J-Scope */
     g_i_iv_filt = (int32_t)((float)i16IV_fmA * 256.0f);
     g_i_iw_filt = (int32_t)((float)i16IW_fmA * 256.0f);

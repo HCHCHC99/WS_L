@@ -44,8 +44,8 @@ extern "C" {
  * INMOP-style current sampling switch (branch inmop_cur_loop)
  *   1 = mimic STM32 INMOP project:
  *         ADC2 free-running continuous conversion (software start) + DMA2
- *         circular transfer; the 20kHz ADC1 EOCB ISR (PWM peak) reads the
- *         latest DMA value at each tick.
+ *         circular transfer; the 20kHz ADC1 EOCB ISR (PWM peak + valley,
+ *         10kHz PWM -> 20kHz double update) reads the latest DMA value.
  *         UVW are still sampled directly on PA5/6/7 (= ADC2_CH1/2/3);
  *         V phase is NOT derived from U+W.
  *   0 = original: ADC1 SEQ_B hardware trigger (SCMP0 @ PWM peak), EOCB ISR
@@ -72,8 +72,15 @@ extern "C" {
 #define I_ADC_PERIPH_CLK                (FCG3_PERIPH_ADC1)
 #define I_ADC_SEQ                       (ADC_SEQ_B)
 
-/* ===== Trigger: share BEMF's SCMP0 via EVT0 ===== */
+/* ===== Trigger =====
+ * INMOP-style: EVT0 (SCMP0 @ PEAK) + EVT1 (SCMP2 @ VALLEY)
+ *              => 10kHz PWM -> 20kHz sampling (double update)
+ * Original    : EVT0 only (SCMP0 @ PEAK), 1x sampling per PWM period */
+#if I_INMOP_STYLE
+#define I_ADC_HARDTRIG                  (ADC_HARDTRIG_EVT0_EVT1)
+#else
 #define I_ADC_HARDTRIG                  (ADC_HARDTRIG_EVT0)
+#endif
 
 /* ===== Interrupt configuration ===== */
 #define I_ADC_INT_SRC                   (INT_SRC_ADC1_EOCB)

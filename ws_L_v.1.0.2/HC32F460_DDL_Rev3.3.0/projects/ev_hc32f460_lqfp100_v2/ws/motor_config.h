@@ -9,17 +9,18 @@
 #define __MOTOR_CONFIG_H__
 
 /* ============================================================================
- * 电机控制频率总配置：改这一个宏即可
+ * Motor control frequency master config: change this one macro.
  *
- *   MOTOR_PWM_FREQ_HZ = PWM 频率 = ADC 采样频率 = 电流环频率（1:1�??
+ *   MOTOR_PWM_FREQ_HZ = PWM switching frequency.
+ *   INMOP-style double update (branch inmop_cur_loop):
+ *     PWM = 10kHz, ADC/current-loop read = 2x = 20kHz
+ *     (TMR4 SCMP0 @ PEAK + SCMP2 @ VALLEY both trigger ADC1 SEQ_B EOCB ISR).
  *
- *   常用值：
- *     10000u = 10 kHz
- *     25000u = 25 kHz
- *     50000u = 50 kHz
- *   其它 8kHz~100kHz 均可（受 ADC 转换时间 / 中断负载限制�??
+ *   Other values 8kHz~100kHz are possible (limited by ADC conversion time /
+ *   ISR load). For 1x sampling per PWM period, keep a single peak trigger
+ *   (I_ADC_HARDTRIG = EVT0 only).
  * ==========================================================================*/
-#define MOTOR_PWM_FREQ_HZ   20000u
+#define MOTOR_PWM_FREQ_HZ   10000u
 
 /* ============================================================================
  * 环拓扑配置（改这里切换控制结构）

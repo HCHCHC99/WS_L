@@ -216,7 +216,11 @@ static void I_TriggerConfig(void)
     ADC_TriggerConfig(I_ADC_UNIT, I_ADC_SEQ, I_ADC_HARDTRIG);
     ADC_TriggerCmd(I_ADC_UNIT, I_ADC_SEQ, ENABLE);
 
+#if I_INMOP_STYLE
+    MAIN_D("[I] SEQ_B trigger: EVT0+EVT1 (SCMP0@PEAK + SCMP2@VALLEY, 10k PWM -> 20k sampling)\r\n");
+#else
     MAIN_D("[I] SEQ_B trigger: EVT0 (shared with BEMF SCMP0)\r\n");
+#endif
 }
 
 #if I_INMOP_STYLE
@@ -330,6 +334,28 @@ static void I_DmaContinuousConfig(void)
 
     MAIN_D("[I] INMOP-style: ADC2 continuous + DMA2 CH1/2/3 running, read via EOCB ISR\r\n");
 }
+/**
+ * @brief  Configure TMR4_3 EVT to also fire at counter VALLEY (SCMP2).
+ * @note   INMOP-style double update: SCMP0 @ PEAK (BEMF, EVT0) +
+ *         SCMP2 @ VALLEY (EVT1) => 10kHz PWM generates 20kHz EOCB ISR.
+ *         Uses EVT channel VH; the EVT submodule only writes SCCR/SCSR/SCMR
+ *         and is independent of the PWM OC channels.
+ */
+static void I_Tmr4ValleyEvtConfig(void)
+{
+    stc_tmr4_evt_init_t stcTmr4Evt;
+
+    (void)TMR4_EVT_StructInit(&stcTmr4Evt);
+    stcTmr4Evt.u16Mode         = TMR4_EVT_MD_CMP;
+    stcTmr4Evt.u16CompareValue = 0U;                    /* counter == 0 = valley */
+    stcTmr4Evt.u16MatchCond    = TMR4_EVT_MATCH_CNT_VALLEY;
+    stcTmr4Evt.u16OutputEvent  = TMR4_EVT_OUTPUT_EVT2;  /* -> SCMP2 */
+
+    (void)TMR4_EVT_Init(CM_TMR4_3, TMR4_EVT_CH_VH, &stcTmr4Evt);
+
+    MAIN_D("[I] TMR4_3 EVT: SCMP2 @ VALLEY configured (10k PWM -> 20k tick)\r\n");
+}
+
 #endif /* I_INMOP_STYLE */
 
 
@@ -506,11 +532,15 @@ void I_Init(void)
 
     /* 2. SEQ_B trigger = EVT0 (same SCMP0 as BEMF, shared via AOS_ADC1_0)
           NOTE: under INMOP-style, SEQ_B still runs only to generate the
-          20kHz EOCB "read" interrupt at PWM peak; the current data itself
-          comes from ADC2+DMA below. */
+          20kHz EOCB "read" interrupt (PWM peak + valley, 10kHz PWM);
+          the current data itself comes from ADC2+DMA below. */
     I_TriggerConfig();
 
 #if I_INMOP_STYLE
+    /* 2.4 INMOP-style double update: valley trigger SCMP2 -> EVT1 */
+    I_Tmr4ValleyEvtConfig();
+    AOS_InitForCurrent();   /* routes TMR4_3_SCMP2 -> AOS_ADC1_1 (TRGSEL1) */
+
     /* 2.5 INMOP-style: ADC2 free-running continuous + DMA2 circular */
     I_Adc2ContinuousConfig();
     I_DmaContinuousConfig();

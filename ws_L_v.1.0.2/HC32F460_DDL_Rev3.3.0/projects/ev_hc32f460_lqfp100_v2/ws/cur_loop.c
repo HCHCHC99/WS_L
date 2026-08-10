@@ -75,8 +75,8 @@ pid_config_t g_cur_pid_cfg = {
     .kd           = 0.0f,
     .output_min   = 2.0f,
     .output_max   = 98.0f,
-    .integral_max = 500.0f,   /* mA*s */
-    .i_term_max   = 20.0f,    /* I contribution clamped to +/-20% */
+    .integral_max = 1000.0f,  /* mA*s; allows I-term up to 100% at ki=0.1 */
+    .i_term_max   = 80.0f,    /* I contribution clamped to +/-80% (open-loop duty is ~80%) */
     .update_ms    = 0,        /* no throttle: run on every ADC sample (PWM rate) */
 };
 
@@ -240,6 +240,10 @@ static void curloop_isr(const stc_i_data_t *pData)
             if (s_ref_ramp_start_us == 0) {
                 s_ref_start = fb;              /* anchor at actual open-loop current */
                 s_ref_ramp_start_us = now;
+                /* Bumpless handoff: back-calc the integral so the first PI output
+                 * stays at the open-loop duty (e.g. 80%) instead of collapsing to
+                 * output_min (2%) within a few cycles and stalling the motor. */
+                PID_Seed(&s_pid, fb, fb, s_last_duty);
             }
             uint64_t ramp_el = now - s_ref_ramp_start_us;
             uint64_t ramp_tot = (uint64_t)CURLOOP_REF_RAMP_MS * 1000UL;

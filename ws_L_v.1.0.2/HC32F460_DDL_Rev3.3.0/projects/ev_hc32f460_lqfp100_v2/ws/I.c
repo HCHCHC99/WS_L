@@ -10,6 +10,8 @@
 #include "rtt_log.h"
 #include "TickTimer.h"
 #include "tmr4_pwm.h"
+#include "Aos.h"
+#include "Dma.h"
 #include <string.h>
 
 /*******************************************************************************
@@ -217,6 +219,120 @@ static void I_TriggerConfig(void)
     MAIN_D("[I] SEQ_B trigger: EVT0 (shared with BEMF SCMP0)\r\n");
 }
 
+#if I_INMOP_STYLE
+/*******************************************************************************
+ * INMOP-style: ADC2 free-running continuous + DMA2 latest-slot circular
+ *   Trigger : ADC2 SEQ_A continuous (software start, no hardware trigger)
+ *             -> EOCA event -> AOS -> DMA2 CH1/2/3 (repeat, block=1)
+ *   Read    : 20kHz ADC1 EOCB ISR (PWM peak) reads latest DMA slot
+ *             (mirror of STM32 INMOP: "always sampling, read at ISR")
+ *   UVW     : all three phases sampled directly, V is NOT derived
+ ******************************************************************************/
+#define I_ADC2_UNIT                     (CM_ADC2)
+#define I_ADC2_PERIPH_CLK               (FCG3_PERIPH_ADC2)
+#define I_DMA_UNIT                      (DMA_UNIT_2)
+#define I_DMA_CH_IU                     (1U)   /* DMA2 CH1 <- ADC2_DR1 (IU/PA5) */
+#define I_DMA_CH_IV                     (2U)   /* DMA2 CH2 <- ADC2_DR2 (IV/PA6) */
+#define I_DMA_CH_IW                     (3U)   /* DMA2 CH3 <- ADC2_DR3 (IW/PA7) */
+                                              /* DMA2 CH0 is used by USART3 */
+
+static uint8_t s_au8DmaId[3] = {0xFF, 0xFF, 0xFF};
+
+/**
+ * @brief  Configure ADC2 SEQ_A continuous (free-running) on CH1/2/3 = IU/IV/IW
+ * @note   PA5/6/7 are shared pins: ADC1_CH5/6/7 (original) and ADC2_CH1/2/3.
+ *         Keep all three phases sampled directly; V is NOT computed from U+W.
+ */
+static void I_Adc2ContinuousConfig(void)
+{
+    stc_adc_init_t stcAdcInit;
+
+    /* Enable ADC2 peripheral clock */
+    FCG_Fcg3PeriphClockCmd(I_ADC2_PERIPH_CLK, ENABLE);
+
+    /* ADC2 SEQ_A continuous conversion = free running (like STM32 INMOP) */
+    (void)ADC_StructInit(&stcAdcInit);
+    stcAdcInit.u16ScanMode   = ADC_MD_SEQA_CONT;
+    stcAdcInit.u16Resolution = ADC_RESOLUTION_12BIT;
+    stcAdcInit.u16DataAlign  = ADC_DATAALIGN_RIGHT;
+    (void)ADC_Init(I_ADC2_UNIT, &stcAdcInit);
+
+    /* SEQ_A channels: CH1(IU/PA5), CH2(IV/PA6), CH3(IW/PA7) */
+    ADC_ChCmd(I_ADC2_UNIT, ADC_SEQ_A, ADC_CH1, ENABLE);
+    ADC_ChCmd(I_ADC2_UNIT, ADC_SEQ_A, ADC_CH2, ENABLE);
+    ADC_ChCmd(I_ADC2_UNIT, ADC_SEQ_A, ADC_CH3, ENABLE);
+
+    I_DEBUG("ADC2 SEQ_A continuous configured: CH1/2/3 (IU/IV/IW)\r\n");
+}
+
+/**
+ * @brief  Route ADC2_EOCA -> DMA2 CH1/2/3; each channel copies the latest
+ *         16-bit sample into a single-slot repeat buffer (block size 1, so
+ *         buffer[0] is always the newest value), mirroring STM32 INMOP DMA.
+ * @note   No DMA interrupt needed: read cadence comes from the 20kHz EOCB ISR.
+ */
+static void I_DmaContinuousConfig(void)
+{
+    stc_dma_config_t stcDmaConfig;
+
+    /* ADC2 end-of-conversion event -> DMA2 CH1/2/3 */
+    AOS_Connect(AOS_DMA2_1, EVT_SRC_ADC2_EOCA);
+    AOS_Connect(AOS_DMA2_2, EVT_SRC_ADC2_EOCA);
+    AOS_Connect(AOS_DMA2_3, EVT_SRC_ADC2_EOCA);
+
+    struct {
+        uint8_t u8DmaCh;
+        uint8_t u8AdcCh;
+    } astcDma[3] = {
+        { I_DMA_CH_IU, ADC_CH1 },
+        { I_DMA_CH_IV, ADC_CH2 },
+        { I_DMA_CH_IW, ADC_CH3 },
+    };
+
+    for (uint8_t i = 0; i < 3; i++) {
+        memset(&stcDmaConfig, 0, sizeof(stc_dma_config_t));
+
+        stcDmaConfig.u8DmaUnit      = I_DMA_UNIT;
+        stcDmaConfig.u8Channel      = astcDma[i].u8DmaCh;
+        stcDmaConfig.enDir          = DMA_DIR_PERIPH_TO_MEM;
+        stcDmaConfig.enTransMode    = DMA_TRANS_MODE_REPEAT;
+        stcDmaConfig.u32SrcAddr     = (uint32_t)((uint32_t)&I_ADC2_UNIT->DR0 +
+                                                 (astcDma[i].u8AdcCh * 2U)); /* ADC2_DR1/2/3 */
+        stcDmaConfig.u32DestAddr    = 0;   /* Dma_Init allocates and back-fills */
+        stcDmaConfig.u32DataWidth   = DMA_DATAWIDTH_16BIT;
+        stcDmaConfig.u16BlockSize   = 1;   /* one event -> one latest sample */
+        stcDmaConfig.u16TransCount  = 0;   /* infinite transfer */
+        stcDmaConfig.u32SrcAddrInc  = DMA_SRC_ADDR_FIX;
+        stcDmaConfig.u32DestAddrInc = DMA_DEST_ADDR_INC;
+        stcDmaConfig.u8EnableInt    = 0;   /* no DMA ISR (EOCB ISR reads data) */
+        stcDmaConfig.u8IntPriority  = DDL_IRQ_PRIO_03;
+        stcDmaConfig.pfnCallback    = NULL;
+
+        s_au8DmaId[i] = Dma_Create(&stcDmaConfig);
+        if (s_au8DmaId[i] != 0xFF) {
+            I_DEBUG("DMA2 CH%d created (ID=%u) for ADC2_DR%d\r\n",
+                    astcDma[i].u8DmaCh, s_au8DmaId[i], astcDma[i].u8AdcCh);
+        } else {
+            MAIN_D("[I] ERROR: DMA2 CH%d create failed!\r\n", astcDma[i].u8DmaCh);
+        }
+    }
+
+    Dma_Init();
+
+    for (uint8_t i = 0; i < 3; i++) {
+        if (s_au8DmaId[i] != 0xFF) {
+            Dma_Start(s_au8DmaId[i]);
+        }
+    }
+
+    /* Software start; continuous mode runs freely (no hardware trigger) */
+    (void)ADC_Start(I_ADC2_UNIT);
+
+    MAIN_D("[I] INMOP-style: ADC2 continuous + DMA2 CH1/2/3 running, read via EOCB ISR\r\n");
+}
+#endif /* I_INMOP_STYLE */
+
+
 /*******************************************************************************
  * Interrupt configuration & ISR
  ******************************************************************************/
@@ -230,17 +346,24 @@ static void I_IrqCallback(void)
     /* Clear SEQ_B end-of-conversion flag */
     ADC_ClearStatus(I_ADC_UNIT, ADC_FLAG_EOCB);
 
+#if I_INMOP_STYLE
+    /* INMOP-style: 20kHz ISR reads latest DMA values (ADC2 always converting) */
+    uint16_t u16IU = Dma_GetLatestValue(s_au8DmaId[0]);
+    uint16_t u16IV = Dma_GetLatestValue(s_au8DmaId[1]);
+    uint16_t u16IW = Dma_GetLatestValue(s_au8DmaId[2]);
+#else
     /* Read ADC1 DR5(PA5/IU), DR6(PA6/IV), DR7(PA7/IW) */
     uint16_t u16IU = ADC_GetValue(I_ADC_UNIT, I_CH_U);
     uint16_t u16IV = ADC_GetValue(I_ADC_UNIT, I_CH_V);
     uint16_t u16IW = ADC_GetValue(I_ADC_UNIT, I_CH_W);
+#endif
 
     /* DEBUG: print first 3 ISR entries unconditionally */
     {
         static uint8_t s_u8FirstPrints = 3;
         if (s_u8FirstPrints > 0) {
             s_u8FirstPrints--;
-            MAIN_D("[I] ISR fired! cnt=%lu DR5=%u DR6=%u DR7=%u\r\n",
+            MAIN_D("[I] ISR fired! cnt=%lu IU=%u IV=%u IW=%u\r\n",
                    s_stcIData.u32SampleCount, u16IU, u16IV, u16IW);
         }
     }
@@ -381,8 +504,17 @@ void I_Init(void)
     /* 1. Configure ADC1 SEQ_B: pins + CH5/6/7 (SEQ_A & mode already set by BEMF) */
     I_AdcConfig();
 
-    /* 2. SEQ_B trigger = EVT0 (same SCMP0 as BEMF, shared via AOS_ADC1_0) */
+    /* 2. SEQ_B trigger = EVT0 (same SCMP0 as BEMF, shared via AOS_ADC1_0)
+          NOTE: under INMOP-style, SEQ_B still runs only to generate the
+          20kHz EOCB "read" interrupt at PWM peak; the current data itself
+          comes from ADC2+DMA below. */
     I_TriggerConfig();
+
+#if I_INMOP_STYLE
+    /* 2.5 INMOP-style: ADC2 free-running continuous + DMA2 circular */
+    I_Adc2ContinuousConfig();
+    I_DmaContinuousConfig();
+#endif
 
     /* 3. Register EOCB interrupt */
     I_IrqConfig();
@@ -456,6 +588,16 @@ void I_DeInit(void)
     /* Disable ADC1 SEQ_B trigger */
     ADC_TriggerCmd(I_ADC_UNIT, I_ADC_SEQ, DISABLE);
 
+#if I_INMOP_STYLE
+    /* Stop ADC2 free-running conversion and its DMA channels */
+    (void)ADC_Stop(I_ADC2_UNIT);
+    for (uint8_t i = 0; i < 3; i++) {
+        if (s_au8DmaId[i] != 0xFF) {
+            Dma_Stop(s_au8DmaId[i]);
+        }
+    }
+#endif
+
     /* Clear data */
     memset(&s_stcIData, 0, sizeof(s_stcIData));
 
@@ -477,10 +619,17 @@ void I_GetData(stc_i_data_t *pData)
         return;
     }
 
-    /* Read current values from ADC2 data registers */
+#if I_INMOP_STYLE
+    /* INMOP-style: read latest DMA slots */
+    pData->u16IU = Dma_GetLatestValue(s_au8DmaId[0]);
+    pData->u16IV = Dma_GetLatestValue(s_au8DmaId[1]);
+    pData->u16IW = Dma_GetLatestValue(s_au8DmaId[2]);
+#else
+    /* Read current values from ADC1 data registers */
     pData->u16IU = ADC_GetValue(I_ADC_UNIT, I_CH_U);
     pData->u16IV = ADC_GetValue(I_ADC_UNIT, I_CH_V);
     pData->u16IW = ADC_GetValue(I_ADC_UNIT, I_CH_W);
+#endif
     uint16_t u16Z;
     u16Z = (g_i_calib_state == 2) ? g_i_calib_zero_u : I_ADC_ZERO;
     pData->i16IU_mA = I_ADC_TO_MA_REF(pData->u16IU, u16Z);
@@ -509,7 +658,15 @@ uint16_t I_GetRawValue(uint8_t u8Phase)
         case 2: u8Channel = I_CH_W; break;
         default: return 0;
     }
+#if I_INMOP_STYLE
+    (void)u8Channel;   /* INMOP-style reads DMA slots by phase index */
+    if (u8Phase < 3u) {
+        return Dma_GetLatestValue(s_au8DmaId[u8Phase]);
+    }
+    return 0;
+#else
     return ADC_GetValue(I_ADC_UNIT, u8Channel);
+#endif
 }
 
 /**

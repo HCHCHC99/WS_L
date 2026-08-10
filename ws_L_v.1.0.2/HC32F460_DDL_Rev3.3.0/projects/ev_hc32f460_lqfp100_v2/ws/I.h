@@ -40,6 +40,19 @@ extern "C" {
     #define I_DEBUG(fmt, ...)    ((void)0)
 #endif
 
+/* ============================================================================
+ * INMOP-style current sampling switch (branch inmop_cur_loop)
+ *   1 = mimic STM32 INMOP project:
+ *         ADC2 free-running continuous conversion (software start) + DMA2
+ *         circular transfer; the 20kHz ADC1 EOCB ISR (PWM peak) reads the
+ *         latest DMA value at each tick.
+ *         UVW are still sampled directly on PA5/6/7 (= ADC2_CH1/2/3);
+ *         V phase is NOT derived from U+W.
+ *   0 = original: ADC1 SEQ_B hardware trigger (SCMP0 @ PWM peak), EOCB ISR
+ *         reads DR5/6/7 directly.
+ * ==========================================================================*/
+#define I_INMOP_STYLE                   (1U)
+
 /* ===== Current channel definitions ===== */
 #define I_CH_U                          (ADC_CH5)   /* PA5/ADC1_CH5: IU */
 #define I_CH_V                          (ADC_CH6)   /* PA6/ADC1_CH6: IV */

@@ -94,7 +94,7 @@ pid_config_t g_foc_pid_id_cfg = {
     .kd           = 0.0f,
     .output_min   = -FOC_PI_UMAX_V,
     .output_max   =  FOC_PI_UMAX_V,
-    .integral_max = 6.0f,     /* A*s (INMOP reference suggestion) */
+    .integral_max = 0.5f,     /* A*s, scaled for low-R motor */
     .i_term_max   = 0.0f,     /* disabled: bounded by integral_max + output clamp */
     .update_ms    = 0,        /* no throttle: every ISR */
 };
@@ -109,7 +109,7 @@ pid_config_t g_foc_pid_iq_cfg = {
     .kd           = 0.0f,
     .output_min   = -FOC_PI_UMAX_V,
     .output_max   =  FOC_PI_UMAX_V,
-    .integral_max = 6.0f,     /* A*s (INMOP reference suggestion) */
+    .integral_max = 0.5f,     /* A*s, scaled for low-R motor */
     .i_term_max   = 0.0f,     /* disabled: bounded by integral_max + output clamp */
     .update_ms    = 0,        /* no throttle: every ISR */
 };

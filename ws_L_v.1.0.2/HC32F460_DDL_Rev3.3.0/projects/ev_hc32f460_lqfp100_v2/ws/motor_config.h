@@ -76,11 +76,11 @@
 #define FOC_IF_TIMEOUT_MS       10000u   /* start timeout -> fault code 2 */
 #define FOC_OC_LIMIT_A       4.0f        /* over-current trip default (A, per phase; runtime: g_foc_oc_limit_a) */
 #define FOC_CUR_SIGN         1           /* current sign correction (+1/-1) */
-#define FOC_PI_KP            0.3f        /* current PI proportional gain (V/A) */
-#define FOC_PI_KI            1000.0f     /* current PI integral gain (1/s) */
-#define FOC_PI_UMAX_V        6.0f        /* current PI output clamp (V) on 12V bus */
+#define FOC_PI_KP            0.05f       /* current PI Kp (V/A) - low-R motor: 100mA needs only ~13mV */
+#define FOC_PI_KI            50.0f       /* current PI Ki (1/s) - low-R motor */
+#define FOC_PI_UMAX_V        0.5f        /* current PI output clamp (V): 0.5V/R=~4A worst case; normal op ~13mV */
 
-#define FOC_VMAX_V            1.5f       /* current-loop max voltage magnitude (V), Watch tunable - keep low, no overheat */
-#define FOC_VRAMP_V_S         1.0f       /* voltage envelope ramp rate (V/s) */
+#define FOC_VMAX_V            0.5f       /* current-loop max voltage magnitude (V), Watch tunable - low-R motor */
+#define FOC_VRAMP_V_S         0.2f       /* voltage envelope ramp rate (V/s) - gentle for low-R motor */
 #define FOC_CUR_FB_ALPHA      0.3f       /* EMA weight on id/iq feedback (1.0 = off) */
 #endif /* __MOTOR_CONFIG_H__ */

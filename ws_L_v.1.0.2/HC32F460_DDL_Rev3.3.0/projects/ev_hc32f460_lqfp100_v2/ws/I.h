@@ -52,6 +52,11 @@ extern "C" {
  *         reads DR5/6/7 directly.
  * ==========================================================================*/
 #define I_INMOP_STYLE                   (1U)
+/* Current read source:
+ *   1 = legacy INMOP-style: ADC2 free-running + DMA (async to PWM) - NOISY
+ *   0 = ADC1 SEQ_B hardware-triggered samples (PWM peak/valley = ripple average) - recommended
+ */
+#define I_ASYNC_ADC2_READ                (0U)
 
 /* ===== Current channel definitions ===== */
 #define I_CH_U                          (ADC_CH5)   /* PA5/ADC1_CH5: IU */

@@ -226,9 +226,9 @@ static void I_TriggerConfig(void)
 #endif
 }
 
-#if I_INMOP_STYLE
+#if I_INMOP_STYLE && I_ASYNC_ADC2_READ
 /*******************************************************************************
- * INMOP-style: ADC2 free-running continuous + DMA2 latest-slot circular
+ * INMOP-style (legacy, async): ADC2 free-running continuous + DMA2 latest-slot
  *   Trigger : ADC2 SEQ_A continuous (software start, no hardware trigger)
  *             -> EOCA event -> AOS -> DMA2 CH1/2/3 (repeat, block=1)
  *   Read    : 20kHz ADC1 EOCB ISR (PWM peak) reads latest DMA slot
@@ -337,6 +337,9 @@ static void I_DmaContinuousConfig(void)
 
     MAIN_D("[I] INMOP-style: ADC2 continuous + DMA2 CH1/2/3 running, read via EOCB ISR\r\n");
 }
+#endif /* I_INMOP_STYLE && I_ASYNC_ADC2_READ */
+
+#if I_INMOP_STYLE
 /**
  * @brief  Configure TMR4_3 EVT to also fire at counter VALLEY (SCMP2).
  * @note   INMOP-style double update: SCMP0 @ PEAK (BEMF, EVT0) +
@@ -375,13 +378,14 @@ static void I_IrqCallback(void)
     /* Clear SEQ_B end-of-conversion flag */
     ADC_ClearStatus(I_ADC_UNIT, ADC_FLAG_EOCB);
 
-#if I_INMOP_STYLE
-    /* INMOP-style: 20kHz ISR reads latest DMA values (ADC2 always converting) */
+#if I_ASYNC_ADC2_READ
+    /* Legacy async: 20kHz ISR reads latest DMA values (ADC2 free-running) */
     uint16_t u16IU = Dma_GetLatestValue(s_au8DmaId[0]);
     uint16_t u16IV = Dma_GetLatestValue(s_au8DmaId[1]);
     uint16_t u16IW = Dma_GetLatestValue(s_au8DmaId[2]);
 #else
-    /* Read ADC1 DR5(PA5/IU), DR6(PA6/IV), DR7(PA7/IW) */
+    /* PWM-synchronized: ADC1 SEQ_B hardware-triggered at PEAK+VALLEY.
+     * Sampling at the ripple-average point -> clean fundamental, sum ~ 0. */
     uint16_t u16IU = ADC_GetValue(I_ADC_UNIT, I_CH_U);
     uint16_t u16IV = ADC_GetValue(I_ADC_UNIT, I_CH_V);
     uint16_t u16IW = ADC_GetValue(I_ADC_UNIT, I_CH_W);
@@ -536,11 +540,13 @@ void I_Init(void)
     I_TriggerConfig();
 
 #if I_INMOP_STYLE
-    /* 2.4 INMOP-style double update: valley trigger SCMP2 -> EVT1 */
+    /* 2.4 INMOP-style double update: valley trigger SCMP2 -> EVT1 (20kHz ISR) */
     I_Tmr4ValleyEvtConfig();
     AOS_InitForCurrent();   /* routes TMR4_3_SCMP2 -> AOS_ADC1_1 (TRGSEL1) */
+#endif
 
-    /* 2.5 INMOP-style: ADC2 free-running continuous + DMA2 circular */
+#if I_INMOP_STYLE && I_ASYNC_ADC2_READ
+    /* 2.5 legacy async ADC2 free-running + DMA2 (disabled by default) */
     I_Adc2ContinuousConfig();
     I_DmaContinuousConfig();
 #endif
@@ -618,8 +624,8 @@ void I_DeInit(void)
     /* Disable ADC1 SEQ_B trigger */
     ADC_TriggerCmd(I_ADC_UNIT, I_ADC_SEQ, DISABLE);
 
-#if I_INMOP_STYLE
-    /* Stop ADC2 free-running conversion and its DMA channels */
+#if I_INMOP_STYLE && I_ASYNC_ADC2_READ
+    /* Stop ADC2 free-running conversion and its DMA channels (legacy async path) */
     (void)ADC_Stop(I_ADC2_UNIT);
     for (uint8_t i = 0; i < 3; i++) {
         if (s_au8DmaId[i] != 0xFF) {
@@ -649,13 +655,13 @@ void I_GetData(stc_i_data_t *pData)
         return;
     }
 
-#if I_INMOP_STYLE
-    /* INMOP-style: read latest DMA slots */
+#if I_ASYNC_ADC2_READ
+    /* Legacy async: read latest DMA slots */
     pData->u16IU = Dma_GetLatestValue(s_au8DmaId[0]);
     pData->u16IV = Dma_GetLatestValue(s_au8DmaId[1]);
     pData->u16IW = Dma_GetLatestValue(s_au8DmaId[2]);
 #else
-    /* Read current values from ADC1 data registers */
+    /* Read current values from ADC1 data registers (PWM-synchronized) */
     pData->u16IU = ADC_GetValue(I_ADC_UNIT, I_CH_U);
     pData->u16IV = ADC_GetValue(I_ADC_UNIT, I_CH_V);
     pData->u16IW = ADC_GetValue(I_ADC_UNIT, I_CH_W);
@@ -688,8 +694,8 @@ uint16_t I_GetRawValue(uint8_t u8Phase)
         case 2: u8Channel = I_CH_W; break;
         default: return 0;
     }
-#if I_INMOP_STYLE
-    (void)u8Channel;   /* INMOP-style reads DMA slots by phase index */
+#if I_ASYNC_ADC2_READ
+    (void)u8Channel;   /* legacy: reads DMA slots by phase index */
     if (u8Phase < 3u) {
         return Dma_GetLatestValue(s_au8DmaId[u8Phase]);
     }

@@ -11,7 +11,7 @@
  *          CW  = A leads B (rising-edge order A then B)
  *          CCW = B leads A (rising-edge order B then A)
  *
- *        Encoder: 1024 lines, 4x quadrature -> 4096 counts / rev (4096cpr).
+ *        Encoder: measured 360 counts / rev on this rig.
  *******************************************************************************
  */
 
@@ -25,9 +25,9 @@
 extern "C" {
 #endif
 
-/* Encoder geometry */
-#define ENCODER_LINES   1024u
-#define ENCODER_CPR     (ENCODER_LINES * 4u)   /* 4096 counts/rev (4x quadrature) */
+/* Encoder geometry - measured on this rig: 360 counts per mechanical rev */
+#define ENCODER_LINES   90u
+#define ENCODER_CPR     (ENCODER_LINES * 4u)   /* 360 counts/rev (measured) */
 
 void    Encoder_Init(void);
 void    Encoder_Update(void);          /* periodic (main loop): position + speed */

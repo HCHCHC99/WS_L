@@ -162,7 +162,18 @@ void Encoder_Update(void)
     uint64_t now_us = Timer6_Timebase_GetTimestamp();
     uint32_t cnt    = TMRA_GetCountValue(CM_TMRA_1);
 
-    int16_t  d_cnt = (int16_t)(cnt - (uint32_t)s_last_cnt);  /* 16-bit wrap safe */
+    /* 16-bit counter wrap is safe; but the Z-index ISR resets the counter and
+     * s_last_cnt between two Encoder_Update calls, which would show up as a
+     * spurious +/-4096 jump and corrupt the speed window (RPM spikes to
+     * -5000..-9000 once per revolution). Discard jumps larger than half a
+     * revolution: normal motion per update is only a few counts, so a large
+     * jump can only be a Z-reset race. */
+    int16_t d_cnt = (int16_t)(cnt - (uint32_t)s_last_cnt);
+    if ((d_cnt >  (int16_t)(ENCODER_CPR / 2)) ||
+        (d_cnt < -(int16_t)(ENCODER_CPR / 2))) {
+        d_cnt = 0;
+        s_last_cnt = (uint16_t)cnt;
+    }
     uint32_t d_us  = (s_last_us == 0u) ? 1000u : (uint32_t)(now_us - s_last_us);
     if (d_us > 1000000u) {
         d_us = 1000000u;   /* clamp after debugger halt / long stall */

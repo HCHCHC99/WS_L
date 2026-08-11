@@ -236,7 +236,7 @@ int main(void)
         if (g_foc_fault != 0u) {
             if (!s_foc_fault_printed) {
                 s_foc_fault_printed = 1;
-                MAIN_D("[FOC] FAULT oc=%d\r\n", (int)g_foc_fault);
+                MAIN_D("[FOC] FAULT oc=%d i=%d mA\r\n", (int)g_foc_fault, (int)g_foc_fault_i_ma);
             }
         } else {
             s_foc_fault_printed = 0;

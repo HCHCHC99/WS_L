@@ -61,6 +61,10 @@ volatile float   g_foc_vq               = 0.0f;
 volatile uint8_t g_foc_align_state      = 0u;
 volatile uint8_t g_foc_fault            = 0u;
 
+/* Over-current limit (Watch tunable) + fault diagnostic */
+volatile float g_foc_oc_limit_a    = (float)FOC_OC_LIMIT_A;
+volatile float g_foc_fault_i_ma    = 0.0f;   /* |phase current| at OC trip (mA) */
+
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live).
  * INMOP-style position PI: Kp = FOC_PI_KP (V/A), Ki = FOC_PI_KI (per-second
  * integral gain), output clamped to +/-FOC_PI_UMAX_V (6 V on 12 V bus).
@@ -117,6 +121,10 @@ static pid_state_t s_pid_iq;
 /* ISR period in us (FOC_ISR_HZ = 20000 -> 50 us) */
 #define FOC_ISR_DT_US  (1000000u / FOC_ISR_HZ)
 
+/* OC debounce: require N consecutive over-limit samples (N x 50us) before trip */
+#define FOC_OC_DEBOUNCE_SAMPLES  4u
+static uint16_t s_oc_cnt = 0u;
+
 /*******************************************************************************
  * Local helpers
  ******************************************************************************/
@@ -130,15 +138,33 @@ static int32_t Foc_ModPos(int32_t x, int32_t n)
 /* Over-current check: any phase |I| > FOC_OC_LIMIT_A (mA conversion). */
 static uint8_t Foc_OverCurrent(const stc_i_data_t *pData)
 {
-    float oc_ma = FOC_OC_LIMIT_A * 1000.0f;
+    float iu, iv, iw, imax;
 
     if (pData == NULL) {
         return 0u;
     }
-    if (((float)pData->i16IU_mA >  oc_ma) || ((float)pData->i16IU_mA < -oc_ma) ||
-        ((float)pData->i16IV_mA >  oc_ma) || ((float)pData->i16IV_mA < -oc_ma) ||
-        ((float)pData->i16IW_mA >  oc_ma) || ((float)pData->i16IW_mA < -oc_ma)) {
-        return 1u;
+
+    iu  = (float)pData->i16IU_mA;
+    iv  = (float)pData->i16IV_mA;
+    iw  = (float)pData->i16IW_mA;
+
+    /* max |phase current| (mA) */
+    imax = (iu > iv) ? iu : iv;
+    if (iw > imax) imax = iw;
+    {
+        float imin = (iu < iv) ? iu : iv;
+        if (iw < imin) imin = iw;
+        if (-imin > imax) imax = -imin;
+    }
+
+    if (imax > g_foc_oc_limit_a * 1000.0f) {
+        if (++s_oc_cnt >= FOC_OC_DEBOUNCE_SAMPLES) {
+            s_oc_cnt        = 0u;
+            g_foc_fault_i_ma = imax;   /* diagnostic: current that tripped OC */
+            return 1u;
+        }
+    } else {
+        s_oc_cnt = 0u;
     }
     return 0u;
 }
@@ -150,6 +176,7 @@ static void Foc_FaultStop(void)
     g_foc_active      = 0u;
     s_state           = FOC_STATE_IDLE;
     g_foc_align_state = 0u;
+    s_oc_cnt          = 0u;
     TMR4_PWM_EmergencyStop();
     g_foc_du = 0.0f;
     g_foc_dv = 0.0f;
@@ -190,6 +217,8 @@ void Foc_StartOpenLoop(void)
 {
     g_foc_theta_rad   = 0.0f;
     g_foc_fault       = 0u;
+    g_foc_fault_i_ma  = 0.0f;
+    s_oc_cnt          = 0u;
     g_foc_mode        = FOC_MODE_OPENLOOP;
     s_state           = FOC_STATE_IDLE;
     g_foc_align_state = 0u;
@@ -214,6 +243,8 @@ void Foc_StartOpenLoop(void)
 void Foc_StartCurrentLoop(void)
 {
     g_foc_fault       = 0u;
+    g_foc_fault_i_ma  = 0.0f;
+    s_oc_cnt          = 0u;
     g_foc_mode        = FOC_MODE_CURLOOP;
     g_foc_theta_rad   = 0.0f;
     g_foc_iq_ref_ma   = 0.0f;      /* soft-start: ramp to g_foc_iq_ref_cmd_ma */

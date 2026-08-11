@@ -64,6 +64,10 @@ extern volatile float    g_foc_vq;               /* q-axis PI output (V) */
 extern volatile uint8_t  g_foc_align_state;      /* 0=idle, 1=aligning, 2=running */
 extern volatile uint8_t  g_foc_fault;            /* 1 = over-current fault */
 
+/* Over-current limit (A, Keil Watch editable) and trip diagnostic (mA) */
+extern volatile float    g_foc_oc_limit_a;
+extern volatile float    g_foc_fault_i_ma;
+
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live) */
 extern pid_config_t g_foc_pid_id_cfg;
 extern pid_config_t g_foc_pid_iq_cfg;

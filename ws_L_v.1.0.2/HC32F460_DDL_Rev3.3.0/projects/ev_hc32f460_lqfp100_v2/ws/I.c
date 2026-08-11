@@ -67,6 +67,7 @@ volatile uint32_t g_i_sample_cnt = 0;
 
 /* Module running state */
 volatile uint8_t  g_i_running = 0;
+volatile float    g_i_gain_iv   = 1.15f;  /* IV sensor gain correction (Watch tunable): IV reads ~15% low */
 
 /* Calibration state and zero references */
 volatile uint8_t  g_i_calib_state  = 0;   /* 0=idle, 1=in_progress, 2=done */
@@ -409,6 +410,9 @@ static void I_IrqCallback(void)
     int16_t i16IV_mA = I_ADC_TO_MA_REF(u16IV, u16ZeroV);
     int16_t i16IW_mA = I_ADC_TO_MA_REF(u16IW, u16ZeroW);
 
+    /* Per-phase sensor gain correction (IV sensor reads low) */
+    i16IV_mA = (int16_t)((float)i16IV_mA * g_i_gain_iv);
+
     /* 2nd-order Butterworth IIR (fc=200Hz @ fs=50kHz design; actual sampling = PWM freq (MOTOR_PWM_FREQ_HZ); real fc = 200Hz x PWM/50k, display only) */
     float fIU, fIV, fIW;
     if (!s_bBiquadInit) {
@@ -671,6 +675,7 @@ void I_GetData(stc_i_data_t *pData)
     pData->i16IU_mA = I_ADC_TO_MA_REF(pData->u16IU, u16Z);
     u16Z = (g_i_calib_state == 2) ? g_i_calib_zero_v : I_ADC_ZERO;
     pData->i16IV_mA = I_ADC_TO_MA_REF(pData->u16IV, u16Z);
+    pData->i16IV_mA = (int16_t)((float)pData->i16IV_mA * g_i_gain_iv);
     u16Z = (g_i_calib_state == 2) ? g_i_calib_zero_w : I_ADC_ZERO;
     pData->i16IW_mA = I_ADC_TO_MA_REF(pData->u16IW, u16Z);
 
@@ -727,7 +732,11 @@ int16_t I_GetCurrentMA(uint8_t u8Phase)
     } else {
         u16Zero = I_ADC_ZERO;
     }
-    return I_ADC_TO_MA_REF(u16Raw, u16Zero);
+    int16_t i16MA = I_ADC_TO_MA_REF(u16Raw, u16Zero);
+    if (u8Phase == 1) {
+        i16MA = (int16_t)((float)i16MA * g_i_gain_iv);
+    }
+    return i16MA;
 }
 
 /*******************************************************************************

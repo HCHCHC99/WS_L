@@ -491,10 +491,15 @@ void CommRunner_Init(const comm_runner_config_t *cfg)
 
     /* ---- Hall 传感�?? ---- */
     /* 覆写回调�?? Runner 内部函数 */
+#if MOTOR_HALL_ENABLE
     s_cfg.hall_cfg.on_step  = runner_on_hall_step;
     s_cfg.hall_cfg.on_fault = runner_on_hall_fault;
     s_hall = hall_3ch_create(&s_cfg.hall_cfg);
     MAIN_D("[CommRunner] Hall sensor created");
+#else
+    s_hall = NULL;   /* hall disabled: PA8/9/10 used by ABZ encoder */
+    MAIN_D("[CommRunner] Hall sensor DISABLED (MOTOR_HALL_ENABLE=0)");
+#endif
 
     if (cfg->on_init_done) {
         cfg->on_init_done();
@@ -572,6 +577,7 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
 
     switch (mode) {
 
+#if 0 /* hall-based modes 3/4/5/6/7/8/9 disabled (MOTOR_HALL_ENABLE=0) */
     case COMM_RUNNER_CALIB:
         calib_reset();
         break;
@@ -594,6 +600,8 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         MAIN_D("[CommRunner] Mode=CALIB_CCW: 500ms ramp -> closed-loop CCW");
         break;
 
+#endif /* hall-based modes */
+
     case COMM_RUNNER_STOP:
         do_stop();
         break;
@@ -612,6 +620,7 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         s_sub_phase = 0;
         break;
 
+#if 0 /* hall-based modes 3/4/8/9 disabled (MOTOR_HALL_ENABLE=0) */
     case COMM_RUNNER_CLOSED_FW:
         if (s_hall) hall_3ch_stop(s_hall);
         start_open_loop(s_cfg.ol_fly_start_us, s_cfg.ol_fly_target_us,
@@ -646,6 +655,9 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
         MAIN_D("[CommRunner] Mode=PID_CCW: Calib table + PID speed control CCW");
         break;
 
+#endif /* hall-based modes */
+
+#if MOTOR_HALL_ENABLE
     case COMM_RUNNER_CURLOOP_FW:
         if (s_hall) hall_3ch_stop(s_hall);
         calib_build_derived_tables();
@@ -695,6 +707,14 @@ void CommRunner_SetMode(comm_runner_mode_t mode)
 #endif
         MAIN_D("[CommRunner] Mode=CASCADE_FW: timed open loop -> macro-topology loops");
         break;
+#else
+    case COMM_RUNNER_CURLOOP_FW:
+    case COMM_RUNNER_CASCADE_FW:
+        MAIN_D("[CommRunner] Mode=%d rejected: hall disabled", (int)mode);
+        do_stop();
+        s_mode = COMM_RUNNER_STOP;
+        break;
+#endif
 
     default:
         break;
@@ -783,6 +803,7 @@ void CommRunner_Update(void)
         break;
 
     /* ---- �ɳ�->�ջ� (mode 3/4) ---- */
+#if 0 /* modes 3/4 disabled: hall-based */
     case COMM_RUNNER_CLOSED_FW:
     case COMM_RUNNER_CLOSED_RV: {
         int is_fw = (s_mode == COMM_RUNNER_CLOSED_FW);
@@ -818,8 +839,10 @@ void CommRunner_Update(void)
         }
         break;
     }
+#endif /* modes 3/4 */
 
     /* ---- Calib-derived closed-loop (mode 6/7) ---- */
+#if 0 /* modes 6/7 disabled: hall-based */
     case COMM_RUNNER_CALIB_CW:
     case COMM_RUNNER_CALIB_CCW: {
         int is_fw = (s_mode == COMM_RUNNER_CALIB_CW);
@@ -852,8 +875,10 @@ void CommRunner_Update(void)
         }
         break;
     }
+#endif /* modes 6/7 */
 
     /* ---- PID speed control (mode 8/9) ---- */
+#if 0 /* modes 8/9 disabled: hall-based */
     case COMM_RUNNER_PID_CW:
     case COMM_RUNNER_PID_CCW: {
         int is_fw = (s_mode == COMM_RUNNER_PID_CW);
@@ -911,9 +936,11 @@ void CommRunner_Update(void)
         }
         break;
     }
+#endif /* modes 8/9 */
 
 
     /* ---- Current-loop (mode 10) / cascade (mode 11): timed open loop (forward/CW table) -> current PI (ISR) ---- */
+#if MOTOR_HALL_ENABLE
     case COMM_RUNNER_CURLOOP_FW:
     case COMM_RUNNER_CASCADE_FW: {
         int is_cascade = (s_mode == COMM_RUNNER_CASCADE_FW);
@@ -992,6 +1019,11 @@ void CommRunner_Update(void)
         }
         break;
     }
+#else
+    case COMM_RUNNER_CURLOOP_FW:
+    case COMM_RUNNER_CASCADE_FW:
+        break;   /* hall disabled: mode rejected at SetMode */
+#endif
 
     case COMM_RUNNER_STOP:
     default:

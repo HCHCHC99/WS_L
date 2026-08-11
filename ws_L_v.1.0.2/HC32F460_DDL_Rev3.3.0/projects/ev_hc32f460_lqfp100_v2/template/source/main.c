@@ -15,6 +15,7 @@
 #include "I.h"
 #include "motor_config.h"
 #include "cur_loop.h"
+#include "encoder.h"
 #include "Usart3_Vofa.h"
 #include "Usart3_Vofa_Runner.h"
 #include "test_Vofa.h"
@@ -109,6 +110,7 @@ int main(void)
         .pwm_freq_hz       = MOTOR_PWM_FREQ_HZ,
 
         /* Hall 传感器配�??: 3�??, PA10=U, PA9=V, PA8=W, 3对极 */
+#if MOTOR_HALL_ENABLE
         .hall_cfg = {
             .port      = {GPIO_PORT_A, GPIO_PORT_A, GPIO_PORT_A},
             .pin       = {GPIO_PIN_10, GPIO_PIN_09, GPIO_PIN_08},
@@ -127,6 +129,7 @@ int main(void)
             .align_duration_ms = 500,
             .stall_timeout_ms  = 500,
         },
+#endif /* MOTOR_HALL_ENABLE */
 
         /* ��恒� (mode 1/2): 667 RPM 定� 3s 斜坡 */
         .ol_const_start_us  = 5000,
@@ -156,6 +159,9 @@ int main(void)
     /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 频率见 MOTOR_PWM_FREQ_HZ) ---- */
     CurLoop_Init();
 
+    /* ---- ABZ encoder (TIMERA_1 quadrature + Z index) ---- */
+    Encoder_Init();
+
     EventBus_Enable();
 
     /* ---- 电流 VOFA+ 全速发�? (DMA 背压, ~2.9kHz max @921600, 16ch) ---- */
@@ -179,6 +185,9 @@ int main(void)
 
         /* 驱动换相状��?? */
         CommRunner_Update();
+
+        /* ABZ encoder: position + speed */
+        Encoder_Update();
 
         /* g_bemf_wave_data �? Bemf_DataCallback() �? DMA BTC ISR 中自动更�?
          * (根据 g_scope_step 选择浮空�?, 计算 floating_raw - neutral_raw) */
@@ -220,7 +229,7 @@ int main(void)
 
         /* ---- VOFA+ USART3: 全速电�? + 心跳 + RX 日志 ---- */
         if (!Usart3_Vofa_IsTxBusy()) {
-            int32_t cur[19];
+            int32_t cur[22];
 
             /* EMA low-pass filter for BEMF display channels (α=0.05; fc/BTC rate scale with MOTOR_PWM_FREQ_HZ)
              * y[n] = α·x[n] + (1-α)·y[n-1], applied on raw ADC before mV conversion */
@@ -278,8 +287,12 @@ int main(void)
             cur[16] = (int32_t)g_i_ref_ma;     /* 17th float: final target current (mA) */
             cur[17] = (int32_t)g_scope_i_fb;   /* 18th float: measured current (mA) */
             cur[18] = (int32_t)g_scope_i_ref;  /* 19th float: next-step (ramped) current setpoint (mA) */
+            /* Current-loop tuning observables (SCALE_MILLI: mA->A, duty*1000->%) */
+            cur[19] = (int32_t)g_scope_i_err;          /* 20th float: current error (mA -> A) */
+            cur[20] = (int32_t)(g_scope_i_duty * 1000.0f); /* 21st float: duty (%) */
+            cur[21] = (int32_t)g_scope_i_fb_raw;       /* 22nd float: raw windowed fb (mA -> A) */
             #undef RAW_TO_MV
-            Usart3_Vofa_SendScaled(cur, 19, USART3_VOFA_SCALE_MILLI);
+            Usart3_Vofa_SendScaled(cur, 22, USART3_VOFA_SCALE_MILLI);
         }
 
         Usart3_Vofa_FeedRx(&vofa1);   /* ring_buf -> Vofa FIFO (official API) */

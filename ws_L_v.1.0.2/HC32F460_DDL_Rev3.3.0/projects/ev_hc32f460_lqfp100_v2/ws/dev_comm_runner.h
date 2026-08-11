@@ -26,6 +26,7 @@ typedef enum {
     COMM_RUNNER_PID_CCW    = 9,  /* Calib table + Hall closed-loop + PID speed control CCW */
     COMM_RUNNER_CURLOOP_FW = 10, /* Fly-start -> Hall closed-loop + current PI (10kHz), CW */
     COMM_RUNNER_CASCADE_FW = 11, /* Macro-topology closed loop: speed/current per motor_config.h */
+    /* Encoder-based modes (reserved): start at 21 */
 } comm_runner_mode_t;
 
 /*=============================================================================

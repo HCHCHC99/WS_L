@@ -66,15 +66,20 @@
  * ==========================================================================*/
 #define FOC_IQ_REF_MA        100         /* Iq target (mA), Keil Watch editable */
 #define FOC_IQ_RAMP_MA_S     100         /* Iq soft-start ramp rate (mA/s) */
-#define FOC_ALIGN_VOLT_V     1.0f        /* rotor alignment voltage (V) on alpha axis */
-#define FOC_ALIGN_TIME_MS    1000        /* rotor alignment duration (ms) */
+
+/* I-F start (mode 22): current-controlled startup with synthetic angle */
+#define FOC_IF_FREQ_RAMP_HZ_S   2.0f     /* synthetic frequency ramp (Hz/s) */
+#define FOC_IF_SYNC_MIN_HZ      2.0f     /* min frequency before sync detection */
+#define FOC_IF_SYNC_WIN_CNT     2000u    /* sync window length (samples, 100ms @20k) */
+#define FOC_IF_SYNC_BAND_RAD    0.10f    /* allowed angle-diff band per window (rad) */
+#define FOC_IF_SYNC_GOOD_WINS   2u       /* consecutive good windows required */
+#define FOC_IF_TIMEOUT_MS       10000u   /* start timeout -> fault code 2 */
 #define FOC_OC_LIMIT_A       4.0f        /* over-current trip default (A, per phase; runtime: g_foc_oc_limit_a) */
 #define FOC_CUR_SIGN         1           /* current sign correction (+1/-1) */
 #define FOC_PI_KP            0.3f        /* current PI proportional gain (V/A) */
 #define FOC_PI_KI            1000.0f     /* current PI integral gain (1/s) */
 #define FOC_PI_UMAX_V        6.0f        /* current PI output clamp (V) on 12V bus */
-/* Gentle handover: open-loop spin-up (mode-21 settings) then current loop */
-#define FOC_OL_START_MS       3000       /* open-loop spin-up before current loop (ms); 0 = align from standstill */
+
 #define FOC_VMAX_V            1.5f       /* current-loop max voltage magnitude (V), Watch tunable - keep low, no overheat */
 #define FOC_VRAMP_V_S         1.0f       /* voltage envelope ramp rate (V/s) */
 #define FOC_CUR_FB_ALPHA      0.3f       /* EMA weight on id/iq feedback (1.0 = off) */

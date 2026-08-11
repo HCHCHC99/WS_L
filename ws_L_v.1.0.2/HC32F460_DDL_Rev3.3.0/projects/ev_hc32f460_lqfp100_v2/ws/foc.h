@@ -12,9 +12,8 @@
  *        voltage vector (g_foc_openloop_volt_v) is transformed by SVPWM into
  *        U/V/W duty, written through TMR4_PWM_SetDuty3Phase().
  *
- *        Mode 22 (current loop): Foc_StartCurrentLoop() aligns the rotor to
- *        the alpha axis (fixed vector, FOC_ALIGN_TIME_MS), records the
- *        encoder offset, then runs the encoder-angle FOC current loop:
+ *        Mode 22 (current loop, I-F start): Foc_StartCurrentLoop() runs the
+ *        current loop from the first tick with a synthetic angle (I-F):
  *          ia/ib/ic -> Foc_Clarke -> Foc_Park(theta) -> id/iq
  *          -> vd = PI_id(0, id), vq = PI_iq(iq_ref, iq)
  *          -> Foc_InvPark(vd, vq, theta) -> Foc_Svpwm -> TMR4 duty.
@@ -72,7 +71,12 @@ extern volatile float    g_foc_vmax_v;       /* current-loop max |v| (V) */
 extern volatile float    g_foc_vramp_v_s;    /* voltage envelope ramp (V/s) */
 extern volatile float    g_foc_cur_fb_alpha; /* EMA weight on id/iq (1.0 = off) */
 extern volatile float    g_foc_iq_ramp_ma_s; /* Iq soft-start ramp (mA/s) */
-extern volatile float    g_foc_vlim_v;       /* current voltage envelope (V) */extern volatile float    g_foc_iq_ol_ma;     /* avg q-current during open-loop spin-up (mA) */
+extern volatile float    g_foc_vlim_v;       /* current voltage envelope (V) */
+
+/* I-F start observables */
+extern volatile float    g_foc_if_freq_hz;   /* current I-F electrical frequency (Hz) */
+extern volatile float    g_foc_if_diff_rad;  /* encoder-elec angle - synthetic angle (rad) */
+extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live) */
 extern pid_config_t g_foc_pid_id_cfg;
@@ -90,9 +94,9 @@ void Foc_Init(void);
  * complementary, enable output, set active. */
 void Foc_StartOpenLoop(void);
 
-/* Start current-loop FOC (comm_mode 22): clear fault, reset PIs, enter ALIGN
- * (fixed alpha-axis vector for FOC_ALIGN_TIME_MS), then RUN (encoder angle +
- * Id/Iq PI). */
+/* Start current-loop FOC (comm_mode 22): clear fault, reset PIs, enter
+ * I-F start (current-controlled, synthetic angle), hand over to encoder angle
+ * when synchronized, then RUN (encoder angle + Id/Iq PI). */
 void Foc_StartCurrentLoop(void);
 
 /* Stop FOC: clear active, disable PWM output, zero duty observables. */

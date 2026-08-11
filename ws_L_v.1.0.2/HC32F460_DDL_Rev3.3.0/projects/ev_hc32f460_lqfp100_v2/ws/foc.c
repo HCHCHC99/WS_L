@@ -7,23 +7,25 @@
  *          I.c uses the INMOP-style double trigger (SCMP0 @ PEAK + SCMP2 @
  *          VALLEY) -> 10 kHz PWM produces 20 kHz EOCB ISR. Foc_Isr therefore
  *          runs at FOC_ISR_HZ = 20000 (motor_config.h).
- *          If the project is ever switched to a single trigger, set
- *          FOC_ISR_HZ to the actual ISR rate (e.g. 10000).
  *
  *        Mode 21 (open loop): theta integrates g_foc_openloop_freq_hz each ISR
  *        and the voltage vector (g_foc_openloop_volt_v) is transformed by
  *        SVPWM into U/V/W duty, written through TMR4_PWM_SetDuty3Phase().
  *
- *        Mode 22 (current loop, INMOP-style):
- *          Foc_StartCurrentLoop() -> ALIGN phase outputs a fixed vector
- *          (valpha = FOC_ALIGN_VOLT_V, vbeta = 0) for FOC_ALIGN_TIME_MS to
- *          lock the rotor to the alpha axis, records g_enc_count as
- *          s_align_offset, then RUN phase runs:
+ *        Mode 22 (current loop, I-F start):
+ *          Foc_StartCurrentLoop() -> IF_START runs the current loop from the
+ *          first tick with a synthetic angle (I-F start):
+ *            - frequency ramps 0 -> g_foc_openloop_freq_hz
+ *            - Iq ramps 0 -> g_foc_iq_ref_cmd_ma (100 mA)
+ *            - voltage envelope ramps 0 -> g_foc_vmax_v
+ *          Current is controlled from tick 1, so it never exceeds the Iq
+ *          target (no open-loop 3A surge, no sensor clipping, no heat).
+ *          When the encoder electrical angle tracks the synthetic angle
+ *          (sync window), Foc_IfHandover() smoothly switches to the encoder
+ *          angle and RUN continues with encoder-angle FOC:
  *            ia/ib/ic (A) -> Foc_Clarke -> Foc_Park(theta) -> id/iq
  *            -> vd = PI_id(0, id), vq = PI_iq(iq_ref, iq)   (dev_pid)
  *            -> Foc_InvPark(vd, vq, theta) -> Foc_Svpwm -> TMR4 duty
- *          with theta = ((g_enc_count - s_align_offset) mod ENCODER_CPR)
- *          x 2PI / ENCODER_CPR x FOC_POLE_PAIRS (negative mod wrapped).
  *
  *        ISR constraint: short, no blocking, no prints, no malloc.
  *******************************************************************************
@@ -65,13 +67,18 @@ volatile uint8_t g_foc_fault            = 0u;
 /* Over-current limit (Watch tunable) + fault diagnostic */
 volatile float g_foc_oc_limit_a    = (float)FOC_OC_LIMIT_A;
 volatile float g_foc_fault_i_ma    = 0.0f;   /* |phase current| at OC trip (mA) */
-/* Gentle handover / voltage envelope (all Watch tunable) */
+
+/* Voltage envelope / feedback filter (all Watch tunable) */
 volatile float g_foc_vmax_v       = (float)FOC_VMAX_V;        /* current-loop max |v| (V) */
 volatile float g_foc_vramp_v_s    = (float)FOC_VRAMP_V_S;     /* voltage envelope ramp (V/s) */
 volatile float g_foc_cur_fb_alpha = FOC_CUR_FB_ALPHA;         /* EMA weight on id/iq (1.0=off) */
 volatile float g_foc_iq_ramp_ma_s = (float)FOC_IQ_RAMP_MA_S;  /* Iq soft-start ramp (mA/s) */
 volatile float g_foc_vlim_v       = 0.0f;                     /* current voltage envelope (V) */
-volatile float g_foc_iq_ol_ma     = 0.0f;   /* avg q-current during open-loop spin-up (mA) = handover Iq target */
+
+/* I-F start observables */
+volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency (Hz) */
+volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
+volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live).
  * INMOP-style position PI: Kp = FOC_PI_KP (V/A), Ki = FOC_PI_KI (per-second
@@ -113,22 +120,22 @@ static uint8_t s_bInited = 0u;
 /* Current-loop state machine (mirrored to g_foc_align_state for Watch) */
 typedef enum {
     FOC_STATE_IDLE     = 0,
-    FOC_STATE_ALIGN    = 1,
-    FOC_STATE_RUN      = 2,
-    FOC_STATE_OL_START = 3,   /* open-loop spin-up, then hand over to RUN */
+    FOC_STATE_IF_START = 1,   /* I-F current-controlled start (synthetic angle) */
+    FOC_STATE_RUN      = 2,   /* encoder-angle FOC current loop */
 } foc_state_t;
 
 static foc_state_t s_state        = FOC_STATE_IDLE;
-static uint32_t    s_align_tick   = 0u;
-static uint32_t    s_align_total  = (uint32_t)FOC_ALIGN_TIME_MS * FOC_ISR_HZ / 1000u;
 static int32_t     s_align_offset = 0;
-static uint32_t    s_ol_tick   = 0u;
-static uint32_t    s_ol_total  = (uint32_t)FOC_OL_START_MS * FOC_ISR_HZ / 1000u;
-static float       s_iq_ol_sum = 0.0f;   /* open-loop iq accumulator (A) */
-static uint32_t    s_iq_ol_cnt = 0u;     /* open-loop iq sample count */
-static float       s_vlim      = 0.0f;   /* current voltage envelope (V) */
-static float       s_id_f      = 0.0f;   /* EMA-filtered d current (A) */
-static float       s_iq_f      = 0.0f;   /* EMA-filtered q current (A) */
+static float       s_vlim         = 0.0f;   /* current voltage envelope (V) */
+static float       s_id_f         = 0.0f;   /* EMA-filtered d current (A) */
+static float       s_iq_f         = 0.0f;   /* EMA-filtered q current (A) */
+
+/* I-F sync detection (sliding window on angle difference) */
+static float    s_if_diff_min   = 0.0f;
+static float    s_if_diff_max   = 0.0f;
+static uint32_t s_if_win_cnt    = 0u;
+static uint32_t s_if_good_wins  = 0u;
+static uint32_t s_if_tick       = 0u;
 
 /* PI runtime states (bound to the Watch-tunable configs) */
 static pid_state_t s_pid_id;
@@ -150,8 +157,8 @@ static int32_t Foc_ModPos(int32_t x, int32_t n)
 {
     return ((x % n) + n) % n;
 }
-/* Hard cap on the open-loop phase voltage (overheat protection). Clamps the
- * Watch-editable g_foc_openloop_volt_v to FOC_OPENLOOP_VOLT_MAX. */
+
+/* Hard cap on the open-loop phase voltage (overheat protection). */
 static void Foc_ClampOpenLoopVolt(void)
 {
     if (g_foc_openloop_volt_v > FOC_OPENLOOP_VOLT_MAX) {
@@ -159,7 +166,7 @@ static void Foc_ClampOpenLoopVolt(void)
     }
 }
 
-/* Over-current check: any phase |I| > FOC_OC_LIMIT_A (mA conversion). */
+/* Over-current check: any phase |I| > g_foc_oc_limit_a (mA conversion). */
 static uint8_t Foc_OverCurrent(const stc_i_data_t *pData)
 {
     float iu, iv, iw, imax;
@@ -193,10 +200,10 @@ static uint8_t Foc_OverCurrent(const stc_i_data_t *pData)
     return 0u;
 }
 
-/* Fault stop: latch fault, disable output immediately (ISR-safe). */
-static void Foc_FaultStop(void)
+/* Fault stop: latch fault code (1=OC, 2=start timeout), disable output. */
+static void Foc_FaultStop(uint8_t u8Code)
 {
-    g_foc_fault       = 1u;
+    g_foc_fault       = u8Code;
     g_foc_active      = 0u;
     s_state           = FOC_STATE_IDLE;
     g_foc_align_state = 0u;
@@ -207,8 +214,7 @@ static void Foc_FaultStop(void)
     g_foc_dw = 0.0f;
 }
 
-/* Electrical angle from the aligned encoder: mechanical -> electrical x pole
- * pairs, negative difference wrapped to [0, ENCODER_CPR). */
+/* Electrical angle from the aligned encoder (RUN phase). */
 static float Foc_CurLoopTheta(void)
 {
     int32_t diff = Foc_ModPos((int32_t)(g_enc_count - s_align_offset),
@@ -216,6 +222,54 @@ static float Foc_CurLoopTheta(void)
 
     return (float)diff * (FOC_MATH_2PI / (float)ENCODER_CPR)
          * (float)FOC_POLE_PAIRS;
+}
+
+/* dq currents for an arbitrary control angle theta (A). */
+static void Foc_GetDq(const stc_i_data_t *pData, float theta, float *id, float *iq)
+{
+    float ia, ib, ic, ialpha, ibeta;
+    float sign = (float)g_foc_cur_sign;
+
+    if (pData != NULL) {
+        ia = (float)pData->i16IU_mA * 0.001f * sign;
+        ib = (float)pData->i16IV_mA * 0.001f * sign;
+        ic = (float)pData->i16IW_mA * 0.001f * sign;
+    } else {
+        ia = ib = ic = 0.0f;
+    }
+    Foc_Clarke(ia, ib, ic, &ialpha, &ibeta);
+    Foc_Park(ialpha, ibeta, theta, id, iq);
+}
+
+/* EMA on dq feedback (g_foc_cur_fb_alpha: 1.0 = off, lower = smoother). */
+static void Foc_EmaFilter(float *id, float *iq)
+{
+    float alpha = g_foc_cur_fb_alpha;
+    if (alpha < 0.0f) alpha = 0.0f;
+    if (alpha > 1.0f) alpha = 1.0f;
+    s_id_f += alpha * (*id - s_id_f);
+    s_iq_f += alpha * (*iq - s_iq_f);
+    *id = s_id_f;
+    *iq = s_iq_f;
+}
+
+/* Voltage envelope: ramp allowed |v| from 0 up to g_foc_vmax_v, clamp mag. */
+static void Foc_ApplyVoltageEnvelope(float *vd, float *vq)
+{
+    s_vlim += g_foc_vramp_v_s / (float)FOC_ISR_HZ;
+    if (s_vlim > g_foc_vmax_v) {
+        s_vlim = g_foc_vmax_v;
+    }
+    g_foc_vlim_v = s_vlim;
+    {
+        float v2    = (*vd) * (*vd) + (*vq) * (*vq);
+        float vmax2 = s_vlim * s_vlim;
+        if (v2 > vmax2) {
+            float k = s_vlim / sqrtf(v2);
+            *vd *= k;
+            *vq *= k;
+        }
+    }
 }
 
 /*******************************************************************************
@@ -235,7 +289,7 @@ void Foc_Init(void)
 }
 
 /*******************************************************************************
- * Foc_StartOpenLoop - enable complementary PWM + open-loop voltage (mode 21)
+ * Foc_StartOpenLoop - mode 21: voltage open loop (unchanged)
  ******************************************************************************/
 void Foc_StartOpenLoop(void)
 {
@@ -243,13 +297,12 @@ void Foc_StartOpenLoop(void)
     g_foc_fault       = 0u;
     g_foc_fault_i_ma  = 0.0f;
     s_oc_cnt          = 0u;
-    g_foc_openloop_volt_v = FOC_OPENLOOP_VOLT_V;   /* mode 21 always starts at the configured voltage */
+    g_foc_openloop_volt_v = FOC_OPENLOOP_VOLT_V;   /* mode 21 starts at configured voltage */
     g_foc_mode        = FOC_MODE_OPENLOOP;
     s_state           = FOC_STATE_IDLE;
     g_foc_align_state = 0u;
 
-    /* Reconfigure all 3 channels to complementary (dead-timer) PWM.
-     * SetFocMode stops the counter, so no glitch while reconfiguring. */
+    /* Reconfigure all 3 channels to complementary (dead-timer) PWM. */
     TMR4_PWM_SetFocMode(FOC_DEADTIME_NS);
 
     /* Neutral 50% duty before enabling output */
@@ -263,7 +316,7 @@ void Foc_StartOpenLoop(void)
 }
 
 /*******************************************************************************
- * Foc_StartCurrentLoop - rotor align + encoder FOC current loop (mode 22)
+ * Foc_StartCurrentLoop - mode 22: I-F current-controlled start
  ******************************************************************************/
 void Foc_StartCurrentLoop(void)
 {
@@ -272,30 +325,27 @@ void Foc_StartCurrentLoop(void)
     s_oc_cnt          = 0u;
     g_foc_mode        = FOC_MODE_CURLOOP;
     g_foc_theta_rad   = 0.0f;
-    g_foc_iq_ref_ma   = 0.0f;      /* soft-start: ramp to g_foc_iq_ref_cmd_ma */
+    g_foc_iq_ref_ma   = 0.0f;      /* ramps to g_foc_iq_ref_cmd_ma (100 mA) */
     g_foc_id_ma       = 0.0f;
     g_foc_iq_ma       = 0.0f;
     g_foc_vd          = 0.0f;
     g_foc_vq          = 0.0f;
-#if (FOC_OL_START_MS > 0u)
-    /* Gentle start: spin up in open loop (mode-21 settings), then hand over. */
-    s_state           = FOC_STATE_OL_START;
-    s_ol_tick         = 0u;
-#else
-    /* Legacy: align from standstill, then run. */
-    s_state           = FOC_STATE_ALIGN;
-    s_align_tick      = 0u;
-#endif
-    Foc_ClampOpenLoopVolt();
-    s_vlim            = g_foc_openloop_volt_v;
+    g_foc_if_freq_hz  = 0.0f;
+    g_foc_if_diff_rad = 0.0f;
+    g_foc_if_sync     = 0u;
+
+    s_state           = FOC_STATE_IF_START;
+    s_if_tick         = 0u;
+    s_if_win_cnt      = 0u;
+    s_if_good_wins    = 0u;
+    s_if_diff_min     = 0.0f;
+    s_if_diff_max     = 0.0f;
+    s_vlim            = 0.0f;
     s_id_f            = 0.0f;
     s_iq_f            = 0.0f;
-    s_iq_ol_sum       = 0.0f;
-    s_iq_ol_cnt       = 0u;
-    g_foc_iq_ol_ma    = 0.0f;
     g_foc_align_state = 1u;
 
-    /* Fresh PI state for the run phase */
+    /* Fresh PI state */
     PID_Reset(&s_pid_id);
     PID_Reset(&s_pid_iq);
 
@@ -312,11 +362,6 @@ void Foc_StartCurrentLoop(void)
 
 /*******************************************************************************
  * Foc_Stop - disable FOC output
- *
- *   Uses TMR4_PWM_EmergencyStop(): stops the counter, clears it and disables
- *   all OC channels (all outputs low). The caller (main.c) restarts the
- *   counter when switching back to six-step modes, because CommRunner keeps
- *   the counter running and never restarts it itself.
  ******************************************************************************/
 void Foc_Stop(void)
 {
@@ -335,176 +380,172 @@ void Foc_Stop(void)
 }
 
 /*******************************************************************************
- * Current-loop state machine steps (called from Foc_Isr)
+ * I-F start step
  ******************************************************************************/
+static void Foc_IfHandover(const stc_i_data_t *pData);   /* forward decl */
 
-/* ALIGN: hold a fixed alpha-axis vector until the rotor locks, then record
- * the encoder offset and enter RUN. */
-static void Foc_AlignStep(const stc_i_data_t *pData)
+/* IF_START: current loop with synthetic angle + rotor sync detection. */
+static void Foc_IfStartStep(const stc_i_data_t *pData)
 {
-    float du, dv, dw;
+    float theta, id, iq, iq_ref_a, vd, vq, valpha, vbeta, du, dv, dw;
+    float enc_elec, diff;
 
     if (Foc_OverCurrent(pData)) {
-        Foc_FaultStop();
+        Foc_FaultStop(1u);
         return;
     }
 
-    /* Fixed vector along alpha axis: locks the rotor to the alpha axis. */
-    Foc_Svpwm(FOC_ALIGN_VOLT_V, 0.0f, FOC_VBUS_V, &du, &dv, &dw);
-    TMR4_PWM_SetDuty3Phase(du, dv, dw);
-
-    g_foc_theta_rad = 0.0f;
-    g_foc_valpha    = FOC_ALIGN_VOLT_V;
-    g_foc_vbeta     = 0.0f;
-    g_foc_du = du;
-    g_foc_dv = dv;
-    g_foc_dw = dw;
-
-    s_align_tick++;
-    if (s_align_tick >= s_align_total) {
-        s_align_offset    = g_enc_count;   /* encoder position at alpha axis */
-        PID_Reset(&s_pid_id);
-        PID_Reset(&s_pid_iq);
-        s_id_f            = 0.0f;
-        s_iq_f            = 0.0f;
-        s_vlim            = FOC_ALIGN_VOLT_V;
-        s_state           = FOC_STATE_RUN;
-        g_foc_align_state = 2u;
-    }
-}
-
-#if (FOC_OL_START_MS > 0u)
-static void Foc_Handover(const stc_i_data_t *pData);   /* forward decl */
-
-/* OL_START: spin up exactly like mode 21 (same Watch settings), then hand
- * over to the current loop without any voltage or angle step. */
-static void Foc_OlStartStep(const stc_i_data_t *pData)
-{
-    float theta, valpha, vbeta;
-    float du, dv, dw;
-
-    if (Foc_OverCurrent(pData)) {
-        Foc_FaultStop();
-        return;
+    /* 1) frequency ramp 0 -> g_foc_openloop_freq_hz */
+    if (g_foc_if_freq_hz < g_foc_openloop_freq_hz) {
+        g_foc_if_freq_hz += FOC_IF_FREQ_RAMP_HZ_S / (float)FOC_ISR_HZ;
+        if (g_foc_if_freq_hz > g_foc_openloop_freq_hz) {
+            g_foc_if_freq_hz = g_foc_openloop_freq_hz;
+        }
     }
 
-    /* identical to mode-21 open loop */
+    /* 2) synthetic angle integration (fold to [0, 2PI)) */
     theta = g_foc_theta_rad
-          + (FOC_MATH_2PI * g_foc_openloop_freq_hz / (float)FOC_ISR_HZ);
+          + (FOC_MATH_2PI * g_foc_if_freq_hz / (float)FOC_ISR_HZ);
     if (theta >= FOC_MATH_2PI) {
         theta -= FOC_MATH_2PI;
     }
     g_foc_theta_rad = theta;
 
-    valpha = g_foc_openloop_volt_v * Foc_Math_Cos(theta);
-    vbeta  = g_foc_openloop_volt_v * Foc_Math_Sin(theta);
+    /* 3) currents + EMA */
+    Foc_GetDq(pData, theta, &id, &iq);
+    Foc_EmaFilter(&id, &iq);
+    g_foc_id_ma = id * 1000.0f;
+    g_foc_iq_ma = iq * 1000.0f;
 
+    /* 4) Iq soft ramp 0 -> g_foc_iq_ref_cmd_ma (100 mA) */
+    {
+        float step = g_foc_iq_ramp_ma_s / (float)FOC_ISR_HZ;
+        if (g_foc_iq_ref_ma < g_foc_iq_ref_cmd_ma) {
+            g_foc_iq_ref_ma += step;
+            if (g_foc_iq_ref_ma > g_foc_iq_ref_cmd_ma) {
+                g_foc_iq_ref_ma = g_foc_iq_ref_cmd_ma;
+            }
+        } else if (g_foc_iq_ref_ma > g_foc_iq_ref_cmd_ma) {
+            g_foc_iq_ref_ma -= step;
+            if (g_foc_iq_ref_ma < g_foc_iq_ref_cmd_ma) {
+                g_foc_iq_ref_ma = g_foc_iq_ref_cmd_ma;
+            }
+        }
+    }
+
+    /* 5) PI: id -> 0, iq -> ramped reference */
+    iq_ref_a = g_foc_iq_ref_ma * 0.001f;
+    vd = PID_UpdateUs(&s_pid_id, 0.0f,     id, FOC_ISR_DT_US);
+    vq = PID_UpdateUs(&s_pid_iq, iq_ref_a, iq, FOC_ISR_DT_US);
+    g_foc_vd = vd;
+    g_foc_vq = vq;
+
+    /* 6) voltage envelope 0 -> g_foc_vmax_v */
+    Foc_ApplyVoltageEnvelope(&vd, &vq);
+
+    /* 7) inverse Park + SVPWM */
+    Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
     Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);
     TMR4_PWM_SetDuty3Phase(du, dv, dw);
-
     g_foc_valpha = valpha;
     g_foc_vbeta  = vbeta;
     g_foc_du = du;
     g_foc_dv = dv;
     g_foc_dw = dw;
 
-    /* Sample q-current in the synthetic frame: this is the current the motor
-     * is already carrying -> becomes the initial Iq target at handover. */
-    if (pData != NULL) {
-        float ia  = (float)pData->i16IU_mA * 0.001f * (float)g_foc_cur_sign;
-        float ib  = (float)pData->i16IV_mA * 0.001f * (float)g_foc_cur_sign;
-        float ic  = (float)pData->i16IW_mA * 0.001f * (float)g_foc_cur_sign;
-        float ialpha, ibeta, id_dummy, iq_sample;
-        Foc_Clarke(ia, ib, ic, &ialpha, &ibeta);
-        Foc_Park(ialpha, ibeta, theta, &id_dummy, &iq_sample);
-        s_iq_ol_sum += iq_sample;
-        s_iq_ol_cnt++;
+    /* 8) sync detection: encoder-elec angle must track the synthetic angle.
+     *    A sliding window checks that the angle difference stays within a
+     *    small band (rotor synchronized); a non-synced rotor (or wrong
+     *    encoder direction) makes the difference sweep -> never syncs. */
+    s_if_tick++;
+    enc_elec = (float)Foc_ModPos((int32_t)g_enc_count, (int32_t)ENCODER_CPR)
+             * (FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR);
+    enc_elec -= (float)((int32_t)(enc_elec * (1.0f / FOC_MATH_2PI))) * FOC_MATH_2PI;
+    if (enc_elec < 0.0f) {
+        enc_elec += FOC_MATH_2PI;
+    }
+    diff = enc_elec - theta;
+    if (diff >  FOC_MATH_PI) diff -= FOC_MATH_2PI;
+    if (diff < -FOC_MATH_PI) diff += FOC_MATH_2PI;
+    g_foc_if_diff_rad = diff;
+
+    if (g_foc_if_freq_hz >= FOC_IF_SYNC_MIN_HZ) {
+        if (s_if_win_cnt == 0u) {
+            s_if_diff_min = diff;
+            s_if_diff_max = diff;
+        } else {
+            if (diff < s_if_diff_min) s_if_diff_min = diff;
+            if (diff > s_if_diff_max) s_if_diff_max = diff;
+        }
+        s_if_win_cnt++;
+        if (s_if_win_cnt >= FOC_IF_SYNC_WIN_CNT) {
+            if ((s_if_diff_max - s_if_diff_min) < FOC_IF_SYNC_BAND_RAD) {
+                if (++s_if_good_wins >= FOC_IF_SYNC_GOOD_WINS) {
+                    Foc_IfHandover(pData);
+                    return;
+                }
+            } else {
+                s_if_good_wins = 0u;
+            }
+            s_if_win_cnt = 0u;
+        }
     }
 
-    s_ol_tick++;
-    if (s_ol_tick >= s_ol_total) {
-        Foc_Handover(pData);
+    /* safety timeout: never synchronized -> fault code 2 */
+    if (s_if_tick > ((uint32_t)FOC_IF_TIMEOUT_MS * FOC_ISR_HZ / 1000u)) {
+        Foc_FaultStop(2u);
     }
 }
 
-/* Hand over from open loop to current loop:
- *   - re-anchor the encoder so encoder-theta == synthetic theta (no angle jump),
- *   - seed the d/q PIs with the current open-loop voltage (no voltage jump),
- *   - Iq ref starts at 0 and ramps (g_foc_iq_ramp_ma_s),
- *   - voltage envelope starts at the open-loop voltage and ramps to g_foc_vmax_v. */
-static void Foc_Handover(const stc_i_data_t *pData)
+/* I-F -> encoder handover (bumpless: angle, voltage and current continuous). */
+static void Foc_IfHandover(const stc_i_data_t *pData)
 {
     float theta = g_foc_theta_rad;
-    float ia, ib, ic, ialpha, ibeta, id, iq;
+    float id, iq;
     float vd_seed, vq_seed;
-    float sign = (float)g_foc_cur_sign;
 
-    /* encoder offset so that Foc_CurLoopTheta() == theta */
+    /* Anchor encoder so Foc_CurLoopTheta() == theta (rotor synchronized). */
     {
         float per_cnt = FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR;
         int32_t diff  = (int32_t)(theta / per_cnt);   /* 0..4095 */
         s_align_offset = (int32_t)g_enc_count - diff;
     }
 
-    /* current dq (for PI seeding) */
-    if (pData != NULL) {
-        ia = (float)pData->i16IU_mA * 0.001f * sign;
-        ib = (float)pData->i16IV_mA * 0.001f * sign;
-        ic = (float)pData->i16IW_mA * 0.001f * sign;
-    } else {
-        ia = ib = ic = 0.0f;
-    }
-    Foc_Clarke(ia, ib, ic, &ialpha, &ibeta);
-    Foc_Park(ialpha, ibeta, theta, &id, &iq);
+    /* Current dq for PI seeding. */
+    Foc_GetDq(pData, theta, &id, &iq);
 
-    /* Open-loop vector at angle theta = pure d-axis voltage (V, 0). */
-    vd_seed = g_foc_openloop_volt_v;
-    vq_seed = 0.0f;
+    /* Current applied voltage expressed in the dq frame (continuity). */
+    vd_seed =  g_foc_valpha * Foc_Math_Cos(theta) + g_foc_vbeta * Foc_Math_Sin(theta);
+    vq_seed = -g_foc_valpha * Foc_Math_Sin(theta) + g_foc_vbeta * Foc_Math_Cos(theta);
     if (vd_seed >  FOC_PI_UMAX_V) vd_seed =  FOC_PI_UMAX_V;
     if (vd_seed < -FOC_PI_UMAX_V) vd_seed = -FOC_PI_UMAX_V;
+    if (vq_seed >  FOC_PI_UMAX_V) vq_seed =  FOC_PI_UMAX_V;
+    if (vq_seed < -FOC_PI_UMAX_V) vq_seed = -FOC_PI_UMAX_V;
 
-    /* bumpless: back-calculate PI integral so next output ~= current voltage */
-    PID_Seed(&s_pid_id, 0.0f, id, vd_seed);
-    PID_Seed(&s_pid_iq, 0.0f, iq, vq_seed);
+    PID_Seed(&s_pid_id, 0.0f,                     id, vd_seed);
+    PID_Seed(&s_pid_iq, g_foc_iq_ref_ma * 0.001f, iq, vq_seed);
 
-    /* Initial Iq target = the current the motor was already carrying in open
-     * loop: zero initial error -> no PI voltage slam. Ramp then moves it to
-     * g_foc_iq_ref_cmd_ma at g_foc_iq_ramp_ma_s. */
-    {
-        float iq_ol_avg = (s_iq_ol_cnt > 0u) ? (s_iq_ol_sum / (float)s_iq_ol_cnt) : 0.0f;
-        g_foc_iq_ol_ma  = iq_ol_avg * 1000.0f;
-        g_foc_iq_ref_ma = g_foc_iq_ol_ma;
-    }
     s_id_f = 0.0f;
     s_iq_f = 0.0f;
-    s_vlim = g_foc_openloop_volt_v;   /* continue from the open-loop voltage (no dip) */
 
     s_state           = FOC_STATE_RUN;
     g_foc_align_state = 2u;
-
+    g_foc_if_sync     = 1u;
 }
-#endif /* FOC_OL_START_MS > 0 */
 
-/* RUN: encoder-angle FOC current loop (Clarke/Park/PI/InvPark/SVPWM). */
+/*******************************************************************************
+ * RUN: encoder-angle FOC current loop
+ ******************************************************************************/
 static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 {
-    float ia, ib, ic;
-    float ialpha, ibeta;
-    float id, iq;
-    float iq_ref_a;
-    float vd, vq;
-    float valpha, vbeta;
-    float du, dv, dw;
-    float theta;
-    float sign;
+    float theta, id, iq, iq_ref_a, vd, vq, valpha, vbeta, du, dv, dw;
 
     if (Foc_OverCurrent(pData)) {
-        Foc_FaultStop();
+        Foc_FaultStop(1u);
         return;
     }
 
-    /* Iq soft-start ramp: move the actual reference toward the Watch target
-     * by FOC_IQ_RAMP_MA_S / FOC_ISR_HZ mA per ISR. */
+    /* Iq ramp (continues from the I-F phase) */
     {
         float step = g_foc_iq_ramp_ma_s / (float)FOC_ISR_HZ;
         if (g_foc_iq_ref_ma < g_foc_iq_ref_cmd_ma) {
@@ -524,58 +565,21 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
     theta = Foc_CurLoopTheta();
     g_foc_theta_rad = theta;
 
-    /* Phase currents (A), sign-corrected (g_foc_cur_sign, Watch editable) */
-    sign = (float)g_foc_cur_sign;
-    if (pData != NULL) {
-        ia = (float)pData->i16IU_mA * 0.001f * sign;
-        ib = (float)pData->i16IV_mA * 0.001f * sign;
-        ic = (float)pData->i16IW_mA * 0.001f * sign;
-    } else {
-        ia = 0.0f;
-        ib = 0.0f;
-        ic = 0.0f;
-    }
-
-    /* Clarke + Park -> dq currents */
-    Foc_Clarke(ia, ib, ic, &ialpha, &ibeta);
-    Foc_Park(ialpha, ibeta, theta, &id, &iq);
-
-    /* EMA on dq feedback (g_foc_cur_fb_alpha: 1.0 = off, lower = smoother) */
-    {
-        float alpha = g_foc_cur_fb_alpha;
-        if (alpha < 0.0f) alpha = 0.0f;
-        if (alpha > 1.0f) alpha = 1.0f;
-        s_id_f += alpha * (id - s_id_f);
-        s_iq_f += alpha * (iq - s_iq_f);
-        id = s_id_f;
-        iq = s_iq_f;
-    }
+    /* Phase currents -> dq + EMA */
+    Foc_GetDq(pData, theta, &id, &iq);
+    Foc_EmaFilter(&id, &iq);
     g_foc_id_ma = id * 1000.0f;
     g_foc_iq_ma = iq * 1000.0f;
 
-    /* Id -> 0, Iq -> ramped reference (A), INMOP-style PI (dev_pid) */
+    /* PI */
     iq_ref_a = g_foc_iq_ref_ma * 0.001f;
     vd = PID_UpdateUs(&s_pid_id, 0.0f,     id, FOC_ISR_DT_US);
     vq = PID_UpdateUs(&s_pid_iq, iq_ref_a, iq, FOC_ISR_DT_US);
     g_foc_vd = vd;
     g_foc_vq = vq;
 
-    /* Voltage envelope: ramp allowed |v| from the open-loop voltage to
-     * g_foc_vmax_v, then clamp magnitude. No voltage step at handover. */
-    s_vlim += g_foc_vramp_v_s / (float)FOC_ISR_HZ;
-    if (s_vlim > g_foc_vmax_v) {
-        s_vlim = g_foc_vmax_v;
-    }
-    g_foc_vlim_v = s_vlim;
-    {
-        float v2    = vd * vd + vq * vq;
-        float vmax2 = s_vlim * s_vlim;
-        if (v2 > vmax2) {
-            float k = s_vlim / sqrtf(v2);
-            vd *= k;
-            vq *= k;
-        }
-    }
+    /* Voltage envelope */
+    Foc_ApplyVoltageEnvelope(&vd, &vq);
 
     /* Inverse Park + SVPWM + complementary PWM */
     Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
@@ -591,9 +595,6 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 
 /*******************************************************************************
  * Foc_Isr - 20 kHz ISR callback (ADC1 EOCB, second callback slot)
- *
- *   Must stay short: LUT sin/cos + SVPWM + PI + 3 compare writes. No prints,
- *   no blocking, no malloc.
  ******************************************************************************/
 void Foc_Isr(const stc_i_data_t *pData)
 {
@@ -606,9 +607,8 @@ void Foc_Isr(const stc_i_data_t *pData)
 
     Foc_ClampOpenLoopVolt();   /* open-loop voltage hard cap (overheat protection) */
 
-    /* --- mode 21: open loop (unchanged) --- */
+    /* --- mode 21: open loop --- */
     if (g_foc_mode == FOC_MODE_OPENLOOP) {
-        /* electrical angle integration (fold to [0, 2PI) to keep float precision) */
         theta = g_foc_theta_rad
               + (FOC_MATH_2PI * g_foc_openloop_freq_hz / (float)FOC_ISR_HZ);
         if (theta >= FOC_MATH_2PI) {
@@ -616,15 +616,12 @@ void Foc_Isr(const stc_i_data_t *pData)
         }
         g_foc_theta_rad = theta;
 
-        /* open-loop voltage vector (V) */
         valpha = g_foc_openloop_volt_v * Foc_Math_Cos(theta);
         vbeta  = g_foc_openloop_volt_v * Foc_Math_Sin(theta);
 
-        /* SVPWM -> duty % -> TMR4 complementary PWM */
         Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);
         TMR4_PWM_SetDuty3Phase(du, dv, dw);
 
-        /* JScope observables */
         g_foc_valpha = valpha;
         g_foc_vbeta  = vbeta;
         g_foc_du = du;
@@ -639,11 +636,8 @@ void Foc_Isr(const stc_i_data_t *pData)
 
     /* --- mode 22: current-loop state machine --- */
     switch (s_state) {
-    case FOC_STATE_ALIGN:
-        Foc_AlignStep(pData);
-        break;
-    case FOC_STATE_OL_START:
-        Foc_OlStartStep(pData);
+    case FOC_STATE_IF_START:
+        Foc_IfStartStep(pData);
         break;
     case FOC_STATE_RUN:
         Foc_CurrentLoopStep(pData);
@@ -655,8 +649,6 @@ void Foc_Isr(const stc_i_data_t *pData)
 
 /*******************************************************************************
  * Foc_EncoderElecAngleRad - mechanical encoder counts -> electrical angle (rad)
- *
- *   g_enc_count = 4096 counts/rev (ENCODER_CPR), pole pairs = FOC_POLE_PAIRS.
  ******************************************************************************/
 float Foc_EncoderElecAngleRad(void)
 {

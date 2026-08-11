@@ -36,7 +36,6 @@
 #include "motor_config.h"
 #include "dev_pid.h"
 #include <math.h>
-#include "rtt_log.h"
 
 /*******************************************************************************
  * Global variables for JScope / Keil Watch
@@ -66,6 +65,9 @@ volatile uint8_t g_foc_fault            = 0u;
 /* Over-current limit (Watch tunable) + fault diagnostic */
 volatile float g_foc_oc_limit_a    = (float)FOC_OC_LIMIT_A;
 volatile float g_foc_fault_i_ma    = 0.0f;   /* |phase current| at OC trip (mA) */
+/* Set by ISR at open-loop -> current-loop handover; main loop prints it once
+ * (never print inside the 20 kHz ISR - it breaks RTT). */
+volatile uint8_t g_foc_handover_done = 0u;
 /* Gentle handover / voltage envelope (all Watch tunable) */
 volatile float g_foc_vmax_v       = (float)FOC_VMAX_V;        /* current-loop max |v| (V) */
 volatile float g_foc_vramp_v_s    = (float)FOC_VRAMP_V_S;     /* voltage envelope ramp (V/s) */
@@ -258,6 +260,7 @@ void Foc_StartCurrentLoop(void)
 {
     g_foc_fault       = 0u;
     g_foc_fault_i_ma  = 0.0f;
+    g_foc_handover_done = 0u;
     s_oc_cnt          = 0u;
     g_foc_mode        = FOC_MODE_CURLOOP;
     g_foc_theta_rad   = 0.0f;
@@ -447,8 +450,7 @@ static void Foc_Handover(const stc_i_data_t *pData)
     s_state           = FOC_STATE_RUN;
     g_foc_align_state = 2u;
 
-    MAIN_D("[FOC] handover ok theta=%d offset=%d vd=%d mV",
-           (int)(theta * 1000.0f), (int)s_align_offset, (int)(vd_seed * 1000.0f));
+    g_foc_handover_done = 1u;   /* main loop prints (RTT must not be used in ISR) */
 }
 #endif /* FOC_OL_START_MS > 0 */
 

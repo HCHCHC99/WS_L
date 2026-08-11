@@ -67,6 +67,8 @@ extern volatile uint8_t  g_foc_fault;            /* 1 = over-current fault */
 /* Over-current limit (A, Keil Watch editable) and trip diagnostic (mA) */
 extern volatile float    g_foc_oc_limit_a;
 extern volatile float    g_foc_fault_i_ma;
+/* Set by ISR when open-loop -> current-loop handover completes (main loop prints it) */
+extern volatile uint8_t  g_foc_handover_done;
 /* Gentle handover / voltage envelope / feedback filter (Keil Watch editable) */
 extern volatile float    g_foc_vmax_v;       /* current-loop max |v| (V) */
 extern volatile float    g_foc_vramp_v_s;    /* voltage envelope ramp (V/s) */

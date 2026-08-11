@@ -71,6 +71,7 @@ volatile float g_foc_vramp_v_s    = (float)FOC_VRAMP_V_S;     /* voltage envelop
 volatile float g_foc_cur_fb_alpha = FOC_CUR_FB_ALPHA;         /* EMA weight on id/iq (1.0=off) */
 volatile float g_foc_iq_ramp_ma_s = (float)FOC_IQ_RAMP_MA_S;  /* Iq soft-start ramp (mA/s) */
 volatile float g_foc_vlim_v       = 0.0f;                     /* current voltage envelope (V) */
+volatile float g_foc_iq_ol_ma     = 0.0f;   /* avg q-current during open-loop spin-up (mA) = handover Iq target */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live).
  * INMOP-style position PI: Kp = FOC_PI_KP (V/A), Ki = FOC_PI_KI (per-second
@@ -123,6 +124,8 @@ static uint32_t    s_align_total  = (uint32_t)FOC_ALIGN_TIME_MS * FOC_ISR_HZ / 1
 static int32_t     s_align_offset = 0;
 static uint32_t    s_ol_tick   = 0u;
 static uint32_t    s_ol_total  = (uint32_t)FOC_OL_START_MS * FOC_ISR_HZ / 1000u;
+static float       s_iq_ol_sum = 0.0f;   /* open-loop iq accumulator (A) */
+static uint32_t    s_iq_ol_cnt = 0u;     /* open-loop iq sample count */
 static float       s_vlim      = 0.0f;   /* current voltage envelope (V) */
 static float       s_id_f      = 0.0f;   /* EMA-filtered d current (A) */
 static float       s_iq_f      = 0.0f;   /* EMA-filtered q current (A) */
@@ -277,6 +280,9 @@ void Foc_StartCurrentLoop(void)
     s_vlim            = g_foc_openloop_volt_v;
     s_id_f            = 0.0f;
     s_iq_f            = 0.0f;
+    s_iq_ol_sum       = 0.0f;
+    s_iq_ol_cnt       = 0u;
+    g_foc_iq_ol_ma    = 0.0f;
     g_foc_align_state = 1u;
 
     /* Fresh PI state for the run phase */
@@ -392,6 +398,19 @@ static void Foc_OlStartStep(const stc_i_data_t *pData)
     g_foc_dv = dv;
     g_foc_dw = dw;
 
+    /* Sample q-current in the synthetic frame: this is the current the motor
+     * is already carrying -> becomes the initial Iq target at handover. */
+    if (pData != NULL) {
+        float ia  = (float)pData->i16IU_mA * 0.001f * (float)g_foc_cur_sign;
+        float ib  = (float)pData->i16IV_mA * 0.001f * (float)g_foc_cur_sign;
+        float ic  = (float)pData->i16IW_mA * 0.001f * (float)g_foc_cur_sign;
+        float ialpha, ibeta, id_dummy, iq_sample;
+        Foc_Clarke(ia, ib, ic, &ialpha, &ibeta);
+        Foc_Park(ialpha, ibeta, theta, &id_dummy, &iq_sample);
+        s_iq_ol_sum += iq_sample;
+        s_iq_ol_cnt++;
+    }
+
     s_ol_tick++;
     if (s_ol_tick >= s_ol_total) {
         Foc_Handover(pData);
@@ -438,7 +457,14 @@ static void Foc_Handover(const stc_i_data_t *pData)
     PID_Seed(&s_pid_id, 0.0f, id, vd_seed);
     PID_Seed(&s_pid_iq, 0.0f, iq, vq_seed);
 
-    g_foc_iq_ref_ma = 0.0f;
+    /* Initial Iq target = the current the motor was already carrying in open
+     * loop: zero initial error -> no PI voltage slam. Ramp then moves it to
+     * g_foc_iq_ref_cmd_ma at g_foc_iq_ramp_ma_s. */
+    {
+        float iq_ol_avg = (s_iq_ol_cnt > 0u) ? (s_iq_ol_sum / (float)s_iq_ol_cnt) : 0.0f;
+        g_foc_iq_ol_ma  = iq_ol_avg * 1000.0f;
+        g_foc_iq_ref_ma = g_foc_iq_ol_ma;
+    }
     s_id_f = 0.0f;
     s_iq_f = 0.0f;
     s_vlim = g_foc_openloop_volt_v;   /* continue from the open-loop voltage (no dip) */

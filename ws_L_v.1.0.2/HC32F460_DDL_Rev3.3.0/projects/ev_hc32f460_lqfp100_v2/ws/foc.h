@@ -72,7 +72,7 @@ extern volatile float    g_foc_vmax_v;       /* current-loop max |v| (V) */
 extern volatile float    g_foc_vramp_v_s;    /* voltage envelope ramp (V/s) */
 extern volatile float    g_foc_cur_fb_alpha; /* EMA weight on id/iq (1.0 = off) */
 extern volatile float    g_foc_iq_ramp_ma_s; /* Iq soft-start ramp (mA/s) */
-extern volatile float    g_foc_vlim_v;       /* current voltage envelope (V) */
+extern volatile float    g_foc_vlim_v;       /* current voltage envelope (V) */extern volatile float    g_foc_iq_ol_ma;     /* avg q-current during open-loop spin-up (mA) */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live) */
 extern pid_config_t g_foc_pid_id_cfg;

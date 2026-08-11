@@ -275,23 +275,7 @@ static void curloop_isr(const stc_i_data_t *pData)
     g_scope_i_duty = duty;
     g_scope_i_err  = ref - fb;
 
-    {
-        static uint32_t s_last_dbg = 0;
-        uint32_t now_ms = (uint32_t)tickTimer_GetCount();
-        uint32_t dbg_ms = g_cur_dbg_ms;
-        if (dbg_ms > 0u && (now_ms - s_last_dbg) >= dbg_ms) {
-            s_last_dbg = now_ms;
-            MAIN_D("[CURLOOP] tus=%lu dt=%lu step=%u ref=%d fb=%d raw=%d err=%d duty=%d%% i=%d kp=%d ki=%d al=%d",
-                   (unsigned long)(now & 0xFFFFFFFFul),
-                   (unsigned long)dt_us,
-                   (unsigned)g_scope_step,
-                   (int)ref, (int)fb, (int)fb_raw, (int)(ref - fb),
-                   (int)(duty * 10) / 10, (int)s_pid.i_term,
-                   (int)(g_cur_pid_cfg.kp * 1000.0f),
-                   (int)(g_cur_pid_cfg.ki * 1000.0f),
-                   (int)(g_cur_fb_alpha * 100.0f));
-        }
-    }
+
 }
 
 void CurLoop_Init(void)

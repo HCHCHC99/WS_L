@@ -387,15 +387,6 @@ static void I_IrqCallback(void)
     uint16_t u16IW = ADC_GetValue(I_ADC_UNIT, I_CH_W);
 #endif
 
-    /* DEBUG: print first 3 ISR entries unconditionally */
-    {
-        static uint8_t s_u8FirstPrints = 3;
-        if (s_u8FirstPrints > 0) {
-            s_u8FirstPrints--;
-            MAIN_D("[I] ISR fired! cnt=%lu IU=%u IV=%u IW=%u\r\n",
-                   s_stcIData.u32SampleCount, u16IU, u16IV, u16IW);
-        }
-    }
 
     /* During calibration: accumulate raw values, skip mA conversion */
     if (g_i_calib_state == 1) {

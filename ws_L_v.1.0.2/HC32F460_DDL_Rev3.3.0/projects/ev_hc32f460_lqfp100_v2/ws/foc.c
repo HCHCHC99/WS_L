@@ -243,7 +243,7 @@ void Foc_StartOpenLoop(void)
     g_foc_fault       = 0u;
     g_foc_fault_i_ma  = 0.0f;
     s_oc_cnt          = 0u;
-    g_foc_openloop_volt_v = FOC_OPENLOOP_VOLT_V;   /* mode 21 always starts at 1V */
+    g_foc_openloop_volt_v = FOC_OPENLOOP_VOLT_V;   /* mode 21 always starts at the configured voltage */
     g_foc_mode        = FOC_MODE_OPENLOOP;
     s_state           = FOC_STATE_IDLE;
     g_foc_align_state = 0u;

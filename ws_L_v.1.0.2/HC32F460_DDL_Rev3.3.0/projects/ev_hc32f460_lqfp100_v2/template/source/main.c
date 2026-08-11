@@ -34,7 +34,7 @@ extern volatile uint8_t g_scope_step; /* Current commutation step (0-5) */
 /*=============================================================================
  * Keil Watch ��改变�?? (调试接口)
  *=============================================================================*/
-volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW 11=CascadeFW 21=FocOpenLoop */
+volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW 11=CascadeFW 21=FocOpenLoop 22=FocCurrentLoop */
 volatile float g_comm_duty_pct  = 80.0f; /* Duty cycle 2%~98% */
 
 /* PID speed control �?? Keil Watch variables */
@@ -175,6 +175,7 @@ int main(void)
     /* ---- 主循�? ---- */
     static int   s_prev_mode     = -1;
     static float s_prev_duty     = 80.0f;
+    static int   s_foc_fault_printed = 0;
 
     while (1) {
 //         App_Comm_Poll();
@@ -184,15 +185,20 @@ int main(void)
             int s_prev_mode_before = s_prev_mode;
             s_prev_mode = comm_mode;
 #if MOTOR_FOC_ENABLE
-            if (comm_mode == 21) {
-                /* FOC open-loop: keep runner s_mode=21 (Update is no-op),
-                 * then start FOC complementary PWM. */
+            if ((comm_mode == 21) || (comm_mode == 22)) {
+                /* FOC mode: keep runner s_mode in sync (Update is no-op),
+                 * then start FOC complementary PWM (21=open-loop,
+                 * 22=current-loop with rotor align). */
                 CommRunner_SetMode((comm_runner_mode_t)comm_mode);
-                Foc_StartOpenLoop();
+                if (comm_mode == 22) {
+                    Foc_StartCurrentLoop();
+                } else {
+                    Foc_StartOpenLoop();
+                }
             } else {
-                /* Leaving FOC mode 21: stop FOC PWM, restart the shared
+                /* Leaving FOC mode 21/22: stop FOC PWM, restart the shared
                  * TMR4 counter (Foc_Stop stops it) for six-step modes. */
-                if (s_prev_mode_before == 21) {
+                if ((s_prev_mode_before == 21) || (s_prev_mode_before == 22)) {
                     Foc_Stop();
                     TMR4_PWM_StartOutput();
                 }
@@ -224,6 +230,18 @@ int main(void)
                 s_prev_mode = actual;
             }
         }
+
+#if MOTOR_FOC_ENABLE
+        /* FOC over-current fault: print once per event (integer only) */
+        if (g_foc_fault != 0u) {
+            if (!s_foc_fault_printed) {
+                s_foc_fault_printed = 1;
+                MAIN_D("[FOC] FAULT oc=%d\r\n", (int)g_foc_fault);
+            }
+        } else {
+            s_foc_fault_printed = 0;
+        }
+#endif
 
         /* ---- BEMF 数据读取 (�??500ms打印一次观察数�??) ---- */
 #ifdef BEMF_PERIODIC_DBG

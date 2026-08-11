@@ -60,4 +60,16 @@
 #define FOC_OPENLOOP_VOLT_V     2.0f       /* default open-loop voltage amplitude (V), start small */
 #define FOC_ISR_HZ              20000      /* FOC ISR rate (Hz): 10k PWM x double trigger = 20k */
 #define FOC_DEADTIME_NS         500u       /* complementary PWM dead-time (ns) */
+/* ============================================================================
+ * FOC current-loop parameters (comm_mode 22 = FOC current loop)
+ * ==========================================================================*/
+#define FOC_IQ_REF_MA        300         /* Iq target (mA), Keil Watch editable */
+#define FOC_IQ_RAMP_MA_S     200         /* Iq soft-start ramp rate (mA/s) */
+#define FOC_ALIGN_VOLT_V     2.0f        /* rotor alignment voltage (V) on alpha axis */
+#define FOC_ALIGN_TIME_MS    1000        /* rotor alignment duration (ms) */
+#define FOC_OC_LIMIT_A       2.0f        /* over-current trip (A, per phase) */
+#define FOC_CUR_SIGN         1           /* current sign correction (+1/-1) */
+#define FOC_PI_KP            0.3f        /* current PI proportional gain (V/A) */
+#define FOC_PI_KI            1000.0f     /* current PI integral gain (1/s) */
+#define FOC_PI_UMAX_V        6.0f        /* current PI output clamp (V) on 12V bus */
 #endif /* __MOTOR_CONFIG_H__ */

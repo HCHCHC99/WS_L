@@ -150,6 +150,14 @@ static int32_t Foc_ModPos(int32_t x, int32_t n)
 {
     return ((x % n) + n) % n;
 }
+/* Hard cap on the open-loop phase voltage (overheat protection). Clamps the
+ * Watch-editable g_foc_openloop_volt_v to FOC_OPENLOOP_VOLT_MAX. */
+static void Foc_ClampOpenLoopVolt(void)
+{
+    if (g_foc_openloop_volt_v > FOC_OPENLOOP_VOLT_MAX) {
+        g_foc_openloop_volt_v = FOC_OPENLOOP_VOLT_MAX;
+    }
+}
 
 /* Over-current check: any phase |I| > FOC_OC_LIMIT_A (mA conversion). */
 static uint8_t Foc_OverCurrent(const stc_i_data_t *pData)
@@ -277,6 +285,7 @@ void Foc_StartCurrentLoop(void)
     s_state           = FOC_STATE_ALIGN;
     s_align_tick      = 0u;
 #endif
+    Foc_ClampOpenLoopVolt();
     s_vlim            = g_foc_openloop_volt_v;
     s_id_f            = 0.0f;
     s_iq_f            = 0.0f;
@@ -593,6 +602,8 @@ void Foc_Isr(const stc_i_data_t *pData)
     if (!g_foc_active) {
         return;
     }
+
+    Foc_ClampOpenLoopVolt();   /* open-loop voltage hard cap (overheat protection) */
 
     /* --- mode 21: open loop (unchanged) --- */
     if (g_foc_mode == FOC_MODE_OPENLOOP) {

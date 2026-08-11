@@ -58,6 +58,7 @@
 #define FOC_VBUS_V              12.0f      /* DC bus voltage (V): board changed from 24V to 12V */
 #define FOC_OPENLOOP_FREQ_HZ    5.0f       /* default open-loop electrical freq (Hz) */
 #define FOC_OPENLOOP_VOLT_V     1.0f       /* open-loop voltage amplitude (V): 1V spins the motor on this rig, do not raise */
+#define FOC_OPENLOOP_VOLT_MAX  1.5f       /* HARD CAP: open-loop phase voltage never exceeds this (overheat protection) */
 #define FOC_ISR_HZ              20000      /* FOC ISR rate (Hz): 10k PWM x double trigger = 20k */
 #define FOC_DEADTIME_NS         500u       /* complementary PWM dead-time (ns) */
 /* ============================================================================

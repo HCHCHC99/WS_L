@@ -55,7 +55,7 @@
  * ==========================================================================*/
 #define MOTOR_FOC_ENABLE        1          /* 1 = compile/enable FOC mode 21 */
 #define FOC_POLE_PAIRS          10         /* motor pole pairs */
-#define FOC_VBUS_V              24.0f      /* DC bus voltage (V) */
+#define FOC_VBUS_V              12.0f      /* DC bus voltage (V): board changed from 24V to 12V */
 #define FOC_OPENLOOP_FREQ_HZ    5.0f       /* default open-loop electrical freq (Hz) */
 #define FOC_OPENLOOP_VOLT_V     2.0f       /* default open-loop voltage amplitude (V), start small */
 #define FOC_ISR_HZ              20000      /* FOC ISR rate (Hz): 10k PWM x double trigger = 20k */

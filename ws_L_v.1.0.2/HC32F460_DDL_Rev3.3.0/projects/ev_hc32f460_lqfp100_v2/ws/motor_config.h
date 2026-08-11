@@ -63,8 +63,8 @@
 /* ============================================================================
  * FOC current-loop parameters (comm_mode 22 = FOC current loop)
  * ==========================================================================*/
-#define FOC_IQ_REF_MA        300         /* Iq target (mA), Keil Watch editable */
-#define FOC_IQ_RAMP_MA_S     200         /* Iq soft-start ramp rate (mA/s) */
+#define FOC_IQ_REF_MA        100         /* Iq target (mA), Keil Watch editable */
+#define FOC_IQ_RAMP_MA_S     100         /* Iq soft-start ramp rate (mA/s) */
 #define FOC_ALIGN_VOLT_V     1.0f        /* rotor alignment voltage (V) on alpha axis */
 #define FOC_ALIGN_TIME_MS    1000        /* rotor alignment duration (ms) */
 #define FOC_OC_LIMIT_A       4.0f        /* over-current trip default (A, per phase; runtime: g_foc_oc_limit_a) */

@@ -274,7 +274,7 @@ void Foc_StartCurrentLoop(void)
     s_state           = FOC_STATE_ALIGN;
     s_align_tick      = 0u;
 #endif
-    s_vlim            = FOC_VLIM_START_V;
+    s_vlim            = g_foc_openloop_volt_v;
     s_id_f            = 0.0f;
     s_iq_f            = 0.0f;
     g_foc_align_state = 1u;
@@ -351,7 +351,7 @@ static void Foc_AlignStep(const stc_i_data_t *pData)
         PID_Reset(&s_pid_iq);
         s_id_f            = 0.0f;
         s_iq_f            = 0.0f;
-        s_vlim            = FOC_VLIM_START_V;
+        s_vlim            = FOC_ALIGN_VOLT_V;
         s_state           = FOC_STATE_RUN;
         g_foc_align_state = 2u;
     }
@@ -441,7 +441,7 @@ static void Foc_Handover(const stc_i_data_t *pData)
     g_foc_iq_ref_ma = 0.0f;
     s_id_f = 0.0f;
     s_iq_f = 0.0f;
-    s_vlim = FOC_VLIM_START_V;
+    s_vlim = g_foc_openloop_volt_v;   /* continue from the open-loop voltage (no dip) */
 
     s_state           = FOC_STATE_RUN;
     g_foc_align_state = 2u;

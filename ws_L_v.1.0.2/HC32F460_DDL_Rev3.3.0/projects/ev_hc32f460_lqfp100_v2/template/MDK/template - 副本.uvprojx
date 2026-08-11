@@ -953,6 +953,16 @@
               <FileType>1</FileType>
               <FilePath>..\..\ws\speed_loop.c</FilePath>
             </File>
+            <File>
+              <FileName>foc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\foc.c</FilePath>
+            </File>
+            <File>
+              <FileName>foc_math.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\foc_math.c</FilePath>
+            </File>
           </Files>
         </Group>
 
@@ -1904,6 +1914,16 @@
               <FileName>speed_loop.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\ws\speed_loop.c</FilePath>
+            </File>
+            <File>
+              <FileName>foc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\foc.c</FilePath>
+            </File>
+            <File>
+              <FileName>foc_math.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\ws\foc_math.c</FilePath>
             </File>
           </Files>
         </Group>

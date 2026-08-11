@@ -184,6 +184,10 @@ int16_t  I_GetCurrentMA(uint8_t u8Phase);   /* 0=U, 1=V, 2=W, returns mA */
 /* Callback (called in ISR context, keep short) */
 void I_RegisterCallback(i_callback_t pfnCallback);
 
+/* Second callback slot (e.g. FOC). Both callbacks run in the same ISR,
+ * user callback first, FOC callback second. NULL unregisters. */
+void I_RegisterFocCallback(i_callback_t pfnCallback);
+
 #ifdef DEBUG
 void I_PrintDebugInfo(void);
 #endif

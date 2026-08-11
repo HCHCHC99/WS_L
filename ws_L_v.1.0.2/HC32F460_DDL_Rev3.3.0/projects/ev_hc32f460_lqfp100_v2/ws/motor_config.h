@@ -49,4 +49,15 @@
 #define DUTY_DIRECT                  0
 #define DUTY_FROM_CURRENT            1
 #define MOTOR_DUTY_SRC               DUTY_FROM_CURRENT
+
+/* ============================================================================
+ * FOC parameters (comm_mode 21 = FOC open-loop)
+ * ==========================================================================*/
+#define MOTOR_FOC_ENABLE        1          /* 1 = compile/enable FOC mode 21 */
+#define FOC_POLE_PAIRS          10         /* motor pole pairs */
+#define FOC_VBUS_V              24.0f      /* DC bus voltage (V) */
+#define FOC_OPENLOOP_FREQ_HZ    5.0f       /* default open-loop electrical freq (Hz) */
+#define FOC_OPENLOOP_VOLT_V     2.0f       /* default open-loop voltage amplitude (V), start small */
+#define FOC_ISR_HZ              20000      /* FOC ISR rate (Hz): 10k PWM x double trigger = 20k */
+#define FOC_DEADTIME_NS         500u       /* complementary PWM dead-time (ns) */
 #endif /* __MOTOR_CONFIG_H__ */

@@ -15,6 +15,7 @@
 #include "I.h"
 #include "motor_config.h"
 #include "cur_loop.h"
+#include "foc.h"
 #include "encoder.h"
 #include "Usart3_Vofa.h"
 #include "Usart3_Vofa_Runner.h"
@@ -33,7 +34,7 @@ extern volatile uint8_t g_scope_step; /* Current commutation step (0-5) */
 /*=============================================================================
  * Keil Watch ��改变�?? (调试接口)
  *=============================================================================*/
-volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW 11=CascadeFW */
+volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW 11=CascadeFW 21=FocOpenLoop */
 volatile float g_comm_duty_pct  = 80.0f; /* Duty cycle 2%~98% */
 
 /* PID speed control �?? Keil Watch variables */
@@ -159,6 +160,11 @@ int main(void)
     /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 频率见 MOTOR_PWM_FREQ_HZ) ---- */
     CurLoop_Init();
 
+#if MOTOR_FOC_ENABLE
+    /* ---- FOC 初始化 (注册第二个 ISR 回调槽, 不启动输出; 模式 21 启动) ---- */
+    Foc_Init();
+#endif
+
     /* ---- ABZ encoder (TIMERA_1 quadrature + Z index) ---- */
     Encoder_Init();
 
@@ -175,8 +181,26 @@ int main(void)
 
         /* Keil Watch �?? CommRunner (调试�??/Modbus 下发的模式切�??) */
         if (comm_mode != s_prev_mode) {
+            int s_prev_mode_before = s_prev_mode;
             s_prev_mode = comm_mode;
+#if MOTOR_FOC_ENABLE
+            if (comm_mode == 21) {
+                /* FOC open-loop: keep runner s_mode=21 (Update is no-op),
+                 * then start FOC complementary PWM. */
+                CommRunner_SetMode((comm_runner_mode_t)comm_mode);
+                Foc_StartOpenLoop();
+            } else {
+                /* Leaving FOC mode 21: stop FOC PWM, restart the shared
+                 * TMR4 counter (Foc_Stop stops it) for six-step modes. */
+                if (s_prev_mode_before == 21) {
+                    Foc_Stop();
+                    TMR4_PWM_StartOutput();
+                }
+                CommRunner_SetMode((comm_runner_mode_t)comm_mode);
+            }
+#else
             CommRunner_SetMode((comm_runner_mode_t)comm_mode);
+#endif
         }
         if (g_comm_duty_pct != s_prev_duty) {
             s_prev_duty = g_comm_duty_pct;

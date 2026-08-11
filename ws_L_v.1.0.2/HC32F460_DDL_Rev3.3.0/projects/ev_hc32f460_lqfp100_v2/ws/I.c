@@ -84,8 +84,11 @@ static stc_i_data_t s_stcIData;
 /* Initialization flag */
 static bool s_bIInitialized = false;
 
-/* User callback */
+/* User callback (slot 1, e.g. CurLoop) */
 static i_callback_t s_pfnUserCallback = NULL;
+
+/* FOC callback (slot 2, e.g. Foc_Isr) - runs after slot 1 in the same ISR */
+static i_callback_t s_pfnFocCallback   = NULL;
 
 /* Calibration accumulators (ISR writes, I_Calibrate reads after blocking) */
 static volatile int32_t s_i32CalibSumU = 0;
@@ -476,6 +479,11 @@ static void I_IrqCallback(void)
     if (s_pfnUserCallback != NULL) {
         s_pfnUserCallback(&s_stcIData);
     }
+
+    /* Invoke FOC callback if registered (second slot, keep short) */
+    if (s_pfnFocCallback != NULL) {
+        s_pfnFocCallback(&s_stcIData);
+    }
 }
 
 /**
@@ -608,6 +616,7 @@ void I_DeInit(void)
 {
     s_bIInitialized = false;
     s_pfnUserCallback = NULL;
+    s_pfnFocCallback   = NULL;
     g_i_running = 0;
 
     /* Disable ADC1 EOCB interrupt */
@@ -737,6 +746,18 @@ void I_RegisterCallback(i_callback_t pfnCallback)
 {
     s_pfnUserCallback = pfnCallback;
     I_DEBUG("Callback %s\r\n", (pfnCallback != NULL) ? "registered" : "unregistered");
+}
+
+/**
+ * @brief  Register second callback (FOC slot) for new current data notification
+ * @param  pfnCallback  Callback function (NULL to unregister)
+ * @note   Runs in the same ADC1 EOCB ISR, right after the user callback.
+ *         Keep it short (ISR context).
+ */
+void I_RegisterFocCallback(i_callback_t pfnCallback)
+{
+    s_pfnFocCallback = pfnCallback;
+    I_DEBUG("FocCallback %s\r\n", (pfnCallback != NULL) ? "registered" : "unregistered");
 }
 
 /*******************************************************************************

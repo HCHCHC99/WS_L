@@ -402,7 +402,7 @@ static void Foc_OlStartStep(const stc_i_data_t *pData)
  *   - re-anchor the encoder so encoder-theta == synthetic theta (no angle jump),
  *   - seed the d/q PIs with the current open-loop voltage (no voltage jump),
  *   - Iq ref starts at 0 and ramps (g_foc_iq_ramp_ma_s),
- *   - voltage envelope starts at FOC_VLIM_START_V and ramps to g_foc_vmax_v. */
+ *   - voltage envelope starts at the open-loop voltage and ramps to g_foc_vmax_v. */
 static void Foc_Handover(const stc_i_data_t *pData)
 {
     float theta = g_foc_theta_rad;
@@ -524,7 +524,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
     g_foc_vd = vd;
     g_foc_vq = vq;
 
-    /* Voltage envelope: ramp allowed |v| from FOC_VLIM_START_V to
+    /* Voltage envelope: ramp allowed |v| from the open-loop voltage to
      * g_foc_vmax_v, then clamp magnitude. No voltage step at handover. */
     s_vlim += g_foc_vramp_v_s / (float)FOC_ISR_HZ;
     if (s_vlim > g_foc_vmax_v) {

@@ -57,7 +57,7 @@
 #define FOC_POLE_PAIRS          10         /* motor pole pairs */
 #define FOC_VBUS_V              12.0f      /* DC bus voltage (V): board changed from 24V to 12V */
 #define FOC_OPENLOOP_FREQ_HZ    5.0f       /* default open-loop electrical freq (Hz) */
-#define FOC_OPENLOOP_VOLT_V     2.0f       /* default open-loop voltage amplitude (V), start small */
+#define FOC_OPENLOOP_VOLT_V     1.0f       /* open-loop voltage amplitude (V): 1V spins the motor on this rig, do not raise */
 #define FOC_ISR_HZ              20000      /* FOC ISR rate (Hz): 10k PWM x double trigger = 20k */
 #define FOC_DEADTIME_NS         500u       /* complementary PWM dead-time (ns) */
 /* ============================================================================
@@ -74,7 +74,6 @@
 #define FOC_PI_UMAX_V        6.0f        /* current PI output clamp (V) on 12V bus */
 /* Gentle handover: open-loop spin-up (mode-21 settings) then current loop */
 #define FOC_OL_START_MS       3000       /* open-loop spin-up before current loop (ms); 0 = align from standstill */
-#define FOC_VLIM_START_V      0.5f       /* voltage envelope start (V) at handover */
 #define FOC_VMAX_V            3.0f       /* current-loop max voltage magnitude (V), Watch tunable */
 #define FOC_VRAMP_V_S         1.0f       /* voltage envelope ramp rate (V/s) */
 #define FOC_CUR_FB_ALPHA      0.3f       /* EMA weight on id/iq feedback (1.0 = off) */

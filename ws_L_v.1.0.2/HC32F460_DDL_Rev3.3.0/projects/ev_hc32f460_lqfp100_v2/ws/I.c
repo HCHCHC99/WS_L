@@ -67,7 +67,7 @@ volatile uint32_t g_i_sample_cnt = 0;
 
 /* Module running state */
 volatile uint8_t  g_i_running = 0;
-volatile float    g_i_gain_iv   = 1.15f;  /* IV sensor gain correction (Watch tunable): IV reads ~15% low */
+
 
 /* Calibration state and zero references */
 volatile uint8_t  g_i_calib_state  = 0;   /* 0=idle, 1=in_progress, 2=done */
@@ -410,8 +410,10 @@ static void I_IrqCallback(void)
     int16_t i16IV_mA = I_ADC_TO_MA_REF(u16IV, u16ZeroV);
     int16_t i16IW_mA = I_ADC_TO_MA_REF(u16IW, u16ZeroW);
 
-    /* Per-phase sensor gain correction (IV sensor reads low) */
-    i16IV_mA = (int16_t)((float)i16IV_mA * g_i_gain_iv);
+#if I_DERIVE_V_FROM_UW
+    /* KCL two-sensor mode: V = -(U+W), IV sensor not used for control */
+    i16IV_mA = (int16_t)(-((int32_t)i16IU_mA + (int32_t)i16IW_mA));
+#endif
 
     /* 2nd-order Butterworth IIR (fc=200Hz @ fs=50kHz design; actual sampling = PWM freq (MOTOR_PWM_FREQ_HZ); real fc = 200Hz x PWM/50k, display only) */
     float fIU, fIV, fIW;
@@ -675,7 +677,9 @@ void I_GetData(stc_i_data_t *pData)
     pData->i16IU_mA = I_ADC_TO_MA_REF(pData->u16IU, u16Z);
     u16Z = (g_i_calib_state == 2) ? g_i_calib_zero_v : I_ADC_ZERO;
     pData->i16IV_mA = I_ADC_TO_MA_REF(pData->u16IV, u16Z);
-    pData->i16IV_mA = (int16_t)((float)pData->i16IV_mA * g_i_gain_iv);
+#if I_DERIVE_V_FROM_UW
+    pData->i16IV_mA = (int16_t)(-((int32_t)pData->i16IU_mA + (int32_t)pData->i16IW_mA));
+#endif
     u16Z = (g_i_calib_state == 2) ? g_i_calib_zero_w : I_ADC_ZERO;
     pData->i16IW_mA = I_ADC_TO_MA_REF(pData->u16IW, u16Z);
 
@@ -732,11 +736,15 @@ int16_t I_GetCurrentMA(uint8_t u8Phase)
     } else {
         u16Zero = I_ADC_ZERO;
     }
-    int16_t i16MA = I_ADC_TO_MA_REF(u16Raw, u16Zero);
+#if I_DERIVE_V_FROM_UW
     if (u8Phase == 1) {
-        i16MA = (int16_t)((float)i16MA * g_i_gain_iv);
+        /* KCL: V = -(U+W), from the other two measured phases */
+        int16_t iU = I_GetCurrentMA(0);
+        int16_t iW = I_GetCurrentMA(2);
+        return (int16_t)(-((int32_t)iU + (int32_t)iW));
     }
-    return i16MA;
+#endif
+    return I_ADC_TO_MA_REF(u16Raw, u16Zero);
 }
 
 /*******************************************************************************

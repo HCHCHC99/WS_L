@@ -57,6 +57,10 @@ extern "C" {
  *   0 = ADC1 SEQ_B hardware-triggered samples (PWM peak/valley = ripple average) - recommended
  */
 #define I_ASYNC_ADC2_READ                (0U)
+/* Derive IV from IU+IW (KCL) instead of using the IV sensor:
+ *   1 = two-sensor mode: V = -(U+W)   (like STM32 INMOP reference)
+ *   0 = measure all three phases directly (default) */
+#define I_DERIVE_V_FROM_UW               (0U)
 
 /* ===== Current channel definitions ===== */
 #define I_CH_U                          (ADC_CH5)   /* PA5/ADC1_CH5: IU */
@@ -161,7 +165,7 @@ extern volatile uint32_t g_i_sample_cnt;
 
 /* Module running state (0=stopped, 1=running) */
 extern volatile uint8_t  g_i_running;
-extern volatile float    g_i_gain_iv;        /* IV sensor gain correction (Watch tunable) */
+
 
 /* Calibration status (0=idle, 1=in progress, 2=done) */
 extern volatile uint8_t  g_i_calib_state;

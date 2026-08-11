@@ -36,6 +36,7 @@
 
 /* J-Scope observability */
 volatile int32_t  g_enc_count     = 0;
+volatile float    g_enc_count_f   = 0.0f;  /* float mirror of g_enc_count (JScope friendly) */
 volatile float    g_enc_angle_deg = 0.0f;
 volatile float    g_enc_speed_rpm = 0.0f;
 volatile int8_t   g_enc_dir       = 0;
@@ -196,7 +197,8 @@ void Encoder_Update(void)
     }
 
     /* J-Scope observability */
-    g_enc_count = s_count;
+    g_enc_count   = s_count;
+    g_enc_count_f = (float)s_count;
     {
         int32_t m = (s_count % (int32_t)ENCODER_CPR) + (int32_t)ENCODER_CPR;
         g_enc_angle_deg = (float)(m % (int32_t)ENCODER_CPR)

@@ -40,6 +40,7 @@ uint32_t Encoder_GetRevCount(void);    /* Z pulses seen (revolutions) */
 
 /* J-Scope observability */
 extern volatile int32_t  g_enc_count;      /* position since last Z (signed) */
+extern volatile float    g_enc_count_f;    /* float mirror of g_enc_count */
 extern volatile float    g_enc_angle_deg;  /* 0..360 */
 extern volatile float    g_enc_speed_rpm;  /* rpm */
 extern volatile int8_t   g_enc_dir;        /* +1 CW, -1 CCW, 0 stopped */

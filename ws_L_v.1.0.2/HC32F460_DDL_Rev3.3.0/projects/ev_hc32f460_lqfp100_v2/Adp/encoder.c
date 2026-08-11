@@ -79,6 +79,9 @@ void Encoder_Init(void)
         return;
     }
 
+    /* GPIO registers are write-protected: unlock before pin config */
+    LL_PERIPH_WE(LL_PERIPH_GPIO);
+
     /* ---- GPIO: PA8/PA9 -> TIMA1_CLKA/CLKB (FUNC4) ---- */
     GPIO_SetFunc(ENC_CLKA_PORT, ENC_CLKA_PIN, GPIO_FUNC_4);  /* TIMA_1_CLKA */
     GPIO_SetFunc(ENC_CLKB_PORT, ENC_CLKB_PIN, GPIO_FUNC_4);  /* TIMA_1_CLKB */
@@ -95,6 +98,9 @@ void Encoder_Init(void)
     stcExti.u32FilterClock = EXTINT_FCLK_DIV64;
     EXTINT_Init(ENC_Z_EIRQ, &stcExti);
     GPIO_ExtIntCmd(ENC_Z_PORT, ENC_Z_PIN, ENABLE);
+
+    /* Re-lock GPIO registers */
+    LL_PERIPH_WP(LL_PERIPH_GPIO);
 
     stcIrq.enIntSrc    = ENC_Z_IRQ_SRC;
     stcIrq.enIRQn      = ENC_Z_IRQn;

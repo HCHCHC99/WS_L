@@ -72,4 +72,10 @@
 #define FOC_PI_KP            0.3f        /* current PI proportional gain (V/A) */
 #define FOC_PI_KI            1000.0f     /* current PI integral gain (1/s) */
 #define FOC_PI_UMAX_V        6.0f        /* current PI output clamp (V) on 12V bus */
+/* Gentle handover: open-loop spin-up (mode-21 settings) then current loop */
+#define FOC_OL_START_MS       3000       /* open-loop spin-up before current loop (ms); 0 = align from standstill */
+#define FOC_VLIM_START_V      0.5f       /* voltage envelope start (V) at handover */
+#define FOC_VMAX_V            3.0f       /* current-loop max voltage magnitude (V), Watch tunable */
+#define FOC_VRAMP_V_S         1.0f       /* voltage envelope ramp rate (V/s) */
+#define FOC_CUR_FB_ALPHA      0.3f       /* EMA weight on id/iq feedback (1.0 = off) */
 #endif /* __MOTOR_CONFIG_H__ */

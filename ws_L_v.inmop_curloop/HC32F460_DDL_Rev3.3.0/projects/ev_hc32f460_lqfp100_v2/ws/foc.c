@@ -511,7 +511,8 @@ static void Foc_AlignStep(const stc_i_data_t *pData)
         cnt = (int32_t)g_enc_count;
         if (cnt == s_align_last_cnt) {
             if (++s_align_stable_cnt >= FOC_ALIGN_STABLE_CNT) {
-                s_align_offset     = (int32_t)g_enc_count;   /* electrical zero */
+                s_align_offset     = Foc_ModPos((int32_t)g_enc_count * (int32_t)g_foc_enc_dir,
+                                                (int32_t)ENCODER_CPR);  /* electrical zero, enc_dir-scaled */
                 g_foc_align_offset = s_align_offset;
                 g_foc_align_state  = 2u;
                 s_align_hold_cnt   = 0u;
@@ -734,7 +735,10 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
     {
         float per_cnt = FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR;
         int32_t diff  = (int32_t)(theta / per_cnt);   /* 0..4095 */
-        s_align_offset = (int32_t)g_enc_count - diff;
+        /* store the anchor in enc_dir-scaled counts so CurLoopTheta() == theta
+         * also when g_foc_enc_dir = -1 (no-op for +1). */
+        s_align_offset = Foc_ModPos(((int32_t)g_enc_count * (int32_t)g_foc_enc_dir) - diff,
+                                    (int32_t)ENCODER_CPR);
     }
 
     /* Current dq for PI seeding. */

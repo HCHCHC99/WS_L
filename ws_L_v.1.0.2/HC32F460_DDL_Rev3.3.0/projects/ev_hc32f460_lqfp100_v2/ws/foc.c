@@ -82,6 +82,7 @@ volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed o
 /* Align calibration (mode 23) */
 volatile float   g_foc_align_id_ma  = (float)FOC_ALIGN_ID_MA;   /* d-axis current during align (mA), Watch tunable */
 volatile int32_t g_foc_align_offset = 0;                        /* recorded encoder electrical-zero count */
+volatile float   g_foc_align_vmax_v = FOC_ALIGN_VMAX_V;                    /* align voltage hard cap (V), Watch tunable */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live).
  * INMOP-style position PI: Kp = FOC_PI_KP (V/A), Ki = FOC_PI_KI (per-second
@@ -436,6 +437,20 @@ static void Foc_AlignStep(const stc_i_data_t *pData)
     g_foc_vq = vq;
 
     Foc_ApplyVoltageEnvelope(&vd, &vq);
+
+    /* Extra hard cap for alignment (low-R motor): even a saturated PI can
+     * never push more than g_foc_align_vmax_v -> ~1.5A worst case. */
+    {
+        float vmax = g_foc_align_vmax_v;
+        if (vmax < 0.0f) vmax = 0.0f;
+        float v2    = vd * vd + vq * vq;
+        float vmax2 = vmax * vmax;
+        if (v2 > vmax2) {
+            float k = vmax / sqrtf(v2);
+            vd *= k;
+            vq *= k;
+        }
+    }
 
     Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
     Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);

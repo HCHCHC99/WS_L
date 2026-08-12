@@ -60,7 +60,7 @@ extern "C" {
 /* Derive IV from IU+IW (KCL) instead of using the IV sensor:
  *   1 = two-sensor mode: V = -(U+W)   (like STM32 INMOP reference)
  *   0 = measure all three phases directly (default) */
-#define I_DERIVE_V_FROM_UW               (1U)
+#define I_DERIVE_V_FROM_UW               (0U)
 
 /* ===== Current channel definitions ===== */
 #define I_CH_U                          (ADC_CH5)   /* PA5/ADC1_CH5: IU */

@@ -55,6 +55,7 @@ volatile float   g_foc_openloop_volt_v  = FOC_OPENLOOP_VOLT_V;
 /* Current-loop observables / tuning (all volatile, Keil Watch editable) */
 volatile uint8_t g_foc_mode             = FOC_MODE_NONE;
 volatile int8_t  g_foc_cur_sign         = (int8_t)FOC_CUR_SIGN;
+volatile int8_t  g_foc_enc_dir         = (int8_t)FOC_ENC_DIR;   /* encoder direction, Watch tunable */
 volatile float   g_foc_iq_ref_cmd_ma    = (float)FOC_IQ_REF_MA;
 volatile float   g_foc_iq_ref_ma        = 0.0f;
 volatile float   g_foc_id_ma            = 0.0f;
@@ -239,7 +240,7 @@ static void Foc_FaultStop(uint8_t u8Code)
 /* Electrical angle from the aligned encoder (RUN phase). */
 static float Foc_CurLoopTheta(void)
 {
-    int32_t diff = Foc_ModPos((int32_t)(g_enc_count - s_align_offset),
+    int32_t diff = Foc_ModPos(((int32_t)g_enc_count * (int32_t)g_foc_enc_dir) - s_align_offset,
                               (int32_t)ENCODER_CPR);
 
     return (float)diff * (FOC_MATH_2PI / (float)ENCODER_CPR)
@@ -655,7 +656,8 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
      *    small band (rotor synchronized); a non-synced rotor (or wrong
      *    encoder direction) makes the difference sweep -> never syncs. */
     s_if_tick++;
-    enc_elec = (float)Foc_ModPos((int32_t)g_enc_count, (int32_t)ENCODER_CPR)
+    enc_elec = (float)Foc_ModPos(((int32_t)g_enc_count * (int32_t)g_foc_enc_dir),
+                                 (int32_t)ENCODER_CPR)
              * (FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR);
     enc_elec -= (float)((int32_t)(enc_elec * (1.0f / FOC_MATH_2PI))) * FOC_MATH_2PI;
     if (enc_elec < 0.0f) {

@@ -82,6 +82,11 @@ extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to
 extern volatile float    g_foc_align_id_ma;  /* d-axis current during align (mA), Watch tunable */
 extern volatile float    g_foc_align_vmax_v; /* align voltage hard cap (V), Watch tunable */
 extern volatile int32_t  g_foc_align_offset; /* recorded encoder electrical-zero count */
+/* Align calibration events (main loop prints; ISR only sets flag+payload) */
+extern volatile uint8_t  g_foc_align_evt;    /* 1=start 2=beta done 3=locked 4=done 5=fault */
+extern volatile int32_t  g_foc_align_evt_v1;
+extern volatile int32_t  g_foc_align_evt_v2;
+extern volatile int32_t  g_foc_align_evt_v3;
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live) */
 extern pid_config_t g_foc_pid_id_cfg;

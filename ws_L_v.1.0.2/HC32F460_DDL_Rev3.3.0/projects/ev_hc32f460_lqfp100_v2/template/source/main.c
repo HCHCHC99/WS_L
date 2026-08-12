@@ -246,6 +246,38 @@ int main(void)
             s_foc_fault_printed = 0;
         }
 #endif
+#if MOTOR_FOC_ENABLE
+        /* FOC align calibration events - printed here in main loop (never ISR) */
+        if (g_foc_align_evt != 0u) {
+            uint8_t evt = g_foc_align_evt;
+            g_foc_align_evt = 0u;
+            switch (evt) {
+            case 1u:
+                MAIN_D("[FOC][ALIGN] start id=%d vmax=%d mV\r\n",
+                       (int)g_foc_align_evt_v1, (int)g_foc_align_evt_v2);
+                break;
+            case 2u:
+                MAIN_D("[FOC][ALIGN] beta done -> alpha\r\n");
+                break;
+            case 3u:
+                MAIN_D("[FOC][ALIGN] locked offset=%d id=%d iq=%d\r\n",
+                       (int)g_foc_align_evt_v1, (int)g_foc_align_evt_v2,
+                       (int)g_foc_align_evt_v3);
+                break;
+            case 4u:
+                MAIN_D("[FOC][ALIGN] done offset=%d vd=%d vq=%d mV\r\n",
+                       (int)g_foc_align_evt_v1, (int)g_foc_align_evt_v2,
+                       (int)g_foc_align_evt_v3);
+                break;
+            case 5u:
+                MAIN_D("[FOC][ALIGN] FAULT code=%d i=%d mA\r\n",
+                       (int)g_foc_align_evt_v1, (int)g_foc_align_evt_v2);
+                break;
+            default:
+                break;
+            }
+        }
+#endif
 
         /* ---- BEMF 数据读取 (�???500ms打印一次观察数�???) ---- */
 #ifdef BEMF_PERIODIC_DBG

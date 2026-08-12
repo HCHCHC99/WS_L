@@ -54,9 +54,9 @@ volatile float   g_foc_openloop_volt_v  = FOC_OPENLOOP_VOLT_V;
 
 /* Current-loop observables / tuning (all volatile, Keil Watch editable) */
 volatile uint8_t g_foc_mode             = FOC_MODE_NONE;
-volatile int8_t  g_foc_cur_sign         = (int8_t)FOC_CUR_SIGN;
-volatile int8_t  g_foc_enc_dir         = (int8_t)FOC_ENC_DIR;   /* encoder direction, Watch tunable */
-volatile int8_t  g_foc_pi_off_180      = 0;                    /* 1 = +180deg control angle (flip torque), Watch tunable */
+volatile int32_t g_foc_cur_sign         = (int32_t)FOC_CUR_SIGN;
+volatile int32_t g_foc_enc_dir         = (int32_t)FOC_ENC_DIR;  /* encoder direction, Watch tunable */
+volatile int32_t g_foc_pi_off_180      = 0;                    /* 1 = +180deg control angle (flip torque), Watch tunable */
 volatile float   g_foc_iq_ref_cmd_ma    = (float)FOC_IQ_REF_MA;
 volatile float   g_foc_iq_ref_ma        = 0.0f;
 volatile float   g_foc_id_ma            = 0.0f;

@@ -80,9 +80,8 @@ volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency
 volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
 /* Align calibration (mode 23) */
-volatile float   g_foc_align_id_ma  = (float)FOC_ALIGN_ID_MA;   /* d-axis current during align (mA), Watch tunable */
+volatile float   g_foc_align_volt_v = FOC_ALIGN_VOLT_V;        /* fixed align voltage (V), Watch tunable */
 volatile int32_t g_foc_align_offset = 0;                        /* recorded encoder electrical-zero count */
-volatile float   g_foc_align_vmax_v = FOC_ALIGN_VMAX_V;                    /* align voltage hard cap (V), Watch tunable */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live).
  * INMOP-style position PI: Kp = FOC_PI_KP (V/A), Ki = FOC_PI_KI (per-second
@@ -412,11 +411,14 @@ void Foc_StartAlign(void)
 #define FOC_ALIGN_STABLE_CNT  ((uint32_t)FOC_ALIGN_STABLE_MS * FOC_ISR_HZ / 1000u)
 #define FOC_ALIGN_HOLD_CNT    ((uint32_t)FOC_ALIGN_HOLD_MS * FOC_ISR_HZ / 1000u)
 
-/* ALIGN step: d-axis current at theta=0; record encoder zero when rotor still. */
+/* ALIGN step: fixed small voltage vector along the d-axis (alpha), INMOP-style.
+ * The rotor locks with its d-axis along the vector, so iq -> 0 by construction
+ * and the recorded encoder count is a valid electrical zero. */
 static void Foc_AlignStep(const stc_i_data_t *pData)
 {
     const float theta = 0.0f;   /* align on the d-axis (alpha) */
-    float id, iq, vd, vq, valpha, vbeta, du, dv, dw;
+    float valpha, vbeta, du, dv, dw;
+    float id, iq;
     int32_t cnt;
 
     if (Foc_OverCurrent(pData)) {
@@ -424,42 +426,24 @@ static void Foc_AlignStep(const stc_i_data_t *pData)
         return;
     }
 
-    /* currents in the dq frame at theta = 0 */
-    Foc_GetDq(pData, theta, &id, &iq);
-    Foc_EmaFilter(&id, &iq);
-    g_foc_id_ma = id * 1000.0f;
-    g_foc_iq_ma = iq * 1000.0f;
-
-    /* Id -> align current (lock d-axis), Iq -> 0 */
-    vd = PID_UpdateUs(&s_pid_id, g_foc_align_id_ma * 0.001f, id, FOC_ISR_DT_US);
-    vq = PID_UpdateUs(&s_pid_iq, 0.0f,                     iq, FOC_ISR_DT_US);
-    g_foc_vd = vd;
-    g_foc_vq = vq;
-
-    Foc_ApplyVoltageEnvelope(&vd, &vq);
-
-    /* Extra hard cap for alignment (low-R motor): even a saturated PI can
-     * never push more than g_foc_align_vmax_v -> ~1.5A worst case. */
-    {
-        float vmax = g_foc_align_vmax_v;
-        if (vmax < 0.0f) vmax = 0.0f;
-        float v2    = vd * vd + vq * vq;
-        float vmax2 = vmax * vmax;
-        if (v2 > vmax2) {
-            float k = vmax / sqrtf(v2);
-            vd *= k;
-            vq *= k;
-        }
-    }
-
-    Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
+    /* Fixed d-axis (alpha) voltage vector; current = V/R, bounded by the small
+     * amplitude (0.15V -> ~0.2A at R=0.8, ~1.5A at R=0.1). */
+    valpha = g_foc_align_volt_v;
+    vbeta  = 0.0f;
     Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);
     TMR4_PWM_SetDuty3Phase(du, dv, dw);
     g_foc_valpha = valpha;
     g_foc_vbeta  = vbeta;
+    g_foc_vd = valpha;          /* theta=0 -> d-axis = alpha (applied) */
+    g_foc_vq = 0.0f;
     g_foc_du = du;
     g_foc_dv = dv;
     g_foc_dw = dw;
+
+    /* current feedback (info only) */
+    Foc_GetDq(pData, theta, &id, &iq);
+    g_foc_id_ma = id * 1000.0f;
+    g_foc_iq_ma = iq * 1000.0f;
 
     /* Rotor settled? encoder count unchanged for a while -> lock achieved. */
     if (g_foc_align_state == 1u) {
@@ -477,7 +461,6 @@ static void Foc_AlignStep(const stc_i_data_t *pData)
             s_align_stable_cnt = 0u;
         }
     }
-
     /* Hold the lock briefly, then release output. */
     if (g_foc_align_state == 2u) {
         if (++s_align_hold_cnt >= FOC_ALIGN_HOLD_CNT) {

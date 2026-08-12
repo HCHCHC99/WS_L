@@ -64,11 +64,11 @@
 /* ============================================================================
  * FOC current-loop parameters (comm_mode 22 = FOC current loop)
  * ==========================================================================*/
-#define FOC_IQ_REF_MA        100         /* Iq target (mA), Keil Watch editable */
+#define FOC_IQ_REF_MA        300         /* Iq target (mA), Keil Watch editable - weak-torque start needs more */
 #define FOC_IQ_RAMP_MA_S     100         /* Iq soft-start ramp rate (mA/s) */
 
 /* I-F start (mode 22): current-controlled startup with synthetic angle */
-#define FOC_IF_FREQ_RAMP_HZ_S   2.0f     /* synthetic frequency ramp (Hz/s) */
+#define FOC_IF_FREQ_RAMP_HZ_S   1.0f     /* synthetic frequency ramp (Hz/s) - slower = rotor can follow */
 #define FOC_IF_SYNC_MIN_HZ      2.0f     /* min frequency before sync detection */
 #define FOC_IF_SYNC_WIN_CNT     2000u    /* sync window length (samples, 100ms @20k) */
 #define FOC_IF_SYNC_BAND_RAD    0.10f    /* allowed angle-diff band per window (rad) */

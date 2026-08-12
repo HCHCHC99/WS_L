@@ -177,6 +177,9 @@ int main(void)
     static int   s_prev_mode     = -1;
     static float s_prev_duty     = 80.0f;
     static int   s_foc_fault_printed = 0;
+    static uint8_t  s_if_burst_armed = 0u;
+    static uint32_t s_if_burst_cnt   = 0u;
+    static uint32_t s_if_burst_last  = 0u;
 
     while (1) {
 //         App_Comm_Poll();
@@ -247,6 +250,24 @@ int main(void)
         }
 #endif
 #if MOTOR_FOC_ENABLE
+        /* FOC I-F high-rate burst (100ms x 30) right after hold done */
+        if (s_if_burst_armed && g_foc_active && (g_foc_mode == FOC_MODE_CURLOOP)) {
+            uint32_t now_b = tickTimer_GetCount();
+            if ((s_if_burst_last == 0u) || ((now_b - s_if_burst_last) >= 100u)) {
+                s_if_burst_last = now_b;
+                MAIN_D("[FOC][IFB] t=%u diff=%d spd=%d iq=%d cnt=%d rev=%u\r\n",
+                       (unsigned)(s_if_burst_cnt * 100u),
+                       (int)(g_foc_if_diff_rad * 1000.0f),
+                       (int)g_enc_speed_rpm,
+                       (int)g_foc_iq_ma,
+                       (int)g_enc_count,
+                       (unsigned)g_enc_rev);
+                if (++s_if_burst_cnt >= 30u) {
+                    s_if_burst_armed = 0u;
+                }
+            }
+        }
+
         /* FOC I-F periodic status (1s) so we can see the diff trend in RTT */
         if (g_foc_active && (g_foc_mode == FOC_MODE_CURLOOP)) {
             static uint32_t s_last_if = 0u;
@@ -270,6 +291,9 @@ int main(void)
             case 1u:
                 MAIN_D("[FOC][IF] hold done -> ramp freq=%d cHz iqref=%d mA\r\n",
                        (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2);
+                s_if_burst_armed = 1u;
+                s_if_burst_cnt   = 0u;
+                s_if_burst_last  = 0u;
                 break;
             case 2u:
                 MAIN_D("[FOC][IF] handover ok offset=%d iq=%d mA freq=%d cHz\r\n",

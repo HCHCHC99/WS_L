@@ -64,8 +64,8 @@
 /* ============================================================================
  * FOC current-loop parameters (comm_mode 22 = FOC current loop)
  * ==========================================================================*/
-#define FOC_IQ_REF_MA        300         /* Iq target (mA), Keil Watch editable - weak-torque start needs more */
-#define FOC_IQ_RAMP_MA_S     100         /* Iq soft-start ramp rate (mA/s) */
+#define FOC_IQ_REF_MA        1200        /* Iq target (mA) during start - cogging needs ~2A, mode-23 lock was 2.5A */
+#define FOC_IQ_RAMP_MA_S     300         /* Iq soft-start ramp rate (mA/s) - reach start current faster */
 
 /* I-F start (mode 22): current-controlled startup with synthetic angle */
 #define FOC_IF_HOLD_IQ_MA    300        /* hold theta=0 until Iq ref reaches this (mA) so the rotor locks first */

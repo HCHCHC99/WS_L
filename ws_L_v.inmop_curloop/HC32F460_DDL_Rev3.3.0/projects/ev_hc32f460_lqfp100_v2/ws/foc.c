@@ -56,6 +56,7 @@ volatile float   g_foc_openloop_volt_v  = FOC_OPENLOOP_VOLT_V;
 volatile uint8_t g_foc_mode             = FOC_MODE_NONE;
 volatile int8_t  g_foc_cur_sign         = (int8_t)FOC_CUR_SIGN;
 volatile int8_t  g_foc_enc_dir         = (int8_t)FOC_ENC_DIR;   /* encoder direction, Watch tunable */
+volatile int8_t  g_foc_pi_off_180      = 0;                    /* 1 = +180deg control angle (flip torque), Watch tunable */
 volatile float   g_foc_iq_ref_cmd_ma    = (float)FOC_IQ_REF_MA;
 volatile float   g_foc_iq_ref_ma        = 0.0f;
 volatile float   g_foc_id_ma            = 0.0f;
@@ -575,7 +576,7 @@ static void Foc_IfHandover(const stc_i_data_t *pData);   /* forward decl */
 /* IF_START: current loop with synthetic angle + rotor sync detection. */
 static void Foc_IfStartStep(const stc_i_data_t *pData)
 {
-    float theta, id, iq, iq_ref_a, vd, vq, valpha, vbeta, du, dv, dw;
+    float theta, ctrl_theta, id, iq, iq_ref_a, vd, vq, valpha, vbeta, du, dv, dw;
     float enc_elec, diff;
 
     if (Foc_OverCurrent(pData)) {
@@ -615,8 +616,11 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     g_foc_theta_rad = theta;
     }
 
+    /* control frame may be +180deg flipped (torque direction) */
+    ctrl_theta = theta + ((g_foc_pi_off_180 != 0) ? FOC_MATH_PI : 0.0f);
+
     /* 3) currents + EMA */
-    Foc_GetDq(pData, theta, &id, &iq);
+    Foc_GetDq(pData, ctrl_theta, &id, &iq);
     Foc_EmaFilter(&id, &iq);
     g_foc_id_ma = id * 1000.0f;
     g_foc_iq_ma = iq * 1000.0f;
@@ -648,7 +652,7 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     Foc_ApplyVoltageEnvelope(&vd, &vq);
 
     /* 7) inverse Park + SVPWM */
-    Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
+    Foc_InvPark(vd, vq, ctrl_theta, &valpha, &vbeta);
     Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);
     TMR4_PWM_SetDuty3Phase(du, dv, dw);
     g_foc_valpha = valpha;
@@ -722,6 +726,7 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
 static void Foc_IfHandover(const stc_i_data_t *pData)
 {
     float theta = g_foc_theta_rad;
+    float ctrl_theta = theta + ((g_foc_pi_off_180 != 0) ? FOC_MATH_PI : 0.0f);
     float id, iq;
     float vd_seed, vq_seed;
 
@@ -733,11 +738,11 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
     }
 
     /* Current dq for PI seeding. */
-    Foc_GetDq(pData, theta, &id, &iq);
+    Foc_GetDq(pData, ctrl_theta, &id, &iq);
 
     /* Current applied voltage expressed in the dq frame (continuity). */
-    vd_seed =  g_foc_valpha * Foc_Math_Cos(theta) + g_foc_vbeta * Foc_Math_Sin(theta);
-    vq_seed = -g_foc_valpha * Foc_Math_Sin(theta) + g_foc_vbeta * Foc_Math_Cos(theta);
+    vd_seed =  g_foc_valpha * Foc_Math_Cos(ctrl_theta) + g_foc_vbeta * Foc_Math_Sin(ctrl_theta);
+    vq_seed = -g_foc_valpha * Foc_Math_Sin(ctrl_theta) + g_foc_vbeta * Foc_Math_Cos(ctrl_theta);
     if (vd_seed >  FOC_PI_UMAX_V) vd_seed =  FOC_PI_UMAX_V;
     if (vd_seed < -FOC_PI_UMAX_V) vd_seed = -FOC_PI_UMAX_V;
     if (vq_seed >  FOC_PI_UMAX_V) vq_seed =  FOC_PI_UMAX_V;
@@ -763,7 +768,7 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
  ******************************************************************************/
 static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 {
-    float theta, id, iq, iq_ref_a, vd, vq, valpha, vbeta, du, dv, dw;
+    float theta, ctrl_theta, id, iq, iq_ref_a, vd, vq, valpha, vbeta, du, dv, dw;
 
     if (Foc_OverCurrent(pData)) {
         Foc_FaultStop(1u);
@@ -789,9 +794,10 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
     /* Electrical angle from the aligned encoder */
     theta = Foc_CurLoopTheta();
     g_foc_theta_rad = theta;
+    ctrl_theta = theta + ((g_foc_pi_off_180 != 0) ? FOC_MATH_PI : 0.0f);
 
     /* Phase currents -> dq + EMA */
-    Foc_GetDq(pData, theta, &id, &iq);
+    Foc_GetDq(pData, ctrl_theta, &id, &iq);
     Foc_EmaFilter(&id, &iq);
     g_foc_id_ma = id * 1000.0f;
     g_foc_iq_ma = iq * 1000.0f;
@@ -807,7 +813,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
     Foc_ApplyVoltageEnvelope(&vd, &vq);
 
     /* Inverse Park + SVPWM + complementary PWM */
-    Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
+    Foc_InvPark(vd, vq, ctrl_theta, &valpha, &vbeta);
     Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);
     TMR4_PWM_SetDuty3Phase(du, dv, dw);
 

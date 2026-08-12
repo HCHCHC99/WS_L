@@ -11,7 +11,7 @@
  *          CW  = A leads B (rising-edge order A then B)
  *          CCW = B leads A (rising-edge order B then A)
  *
- *        Encoder: measured 360 counts / rev on this rig.
+ *        Encoder: 1024 lines x 4 = 4096 counts / rev.
  *******************************************************************************
  */
 
@@ -25,9 +25,10 @@
 extern "C" {
 #endif
 
-/* Encoder geometry - measured on this rig: 360 counts per mechanical rev */
-#define ENCODER_LINES   90u
-#define ENCODER_CPR     (ENCODER_LINES * 4u)   /* 360 counts/rev (measured) */
+/* Encoder geometry - 4096 counts/rev (speed data shows real sync speed ~30rpm
+ * => actual CPR ~4096; the earlier hand-measured "360" was wrong) */
+#define ENCODER_LINES   1024u
+#define ENCODER_CPR     (ENCODER_LINES * 4u)   /* 4096 counts/rev */
 
 void    Encoder_Init(void);
 void    Encoder_Update(void);          /* periodic (main loop): position + speed */

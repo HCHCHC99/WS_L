@@ -82,7 +82,7 @@
 #define FOC_ALIGN_STABLE_MS  300        /* encoder-stable window to declare lock (ms) */
 #define FOC_ALIGN_TIMEOUT_MS 3000       /* step2 (alpha) timeout before fault code 3 */
 #define FOC_ALIGN_HOLD_MS    2000       /* hold lock before releasing output (ms) - long enough to read id/iq */
-#define FOC_OC_LIMIT_A       4.0f        /* over-current trip default (A, per phase; runtime: g_foc_oc_limit_a) */
+#define FOC_OC_LIMIT_A       5.5f        /* over-current trip default (A, per phase; runtime: g_foc_oc_limit_a) */
 #define FOC_CUR_SIGN         -1          /* current sign correction: -1 confirmed by mode-23 align (id must be positive) */
 #define FOC_ENC_DIR         1           /* encoder direction for electrical angle (+1/-1), Watch tunable via g_foc_enc_dir */
 #define FOC_PI_KP            0.05f       /* current PI Kp (V/A) - low-R motor: 100mA needs only ~13mV */

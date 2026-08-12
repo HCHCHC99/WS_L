@@ -81,6 +81,7 @@ volatile float g_foc_vlim_v       = 0.0f;                     /* current voltage
 volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency (Hz) */
 volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
 volatile float   g_foc_if_sweep_cHz = 0.0f;  /* live diff sweep rate (cHz), 100ms window */
+volatile float   g_foc_if_hold_iq_ma = (float)FOC_IF_HOLD_IQ_MA; /* hold threshold (mA), Watch tunable */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
 /* I-F start events for main-loop printing (ISR only sets flag+payload) */
 volatile uint8_t  g_foc_if_evt    = 0u;   /* 1=hold done 2=handover 3=timeout */
@@ -158,6 +159,8 @@ static float    s_if_last_diff = 0.0f;
 static uint32_t s_if_wrap_cnt  = 0u;
 static uint32_t s_if_sweep_last_wrap = 0u;
 static uint32_t s_if_sweep_last_tick = 0u;
+static float    s_if_diff_unwrapped = 0.0f;   /* continuous diff for sync band (no +/-pi wrap) */
+static uint8_t  s_if_diff_unwrapped_valid = 0u;
 static uint32_t s_if_good_wins  = 0u;
 static uint32_t s_if_tick       = 0u;
 static int32_t  s_align_last_cnt   = 0;
@@ -375,6 +378,8 @@ void Foc_StartCurrentLoop(void)
     g_foc_if_sweep_cHz = 0.0f;
     s_if_sweep_last_wrap = 0u;
     s_if_sweep_last_tick = 0u;
+    s_if_diff_unwrapped = 0.0f;
+    s_if_diff_unwrapped_valid = 0u;
     s_if_win_cnt      = 0u;
     s_if_good_wins    = 0u;
     s_if_diff_min     = 0.0f;
@@ -594,7 +599,7 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     /* 0) initial hold: keep theta=0 and freq=0 until the Iq reference has
      *    ramped up enough to lock the rotor onto the initial current vector,
      *    so the field always starts rotating from a synchronized state. */
-    if ((g_foc_iq_ref_ma < (float)FOC_IF_HOLD_IQ_MA) &&
+    if ((g_foc_iq_ref_ma < g_foc_if_hold_iq_ma) &&
         (s_if_hold_tick < FOC_IF_HOLD_MAX_CNT)) {
         s_if_hold_tick++;
         theta = g_foc_theta_rad;      /* stays 0 during hold */
@@ -685,12 +690,20 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     if (diff < -FOC_MATH_PI) diff += FOC_MATH_2PI;
     g_foc_if_diff_rad = diff;
 
-    /* count diff wraps to estimate the sweep rate (direction/scale debug) */
+    /* count diff wraps + keep a continuous (unwrapped) diff for the sync
+     * band: the wrapped diff jumps by +-2PI at the +-PI boundary, which would
+     * otherwise make the 100ms band explode even when the rotor is locked. */
     {
         float dd = diff - s_if_last_diff;
-        if (dd >  FOC_MATH_PI) s_if_wrap_cnt++;
-        if (dd < -FOC_MATH_PI) s_if_wrap_cnt++;
+        if (dd >  FOC_MATH_PI) { s_if_wrap_cnt++; dd -= FOC_MATH_2PI; }
+        if (dd < -FOC_MATH_PI) { s_if_wrap_cnt++; dd += FOC_MATH_2PI; }
         s_if_last_diff = diff;
+        if (s_if_diff_unwrapped_valid) {
+            s_if_diff_unwrapped += dd;
+        } else {
+            s_if_diff_unwrapped = diff;
+            s_if_diff_unwrapped_valid = 1u;
+        }
     }
 
     /* live sweep rate (cHz): wraps per 100ms window -> wraps/s * 100 */
@@ -703,11 +716,11 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
 
     if (g_foc_if_freq_hz >= FOC_IF_SYNC_MIN_HZ) {
         if (s_if_win_cnt == 0u) {
-            s_if_diff_min = diff;
-            s_if_diff_max = diff;
+            s_if_diff_min = s_if_diff_unwrapped;
+            s_if_diff_max = s_if_diff_unwrapped;
         } else {
-            if (diff < s_if_diff_min) s_if_diff_min = diff;
-            if (diff > s_if_diff_max) s_if_diff_max = diff;
+            if (s_if_diff_unwrapped < s_if_diff_min) s_if_diff_min = s_if_diff_unwrapped;
+            if (s_if_diff_unwrapped > s_if_diff_max) s_if_diff_max = s_if_diff_unwrapped;
         }
         s_if_win_cnt++;
         if (s_if_win_cnt >= FOC_IF_SYNC_WIN_CNT) {

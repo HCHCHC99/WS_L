@@ -79,8 +79,7 @@ extern volatile float    g_foc_if_freq_hz;   /* current I-F electrical frequency
 extern volatile float    g_foc_if_diff_rad;  /* encoder-elec angle - synthetic angle (rad) */
 extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */
 /* Align calibration (mode 23) */
-extern volatile float    g_foc_align_id_ma;  /* d-axis current during align (mA), Watch tunable */
-extern volatile float    g_foc_align_vmax_v; /* align voltage hard cap (V), Watch tunable */
+extern volatile float    g_foc_align_volt_v; /* fixed align voltage (V), Watch tunable */
 extern volatile int32_t  g_foc_align_offset; /* recorded encoder electrical-zero count */
 /* Align calibration events (main loop prints; ISR only sets flag+payload) */
 extern volatile uint8_t  g_foc_align_evt;    /* 1=start 2=beta done 3=locked 4=done 5=fault */

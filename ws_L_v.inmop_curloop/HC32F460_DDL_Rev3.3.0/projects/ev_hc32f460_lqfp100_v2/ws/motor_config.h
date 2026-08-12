@@ -74,9 +74,8 @@
 #define FOC_IF_SYNC_BAND_RAD    0.10f    /* allowed angle-diff band per window (rad) */
 #define FOC_IF_SYNC_GOOD_WINS   2u       /* consecutive good windows required */
 #define FOC_IF_TIMEOUT_MS       10000u   /* start timeout -> fault code 2 */
-/* Align calibration (comm_mode 23) - INMOP-style two-step (beta -> alpha) current-controlled */
-#define FOC_ALIGN_ID_MA      400        /* d-axis current during align (mA), Watch tunable */
-#define FOC_ALIGN_VMAX_V     0.4f       /* align voltage hard cap (V): 0.4V/0.13ohm~3A worst case (< OC 4A) */
+/* Align calibration (comm_mode 23) - INMOP-style two-step (beta -> alpha) FIXED voltage */
+#define FOC_ALIGN_VOLT_V     0.4f       /* fixed align voltage (V): 0.4V/0.15ohm ~ 2.7A (< OC 4A), Watch tunable */
 #define FOC_ALIGN_BETA_MS    1000       /* step1: hold on beta axis (ms), INMOP-style */
 #define FOC_ALIGN_STABLE_MS  300        /* encoder-stable window to declare lock (ms) */
 #define FOC_ALIGN_TIMEOUT_MS 3000       /* step2 (alpha) timeout before fault code 3 */

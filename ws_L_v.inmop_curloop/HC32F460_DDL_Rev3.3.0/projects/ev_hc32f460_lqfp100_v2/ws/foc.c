@@ -80,8 +80,7 @@ volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency
 volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
 /* Align calibration (mode 23) */
-volatile float   g_foc_align_id_ma  = (float)FOC_ALIGN_ID_MA;   /* d-axis current during align (mA), Watch tunable */
-volatile float   g_foc_align_vmax_v = FOC_ALIGN_VMAX_V;         /* align voltage hard cap (V), Watch tunable */
+volatile float   g_foc_align_volt_v = FOC_ALIGN_VOLT_V;        /* fixed align voltage (V), Watch tunable */
 volatile int32_t g_foc_align_offset = 0;                        /* recorded encoder electrical-zero count */
 /* Align calibration events for main-loop MAIN_D printing (ISR only sets flag+payload) */
 volatile uint8_t  g_foc_align_evt    = 0u;   /* 1=start 2=beta done 3=locked 4=done 5=fault */
@@ -411,8 +410,8 @@ void Foc_StartAlign(void)
     PID_Reset(&s_pid_iq);
 
     g_foc_align_evt    = 1u;
-    g_foc_align_evt_v1 = (int32_t)g_foc_align_id_ma;
-    g_foc_align_evt_v2 = (int32_t)(g_foc_align_vmax_v * 1000.0f);
+    g_foc_align_evt_v1 = (int32_t)(g_foc_align_volt_v * 1000.0f);   /* mV */
+    g_foc_align_evt_v2 = 0;
     g_foc_align_evt_v3 = 0;
 
     TMR4_PWM_SetFocMode(FOC_DEADTIME_NS);
@@ -429,17 +428,19 @@ void Foc_StartAlign(void)
 #define FOC_ALIGN_TIMEOUT_CNT ((uint32_t)FOC_ALIGN_TIMEOUT_MS * FOC_ISR_HZ / 1000u)
 #define FOC_ALIGN_HOLD_CNT    ((uint32_t)FOC_ALIGN_HOLD_MS * FOC_ISR_HZ / 1000u)
 
-/* ALIGN step: INMOP-style two-step current-controlled positioning.
- *   step1 (beta):  Id current at theta = 90 deg for FOC_ALIGN_BETA_MS,
- *                  pulls the rotor to a known direction (beta axis).
- *   step2 (alpha): Id current at theta = 0 deg; once the encoder count is
+/* ALIGN step: INMOP-style two-step FIXED-voltage positioning (does not depend
+ * on the current feedback, so the recorded zero is valid by construction).
+ *   step1 (beta):  fixed voltage along theta=90 deg for FOC_ALIGN_BETA_MS.
+ *   step2 (alpha): fixed voltage along theta=0 deg; once the encoder count is
  *                  stable for FOC_ALIGN_STABLE_MS the rotor is locked on the
  *                  d-axis and the encoder count is recorded as the zero.
- * Events are only flagged here; MAIN_D printing happens in the main loop. */
+ * Current = V/R (0.4V / 0.15ohm ~ 2.7A, within OC 4A); OC still protects.
+ * The measured id/iq during step2 reveal the current-mapping rotation. */
 static void Foc_AlignStep(const stc_i_data_t *pData)
 {
     float theta = (s_align_phase == 0u) ? FOC_MATH_HALF_PI : 0.0f;
-    float id, iq, vd, vq, valpha, vbeta, du, dv, dw;
+    float valpha, vbeta, du, dv, dw;
+    float id, iq;
     int32_t cnt;
 
     if (Foc_OverCurrent(pData)) {
@@ -450,41 +451,23 @@ static void Foc_AlignStep(const stc_i_data_t *pData)
         return;
     }
 
-    /* currents in the dq frame at current theta */
-    Foc_GetDq(pData, theta, &id, &iq);
-    Foc_EmaFilter(&id, &iq);
-    g_foc_id_ma = id * 1000.0f;
-    g_foc_iq_ma = iq * 1000.0f;
-
-    /* Id -> align current, Iq -> 0 */
-    vd = PID_UpdateUs(&s_pid_id, g_foc_align_id_ma * 0.001f, id, FOC_ISR_DT_US);
-    vq = PID_UpdateUs(&s_pid_iq, 0.0f,                     iq, FOC_ISR_DT_US);
-    g_foc_vd = vd;
-    g_foc_vq = vq;
-
-    Foc_ApplyVoltageEnvelope(&vd, &vq);
-
-    /* Extra hard cap for alignment (low-R motor) */
-    {
-        float vmax = g_foc_align_vmax_v;
-        if (vmax < 0.0f) vmax = 0.0f;
-        float v2    = vd * vd + vq * vq;
-        float vmax2 = vmax * vmax;
-        if (v2 > vmax2) {
-            float k = vmax / sqrtf(v2);
-            vd *= k;
-            vq *= k;
-        }
-    }
-
-    Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
+    /* fixed voltage along the d-axis at current theta */
+    valpha = g_foc_align_volt_v * Foc_Math_Cos(theta);
+    vbeta  = g_foc_align_volt_v * Foc_Math_Sin(theta);
     Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);
     TMR4_PWM_SetDuty3Phase(du, dv, dw);
     g_foc_valpha = valpha;
     g_foc_vbeta  = vbeta;
+    g_foc_vd = valpha;              /* applied dq voltage (in theta frame) */
+    g_foc_vq = vbeta;
     g_foc_du = du;
     g_foc_dv = dv;
     g_foc_dw = dw;
+
+    /* current feedback (info only) */
+    Foc_GetDq(pData, theta, &id, &iq);
+    g_foc_id_ma = id * 1000.0f;
+    g_foc_iq_ma = iq * 1000.0f;
 
     s_align_phase_tick++;
 
@@ -542,8 +525,8 @@ static void Foc_AlignStep(const stc_i_data_t *pData)
             s_state  = FOC_STATE_IDLE;
             g_foc_align_evt    = 4u;
             g_foc_align_evt_v1 = s_align_offset;
-            g_foc_align_evt_v2 = (int32_t)(g_foc_vd * 1000.0f);
-            g_foc_align_evt_v3 = (int32_t)(g_foc_vq * 1000.0f);
+            g_foc_align_evt_v2 = (int32_t)(g_foc_valpha * 1000.0f);
+            g_foc_align_evt_v3 = (int32_t)(g_foc_vbeta * 1000.0f);
         }
     }
 }

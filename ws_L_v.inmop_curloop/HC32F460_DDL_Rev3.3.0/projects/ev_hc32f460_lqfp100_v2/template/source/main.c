@@ -253,8 +253,7 @@ int main(void)
             g_foc_align_evt = 0u;
             switch (evt) {
             case 1u:
-                MAIN_D("[FOC][ALIGN] start id=%d vmax=%d mV\r\n",
-                       (int)g_foc_align_evt_v1, (int)g_foc_align_evt_v2);
+                MAIN_D("[FOC][ALIGN] start volt=%d mV\r\n", (int)g_foc_align_evt_v1);
                 break;
             case 2u:
                 MAIN_D("[FOC][ALIGN] beta done -> alpha\r\n");

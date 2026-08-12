@@ -370,7 +370,7 @@ void Foc_StartCurrentLoop(void)
  * Foc_StartAlign - mode 23: standstill electrical alignment (INMOP-style)
  *
  *   Locks the rotor to the d-axis (theta = 0) with a small d-axis current
- *   (current-controlled, safe for the +-2.5A sensor), waits until the encoder
+ *   (current-controlled, safe for the +-10A sensor), waits until the encoder
  *   count is stable, then records the encoder count as the electrical zero
  *   (s_align_offset so Foc_CurLoopTheta() == 0). Holds briefly and then
  *   releases the output automatically.

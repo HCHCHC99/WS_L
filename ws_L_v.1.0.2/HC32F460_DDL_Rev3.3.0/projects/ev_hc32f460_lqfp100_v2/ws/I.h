@@ -7,8 +7,8 @@
  *        PA6 = ADC1_CH6 = IV  (current sensor V)
  *        PA7 = ADC1_CH7 = IW  (current sensor W)
  *
- *        Sensor formula: VOUT = 1650 + IP(A) × 528 (mV)
- *          ±2.5A range, 3.3V / 12-bit ADC, zero = 2048 raw
+ *        Sensor formula: VOUT = 1650 + IP(A) × 132 (mV)
+ *          ±10A range, 3.3V / 12-bit ADC, zero = 2048 raw
  *
  *        Trigger chain:
  *          TMR4_3 SCMP0 (PWM peak) → AOS_ADC1_0 (EVT0) → ADC1_SEQ_B → EOCB ISR
@@ -98,10 +98,10 @@ extern "C" {
 
 /* ===== Current conversion constants ===== */
 #define I_ADC_ZERO                      (2048)      /* ADC raw at 0A (1650mV @ 3.3V/12bit) */
-#define I_MA_PER_ADC                    (391)      /* Fixed-point slope: 3300*1000/(4095*528) ≈ 1.527 mA/count, ×256 ≈ 391 */
+#define I_MA_PER_ADC                    (1563)     /* Fixed-point slope: 3300*1000/(4095*132) ≈ 6.105 mA/count, ×256 ≈ 1563 (132mV/A, +-10A sensor) */
 #define I_MA_SHIFT                      (8U)        /* Right-shift after multiply */
 
-/* Integer conversion: I_mA = (raw - zero_ref) * 1563 >> 8.  Error < 0.01%. */
+/* Integer conversion: I_mA = (raw - zero_ref) * 1563 >> 8 (1563 = 6.105 mA/count x 256). */
 #define I_ADC_TO_MA_REF(raw, zero)  ((int16_t)(((int32_t)((int32_t)(raw) - (int32_t)(zero)) * (int32_t)I_MA_PER_ADC) >> I_MA_SHIFT))
 
 /*******************************************************************************

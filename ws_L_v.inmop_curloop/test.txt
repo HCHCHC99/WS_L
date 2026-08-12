@@ -1,0 +1,56 @@
+00> [MAIN] [HALL] BAD ch=0 Hall=0x01 step=3->5 diff=2 int=563
+00> [MAIN] [HALL] COMM Hall=0x03 step=3->4 int=973
+00> [MAIN] [HALL] RPM raw=1999 filt=1805 state=2 Hall=0x03 step=4 fire=1020/340/341/339 unch=0 noise=41 fault=0 baddiff=90 valid=672 dtMax=42
+00> [MAIN] [HALL] RPM raw=1999 filt=1805 state=2 Hall=0x02 step=3 fire=1021/340/341/340 unch=0 noise=41 fault=0 baddiff=90 valid=673 dtMax=42
+00> [MAIN] [HALL] RPM raw=1999 filt=1805 state=2 Hall=0x05 step=0 fire=1024/341/342/341 unch=0 noise=41 fault=0 baddiff=90 valid=676 dtMax=42
+00> [MAIN] [HALL] RPM raw=1999 filt=1805 state=2 Hall=0x03 step=4 fire=1026/342/343/341 unch=0 noise=41 fault=0 baddiff=90 valid=678 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x06 step=3->2 int=305
+00> [MAIN] [HALL] RPM raw=1333 filt=1666 state=2 Hall=0x04 step=1 fire=1029/343/344/342 unch=0 noise=41 fault=0 baddiff=90 valid=681 dtMax=42
+00> [MAIN] [HALL] RPM raw=1333 filt=1666 state=2 Hall=0x02 step=3 fire=1033/344/345/344 unch=0 noise=41 fault=0 baddiff=90 valid=685 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x05 step=1->0 int=284
+00> [MAIN] [HALL] RPM raw=1333 filt=1666 state=2 Hall=0x05 step=0 fire=1036/345/346/345 unch=0 noise=41 fault=0 baddiff=90 valid=688 dtMax=42
+00> [MAIN] [HALL] RPM raw=1333 filt=1666 state=2 Hall=0x02 step=3 fire=1039/346/347/346 unch=0 noise=41 fault=0 baddiff=90 valid=691 dtMax=42
+00> [MAIN] [HALL] BAD ch=1 Hall=0x04 step=3->1 diff=4 int=223
+00> [MAIN] [HALL] BAD ch=2 Hall=0x05 step=3->0 diff=3 int=277
+00> [MAIN] [HALL] RPM raw=1999 filt=1777 state=2 Hall=0x02 step=3 fire=1042/347/348/347 unch=0 noise=42 fault=0 baddiff=92 valid=691 dtMax=42
+00> [MAIN] [HALL] BAD ch=0 Hall=0x01 step=3->5 diff=2 int=674
+00> [MAIN] [HALL] RPM raw=1999 filt=1777 state=2 Hall=0x02 step=3 fire=1043/348/348/347 unch=0 noise=42 fault=0 baddiff=93 valid=691 dtMax=42
+00> [MAIN] [HALL] RPM raw=1999 filt=1777 state=2 Hall=0x02 step=3 fire=1045/348/349/348 unch=0 noise=42 fault=0 baddiff=93 valid=693 dtMax=42
+00> [MAIN] [HALL] RPM raw=1999 filt=1777 state=2 Hall=0x04 step=1 fire=1047/349/350/348 unch=0 noise=42 fault=0 baddiff=93 valid=695 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x05 step=1->0 int=747
+00> [MAIN] [HALL] RPM raw=1999 filt=1777 state=2 Hall=0x03 step=4 fire=1050/350/351/349 unch=0 noise=42 fault=0 baddiff=93 valid=698 dtMax=42
+00> [MAIN] [HALL] RPM raw=1333 filt=1638 state=2 Hall=0x04 step=1 fire=1053/351/352/350 unch=0 noise=42 fault=0 baddiff=93 valid=701 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x03 step=5->4 int=349
+00> [MAIN] [HALL] RPM raw=1333 filt=1638 state=2 Hall=0x03 step=4 fire=1056/352/353/351 unch=0 noise=42 fault=0 baddiff=93 valid=704 dtMax=42
+00> [MAIN] [HALL] RPM raw=1333 filt=1638 state=2 Hall=0x04 step=1 fire=1059/353/354/352 unch=0 noise=42 fault=0 baddiff=93 valid=707 dtMax=42
+00> [MAIN] [HALL] RPM raw=1333 filt=1638 state=2 Hall=0x03 step=4 fire=1062/354/355/353 unch=0 noise=42 fault=0 baddiff=93 valid=710 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x06 step=3->2 int=97
+00> [MAIN] [HALL] RPM raw=2332 filt=1833 state=2 Hall=0x05 step=0 fire=1066/355/356/355 unch=0 noise=42 fault=0 baddiff=93 valid=714 dtMax=42
+00> [MAIN] [HALL] RPM raw=2332 filt=1833 state=2 Hall=0x02 step=3 fire=1069/356/357/356 unch=0 noise=42 fault=0 baddiff=93 valid=717 dtMax=42
+00> [MAIN] [HALL] BAD ch=1 Hall=0x04 step=3->1 diff=4 int=151
+00> [MAIN] [HALL] BAD ch=2 Hall=0x05 step=3->0 diff=3 int=241
+00> [MAIN] [HALL] RPM raw=2332 filt=1833 state=2 Hall=0x02 step=3 fire=1072/357/358/357 unch=0 noise=43 fault=0 baddiff=95 valid=717 dtMax=42
+00> [MAIN] [HALL] BAD ch=0 Hall=0x01 step=3->5 diff=2 int=569
+00> [MAIN] [HALL] RPM raw=2332 filt=1833 state=2 Hall=0x03 step=4 fire=1074/358/359/357 unch=0 noise=43 fault=0 baddiff=96 valid=718 dtMax=42
+00> [MAIN] [HALL] RPM raw=2332 filt=1833 state=2 Hall=0x02 step=3 fire=1075/358/359/358 unch=0 noise=43 fault=0 baddiff=96 valid=719 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x06 step=3->2 int=945
+00> [MAIN] [HALL] RPM raw=1166 filt=1694 state=2 Hall=0x05 step=0 fire=1078/359/360/359 unch=0 noise=43 fault=0 baddiff=96 valid=722 dtMax=42
+00> [MAIN] [HALL] RPM raw=1166 filt=1694 state=2 Hall=0x03 step=4 fire=1080/360/361/359 unch=0 noise=43 fault=0 baddiff=96 valid=724 dtMax=42
+00> [MAIN] [HALL] RPM raw=1166 filt=1694 state=2 Hall=0x04 step=1 fire=1083/361/362/360 unch=0 noise=43 fault=0 baddiff=96 valid=727 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x05 step=1->0 int=329
+00> [MAIN] [HALL] RPM raw=1166 filt=1694 state=2 Hall=0x03 step=4 fire=1086/362/363/361 unch=0 noise=43 fault=0 baddiff=96 valid=730 dtMax=42
+00> [MAIN] [HALL] RPM raw=2166 filt=1721 state=2 Hall=0x05 step=0 fire=1090/363/364/363 unch=0 noise=43 fault=0 baddiff=96 valid=734 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x03 step=5->4 int=255
+00> [MAIN] [HALL] RPM raw=2166 filt=1721 state=2 Hall=0x02 step=3 fire=1093/364/365/364 unch=0 noise=43 fault=0 baddiff=96 valid=737 dtMax=42
+00> [MAIN] [HALL] BAD ch=1 Hall=0x04 step=3->1 diff=4 int=226
+00> [MAIN] [HALL] BAD ch=2 Hall=0x05 step=3->0 diff=3 int=272
+00> [MAIN] [HALL] RPM raw=2166 filt=1721 state=2 Hall=0x02 step=3 fire=1096/365/366/365 unch=0 noise=44 fault=0 baddiff=98 valid=737 dtMax=42
+00> [MAIN] [HALL] BAD ch=0 Hall=0x01 step=3->5 diff=2 int=672
+00> [MAIN] [HALL] RPM raw=2166 filt=1721 state=2 Hall=0x02 step=3 fire=1097/366/366/365 unch=0 noise=44 fault=0 baddiff=99 valid=737 dtMax=42
+00> [MAIN] [HALL] RPM raw=2166 filt=1721 state=2 Hall=0x02 step=3 fire=1099/366/367/366 unch=0 noise=44 fault=0 baddiff=99 valid=739 dtMax=42
+00> [MAIN] [HALL] RPM raw=1000 filt=1666 state=2 Hall=0x04 step=1 fire=1101/367/368/366 unch=0 noise=44 fault=0 baddiff=99 valid=741 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x03 step=5->4 int=523
+00> [MAIN] [HALL] RPM raw=1000 filt=1666 state=2 Hall=0x03 step=4 fire=1104/368/369/367 unch=0 noise=44 fault=0 baddiff=99 valid=744 dtMax=42
+00> [MAIN] [HALL] RPM raw=1000 filt=1666 state=2 Hall=0x04 step=1 fire=1107/369/370/368 unch=0 noise=44 fault=0 baddiff=99 valid=747 dtMax=42
+00> [MAIN] [HALL] RPM raw=1000 filt=1666 state=2 Hall=0x03 step=4 fire=1110/370/371/369 unch=0 noise=44 fault=0 baddiff=99 valid=750 dtMax=42
+00> [MAIN] [HALL] COMM Hall=0x06 step=3->2 int=108

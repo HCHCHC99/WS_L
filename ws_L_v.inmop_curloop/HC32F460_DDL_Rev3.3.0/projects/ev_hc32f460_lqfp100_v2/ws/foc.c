@@ -79,6 +79,11 @@ volatile float g_foc_vlim_v       = 0.0f;                     /* current voltage
 volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency (Hz) */
 volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
+/* I-F start events for main-loop printing (ISR only sets flag+payload) */
+volatile uint8_t  g_foc_if_evt    = 0u;   /* 1=hold done 2=handover 3=timeout */
+volatile int32_t  g_foc_if_evt_v1 = 0;
+volatile int32_t  g_foc_if_evt_v2 = 0;
+volatile int32_t  g_foc_if_evt_v3 = 0;
 /* Align calibration (mode 23) */
 volatile float   g_foc_align_volt_v = FOC_ALIGN_VOLT_V;        /* fixed align voltage (V), Watch tunable */
 volatile int32_t g_foc_align_offset = 0;                        /* recorded encoder electrical-zero count */
@@ -144,6 +149,7 @@ static float    s_if_diff_min   = 0.0f;
 static float    s_if_diff_max   = 0.0f;
 static uint32_t s_if_win_cnt    = 0u;
 static uint32_t s_if_hold_tick  = 0u;
+static uint8_t  s_if_hold_done  = 0u;
 static uint32_t s_if_good_wins  = 0u;
 static uint32_t s_if_tick       = 0u;
 static int32_t  s_align_last_cnt   = 0;
@@ -353,6 +359,8 @@ void Foc_StartCurrentLoop(void)
     s_state           = FOC_STATE_IF_START;
     s_if_tick         = 0u;
     s_if_hold_tick    = 0u;
+    s_if_hold_done    = 0u;
+    g_foc_if_evt      = 0u;
     s_if_win_cnt      = 0u;
     s_if_good_wins    = 0u;
     s_if_diff_min     = 0.0f;
@@ -576,6 +584,13 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         s_if_hold_tick++;
         theta = g_foc_theta_rad;      /* stays 0 during hold */
     } else {
+        if (!s_if_hold_done) {
+            s_if_hold_done = 1u;
+            g_foc_if_evt    = 1u;   /* hold done -> freq ramp starts */
+            g_foc_if_evt_v1 = (int32_t)(g_foc_if_freq_hz * 100.0f);
+            g_foc_if_evt_v2 = (int32_t)g_foc_iq_ref_ma;
+            g_foc_if_evt_v3 = 0;
+        }
         /* 1) frequency ramp 0 -> g_foc_openloop_freq_hz */
         if (g_foc_if_freq_hz < g_foc_openloop_freq_hz) {
         g_foc_if_freq_hz += FOC_IF_FREQ_RAMP_HZ_S / (float)FOC_ISR_HZ;
@@ -675,6 +690,10 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
 
     /* safety timeout: never synchronized -> fault code 2 */
     if (s_if_tick > ((uint32_t)FOC_IF_TIMEOUT_MS * FOC_ISR_HZ / 1000u)) {
+        g_foc_if_evt    = 3u;
+        g_foc_if_evt_v1 = (int32_t)(g_foc_if_freq_hz * 100.0f);   /* cHz */
+        g_foc_if_evt_v2 = (int32_t)g_foc_iq_ma;
+        g_foc_if_evt_v3 = (int32_t)(g_foc_if_diff_rad * 1000.0f); /* mrad */
         Foc_FaultStop(2u);
     }
 }
@@ -713,6 +732,10 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
     s_state           = FOC_STATE_RUN;
     g_foc_align_state = 2u;
     g_foc_if_sync     = 1u;
+    g_foc_if_evt      = 2u;
+    g_foc_if_evt_v1   = (int32_t)g_foc_align_offset;
+    g_foc_if_evt_v2   = (int32_t)g_foc_iq_ma;
+    g_foc_if_evt_v3   = (int32_t)(g_foc_if_freq_hz * 100.0f);
 }
 
 /*******************************************************************************

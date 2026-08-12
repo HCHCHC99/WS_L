@@ -77,7 +77,10 @@ extern volatile float    g_foc_vlim_v;       /* current voltage envelope (V) */
 /* I-F start observables */
 extern volatile float    g_foc_if_freq_hz;   /* current I-F electrical frequency (Hz) */
 extern volatile float    g_foc_if_diff_rad;  /* encoder-elec angle - synthetic angle (rad) */
-extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */
+extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */extern volatile uint8_t  g_foc_if_evt;       /* 1=hold done 2=handover 3=timeout */
+extern volatile int32_t  g_foc_if_evt_v1;
+extern volatile int32_t  g_foc_if_evt_v2;
+extern volatile int32_t  g_foc_if_evt_v3;
 /* Align calibration (mode 23) */
 extern volatile float    g_foc_align_volt_v; /* fixed align voltage (V), Watch tunable */
 extern volatile int32_t  g_foc_align_offset; /* recorded encoder electrical-zero count */

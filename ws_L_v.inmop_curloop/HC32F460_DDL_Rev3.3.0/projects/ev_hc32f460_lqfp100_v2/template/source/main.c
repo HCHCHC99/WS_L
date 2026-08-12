@@ -247,6 +247,28 @@ int main(void)
         }
 #endif
 #if MOTOR_FOC_ENABLE
+        /* FOC I-F start events - printed here in main loop (never ISR) */
+        if (g_foc_if_evt != 0u) {
+            uint8_t ievt = g_foc_if_evt;
+            g_foc_if_evt = 0u;
+            switch (ievt) {
+            case 1u:
+                MAIN_D("[FOC][IF] hold done -> ramp freq=%d cHz iqref=%d mA\r\n",
+                       (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2);
+                break;
+            case 2u:
+                MAIN_D("[FOC][IF] handover ok offset=%d iq=%d mA freq=%d cHz\r\n",
+                       (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3);
+                break;
+            case 3u:
+                MAIN_D("[FOC][IF] TIMEOUT freq=%d cHz iq=%d mA diff=%d mrad\r\n",
+                       (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3);
+                break;
+            default:
+                break;
+            }
+        }
+
         /* FOC align calibration events - printed here in main loop (never ISR) */
         if (g_foc_align_evt != 0u) {
             uint8_t evt = g_foc_align_evt;

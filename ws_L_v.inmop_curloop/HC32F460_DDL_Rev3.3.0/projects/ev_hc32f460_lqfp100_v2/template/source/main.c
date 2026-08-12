@@ -253,10 +253,11 @@ int main(void)
             uint32_t now_ms = tickTimer_GetCount();
             if ((now_ms - s_last_if) >= 1000u) {
                 s_last_if = now_ms;
-                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA diff=%d mrad sync=%d\r\n",
+                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA diff=%d mrad spd=%d rpm sync=%d\r\n",
                        (int)(g_foc_if_freq_hz * 100.0f),
                        (int)g_foc_iq_ma,
                        (int)(g_foc_if_diff_rad * 1000.0f),
+                       (int)g_enc_speed_rpm,
                        (int)g_foc_if_sync);
             }
         }

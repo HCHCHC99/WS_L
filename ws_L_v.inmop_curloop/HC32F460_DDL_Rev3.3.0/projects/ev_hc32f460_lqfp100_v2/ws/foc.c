@@ -143,6 +143,7 @@ static float       s_iq_f         = 0.0f;   /* EMA-filtered q current (A) */
 static float    s_if_diff_min   = 0.0f;
 static float    s_if_diff_max   = 0.0f;
 static uint32_t s_if_win_cnt    = 0u;
+static uint32_t s_if_hold_tick  = 0u;
 static uint32_t s_if_good_wins  = 0u;
 static uint32_t s_if_tick       = 0u;
 static int32_t  s_align_last_cnt   = 0;
@@ -157,6 +158,7 @@ static pid_state_t s_pid_iq;
 
 /* ISR period in us (FOC_ISR_HZ = 20000 -> 50 us) */
 #define FOC_ISR_DT_US  (1000000u / FOC_ISR_HZ)
+#define FOC_IF_HOLD_MAX_CNT ((uint32_t)FOC_IF_HOLD_MAX_MS * FOC_ISR_HZ / 1000u)
 
 /* OC debounce: require N consecutive over-limit samples (N x 50us) before trip */
 #define FOC_OC_DEBOUNCE_SAMPLES  4u
@@ -350,6 +352,7 @@ void Foc_StartCurrentLoop(void)
 
     s_state           = FOC_STATE_IF_START;
     s_if_tick         = 0u;
+    s_if_hold_tick    = 0u;
     s_if_win_cnt      = 0u;
     s_if_good_wins    = 0u;
     s_if_diff_min     = 0.0f;
@@ -565,8 +568,16 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         return;
     }
 
-    /* 1) frequency ramp 0 -> g_foc_openloop_freq_hz */
-    if (g_foc_if_freq_hz < g_foc_openloop_freq_hz) {
+    /* 0) initial hold: keep theta=0 and freq=0 until the Iq reference has
+     *    ramped up enough to lock the rotor onto the initial current vector,
+     *    so the field always starts rotating from a synchronized state. */
+    if ((g_foc_iq_ref_ma < (float)FOC_IF_HOLD_IQ_MA) &&
+        (s_if_hold_tick < FOC_IF_HOLD_MAX_CNT)) {
+        s_if_hold_tick++;
+        theta = g_foc_theta_rad;      /* stays 0 during hold */
+    } else {
+        /* 1) frequency ramp 0 -> g_foc_openloop_freq_hz */
+        if (g_foc_if_freq_hz < g_foc_openloop_freq_hz) {
         g_foc_if_freq_hz += FOC_IF_FREQ_RAMP_HZ_S / (float)FOC_ISR_HZ;
         if (g_foc_if_freq_hz > g_foc_openloop_freq_hz) {
             g_foc_if_freq_hz = g_foc_openloop_freq_hz;
@@ -580,6 +591,7 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         theta -= FOC_MATH_2PI;
     }
     g_foc_theta_rad = theta;
+    }
 
     /* 3) currents + EMA */
     Foc_GetDq(pData, theta, &id, &iq);

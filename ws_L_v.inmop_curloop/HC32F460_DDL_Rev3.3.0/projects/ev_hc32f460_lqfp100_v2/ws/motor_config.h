@@ -68,12 +68,14 @@
 #define FOC_IQ_RAMP_MA_S     100         /* Iq soft-start ramp rate (mA/s) */
 
 /* I-F start (mode 22): current-controlled startup with synthetic angle */
+#define FOC_IF_HOLD_IQ_MA    300        /* hold theta=0 until Iq ref reaches this (mA) so the rotor locks first */
+#define FOC_IF_HOLD_MAX_MS   5000       /* max hold time (ms) before forcing the ramp regardless */
 #define FOC_IF_FREQ_RAMP_HZ_S   1.0f     /* synthetic frequency ramp (Hz/s) - slower = rotor can follow */
 #define FOC_IF_SYNC_MIN_HZ      2.0f     /* min frequency before sync detection */
 #define FOC_IF_SYNC_WIN_CNT     2000u    /* sync window length (samples, 100ms @20k) */
 #define FOC_IF_SYNC_BAND_RAD    0.10f    /* allowed angle-diff band per window (rad) */
 #define FOC_IF_SYNC_GOOD_WINS   2u       /* consecutive good windows required */
-#define FOC_IF_TIMEOUT_MS       10000u   /* start timeout -> fault code 2 */
+#define FOC_IF_TIMEOUT_MS       15000u   /* start timeout -> fault code 2 */
 /* Align calibration (comm_mode 23) - INMOP-style two-step (beta -> alpha) FIXED voltage */
 #define FOC_ALIGN_VOLT_V     0.4f       /* fixed align voltage (V): 0.4V/0.15ohm ~ 2.7A (< OC 4A), Watch tunable */
 #define FOC_ALIGN_BETA_MS    1000       /* step1: hold on beta axis (ms), INMOP-style */

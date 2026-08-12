@@ -247,6 +247,20 @@ int main(void)
         }
 #endif
 #if MOTOR_FOC_ENABLE
+        /* FOC I-F periodic status (1s) so we can see the diff trend in RTT */
+        if (g_foc_active && (g_foc_mode == FOC_MODE_CURLOOP)) {
+            static uint32_t s_last_if = 0u;
+            uint32_t now_ms = tickTimer_GetCount();
+            if ((now_ms - s_last_if) >= 1000u) {
+                s_last_if = now_ms;
+                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA diff=%d mrad sync=%d\r\n",
+                       (int)(g_foc_if_freq_hz * 100.0f),
+                       (int)g_foc_iq_ma,
+                       (int)(g_foc_if_diff_rad * 1000.0f),
+                       (int)g_foc_if_sync);
+            }
+        }
+
         /* FOC I-F start events - printed here in main loop (never ISR) */
         if (g_foc_if_evt != 0u) {
             uint8_t ievt = g_foc_if_evt;

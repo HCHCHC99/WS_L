@@ -261,8 +261,9 @@ int main(void)
                        (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3);
                 break;
             case 3u:
-                MAIN_D("[FOC][IF] TIMEOUT freq=%d cHz iq=%d mA diff=%d mrad\r\n",
-                       (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3);
+                MAIN_D("[FOC][IF] TIMEOUT freq=%d cHz iq=%d mA diff=%d mrad sweep=%d cHz\r\n",
+                       (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3,
+                       (int)g_foc_if_evt_v4);
                 break;
             default:
                 break;

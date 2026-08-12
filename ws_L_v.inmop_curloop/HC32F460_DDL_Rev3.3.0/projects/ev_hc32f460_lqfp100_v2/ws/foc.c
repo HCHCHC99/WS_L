@@ -85,6 +85,7 @@ volatile uint8_t  g_foc_if_evt    = 0u;   /* 1=hold done 2=handover 3=timeout */
 volatile int32_t  g_foc_if_evt_v1 = 0;
 volatile int32_t  g_foc_if_evt_v2 = 0;
 volatile int32_t  g_foc_if_evt_v3 = 0;
+volatile int32_t  g_foc_if_evt_v4 = 0;
 /* Align calibration (mode 23) */
 volatile float   g_foc_align_volt_v = FOC_ALIGN_VOLT_V;        /* fixed align voltage (V), Watch tunable */
 volatile int32_t g_foc_align_offset = 0;                        /* recorded encoder electrical-zero count */
@@ -151,6 +152,8 @@ static float    s_if_diff_max   = 0.0f;
 static uint32_t s_if_win_cnt    = 0u;
 static uint32_t s_if_hold_tick  = 0u;
 static uint8_t  s_if_hold_done  = 0u;
+static float    s_if_last_diff = 0.0f;
+static uint32_t s_if_wrap_cnt  = 0u;
 static uint32_t s_if_good_wins  = 0u;
 static uint32_t s_if_tick       = 0u;
 static int32_t  s_align_last_cnt   = 0;
@@ -361,7 +364,10 @@ void Foc_StartCurrentLoop(void)
     s_if_tick         = 0u;
     s_if_hold_tick    = 0u;
     s_if_hold_done    = 0u;
+    s_if_last_diff    = 0.0f;
+    s_if_wrap_cnt     = 0u;
     g_foc_if_evt      = 0u;
+    g_foc_if_evt_v4   = 0;
     s_if_win_cnt      = 0u;
     s_if_good_wins    = 0u;
     s_if_diff_min     = 0.0f;
@@ -668,6 +674,14 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     if (diff < -FOC_MATH_PI) diff += FOC_MATH_2PI;
     g_foc_if_diff_rad = diff;
 
+    /* count diff wraps to estimate the sweep rate (direction/scale debug) */
+    {
+        float dd = diff - s_if_last_diff;
+        if (dd >  FOC_MATH_PI) s_if_wrap_cnt++;
+        if (dd < -FOC_MATH_PI) s_if_wrap_cnt++;
+        s_if_last_diff = diff;
+    }
+
     if (g_foc_if_freq_hz >= FOC_IF_SYNC_MIN_HZ) {
         if (s_if_win_cnt == 0u) {
             s_if_diff_min = diff;
@@ -696,6 +710,10 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         g_foc_if_evt_v1 = (int32_t)(g_foc_if_freq_hz * 100.0f);   /* cHz */
         g_foc_if_evt_v2 = (int32_t)g_foc_iq_ma;
         g_foc_if_evt_v3 = (int32_t)(g_foc_if_diff_rad * 1000.0f); /* mrad */
+        g_foc_if_evt_v4 = (s_if_tick > 0u)
+                        ? (int32_t)((float)s_if_wrap_cnt * (float)FOC_ISR_HZ
+                                    / (float)s_if_tick * 100.0f)   /* sweep cHz */
+                        : 0;
         Foc_FaultStop(2u);
     }
 }

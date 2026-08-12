@@ -82,6 +82,7 @@ extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to
 extern volatile int32_t  g_foc_if_evt_v1;
 extern volatile int32_t  g_foc_if_evt_v2;
 extern volatile int32_t  g_foc_if_evt_v3;
+extern volatile int32_t  g_foc_if_evt_v4;   /* diff sweep rate at timeout (cHz) */
 /* Align calibration (mode 23) */
 extern volatile float    g_foc_align_volt_v; /* fixed align voltage (V), Watch tunable */
 extern volatile int32_t  g_foc_align_offset; /* recorded encoder electrical-zero count */

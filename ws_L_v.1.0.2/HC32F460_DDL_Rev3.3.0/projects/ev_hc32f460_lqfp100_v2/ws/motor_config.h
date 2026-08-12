@@ -74,6 +74,10 @@
 #define FOC_IF_SYNC_BAND_RAD    0.10f    /* allowed angle-diff band per window (rad) */
 #define FOC_IF_SYNC_GOOD_WINS   2u       /* consecutive good windows required */
 #define FOC_IF_TIMEOUT_MS       10000u   /* start timeout -> fault code 2 */
+/* Align calibration (comm_mode 23) - INMOP-style d-axis lock, current-controlled */
+#define FOC_ALIGN_ID_MA      300        /* d-axis current during align (mA), Watch tunable */
+#define FOC_ALIGN_STABLE_MS  300        /* encoder-stable window to declare lock (ms) */
+#define FOC_ALIGN_HOLD_MS    500        /* hold lock before releasing output (ms) */
 #define FOC_OC_LIMIT_A       4.0f        /* over-current trip default (A, per phase; runtime: g_foc_oc_limit_a) */
 #define FOC_CUR_SIGN         1           /* current sign correction (+1/-1) */
 #define FOC_PI_KP            0.05f       /* current PI Kp (V/A) - low-R motor: 100mA needs only ~13mV */

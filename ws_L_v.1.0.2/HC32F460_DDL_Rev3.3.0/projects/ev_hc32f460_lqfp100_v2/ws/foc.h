@@ -36,6 +36,7 @@ extern "C" {
 #define FOC_MODE_NONE      0u   /* FOC stopped */
 #define FOC_MODE_OPENLOOP  1u   /* comm_mode 21: open-loop V/f */
 #define FOC_MODE_CURLOOP   2u   /* comm_mode 22: encoder FOC current loop */
+#define FOC_MODE_ALIGN     3u   /* comm_mode 23: standstill electrical alignment */
 
 /*******************************************************************************
  * Global variables for JScope / Keil Watch
@@ -77,6 +78,9 @@ extern volatile float    g_foc_vlim_v;       /* current voltage envelope (V) */
 extern volatile float    g_foc_if_freq_hz;   /* current I-F electrical frequency (Hz) */
 extern volatile float    g_foc_if_diff_rad;  /* encoder-elec angle - synthetic angle (rad) */
 extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */
+/* Align calibration (mode 23) */
+extern volatile float    g_foc_align_id_ma;  /* d-axis current during align (mA), Watch tunable */
+extern volatile int32_t  g_foc_align_offset; /* recorded encoder electrical-zero count */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live) */
 extern pid_config_t g_foc_pid_id_cfg;
@@ -98,6 +102,9 @@ void Foc_StartOpenLoop(void);
  * I-F start (current-controlled, synthetic angle), hand over to encoder angle
  * when synchronized, then RUN (encoder angle + Id/Iq PI). */
 void Foc_StartCurrentLoop(void);
+/* Start standstill electrical alignment (comm_mode 23): lock rotor to the
+ * d-axis with a small current, record the encoder electrical zero, release. */
+void Foc_StartAlign(void);
 
 /* Stop FOC: clear active, disable PWM output, zero duty observables. */
 void Foc_Stop(void);

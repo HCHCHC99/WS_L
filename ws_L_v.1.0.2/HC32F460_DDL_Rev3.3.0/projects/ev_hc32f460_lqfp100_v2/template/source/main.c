@@ -32,15 +32,15 @@ extern volatile uint8_t g_scope_hc;   /* Hall W, bit0 */
 extern volatile uint8_t g_scope_step; /* Current commutation step (0-5) */
 
 /*=============================================================================
- * Keil Watch ��改变�?? (调试接口)
+ * Keil Watch ��改变�??? (调试接口)
  *=============================================================================*/
-volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW 11=CascadeFW 21=FocOpenLoop 22=FocCurrentLoop */
+volatile int   comm_mode        = 0;     /* 0=Stop 1=OpenFW 2=OpenRV 3=ClosedFW 4=ClosedRV 5=Calibrate 6=CalibCW 7=CalibCCW 8=PID_CW 9=PID_CCW 10=CurLoopFW 11=CascadeFW 21=FocOpenLoop 22=FocCurrentLoop 23=FocAlign */
 volatile float g_comm_duty_pct  = 80.0f; /* Duty cycle 2%~98% */
 
-/* PID speed control �?? Keil Watch variables */
+/* PID speed control �??? Keil Watch variables */
 volatile float g_target_rpm       = 3000.0f;
 
-/* PID config �?? all fields volatile, Keil Watch can modify at runtime */
+/* PID config �??? all fields volatile, Keil Watch can modify at runtime */
 pid_config_t g_pid_cfg = {
     .enabled      = true,
     .p_valid      = true,
@@ -55,14 +55,14 @@ pid_config_t g_pid_cfg = {
     .update_ms    = 50,
 };
 
-/* �?? PWM 全局变量 (dev_motor 模块引用, 不可删除) */
+/* �??? PWM 全局变量 (dev_motor 模块引用, 不可删除) */
 pwm_t g_motor_pwm_ch1;
 pwm_t g_motor_pwm_ch2;
 pwm_t g_motor_pwm_ch3;
 pwm_t g_motor_pwm_ch4;
 
 /*=============================================================================
- * Hall 映射�?? (16�?? × 8�??)
+ * Hall 映射�??? (16�??? × 8�???)
  *   0~5: 同� (霍尔+1=磁场CW)
  *   6~11: 偏移 (霍尔+1=磁场CCW)
  *   12: 实测校准 CW
@@ -72,11 +72,12 @@ pwm_t g_motor_pwm_ch4;
  *=============================================================================*/
 int main(void)
 {
-    /* ---- �件初始�?? ---- */
+    /* ---- �件初始�??? ---- */
     Hardware_Init();
+	MAIN_D("111111");
 
 #if 0  /* RS485 Modbus disabled, PB12/PB13 now used for USART3 */
-    /* ---- 通信�?? (RS485 + Modbus RTU) ---- */
+    /* ---- 通信�??? (RS485 + Modbus RTU) ---- */
     static const App_Comm_Config_t comm_cfg = {
         .phy.baudrate     = 9600,
         .phy.dir_polarity = 0,
@@ -90,7 +91,7 @@ int main(void)
     };
     App_Comm_Init(&comm_cfg);
 #endif  /* RS485 Modbus disabled */
-    /* ---- USART3 + VOFA+ 初始�? ---- */
+    /* ---- USART3 + VOFA+ 初始�?? ---- */
     /* VOFA+ 全�?: 921600 baud, ~5760 frame/s max */
     {
         Usart3_HW_Config_t cfg = USART3_HW_CONFIG_DEFAULT;
@@ -110,7 +111,7 @@ int main(void)
     static const comm_runner_config_t runner_cfg = {
         .pwm_freq_hz       = MOTOR_PWM_FREQ_HZ,
 
-        /* Hall 传感器配�??: 3�??, PA10=U, PA9=V, PA8=W, 3对极 */
+        /* Hall 传感器配�???: 3�???, PA10=U, PA9=V, PA8=W, 3对极 */
 #if MOTOR_HALL_ENABLE
         .hall_cfg = {
             .port      = {GPIO_PORT_A, GPIO_PORT_A, GPIO_PORT_A},
@@ -120,9 +121,9 @@ int main(void)
             .irq_src   = {INT_SRC_PORT_EIRQ10, INT_SRC_PORT_EIRQ9, INT_SRC_PORT_EIRQ8},
             .irq_priority = DDL_IRQ_PRIO_02,
             .pole_pairs   = 3,
-            /* 默��场对齐�??: step0�??0x01, 磁场正向 */
+            /* 默��场对齐�???: step0�???0x01, 磁场正向 */
             .hall_to_step = {0xFF,1,3,2,5,0,4,0xFF},
-            /* on_step/on_fault �?? CommRunner 内部覆写 */
+            /* on_step/on_fault �??? CommRunner 内部覆写 */
             .on_step      = NULL,
             .on_fault     = NULL,
             .align_step        = 0,
@@ -137,7 +138,7 @@ int main(void)
         .ol_const_target_us = 5000,
         .ol_const_ramp_ms   = 3000,
 
-        /* 飞启�� (mode 3/4): 167�??1111 RPM, 2s 斜坡 */
+        /* 飞启�� (mode 3/4): 167�???1111 RPM, 2s 斜坡 */
         .ol_fly_start_us    = 20000,
         .ol_fly_target_us   = 3000,
         .ol_fly_ramp_ms     = 2000,
@@ -148,20 +149,20 @@ int main(void)
     };
     CommRunner_Init(&runner_cfg);
 
-    /* ---- BEMF 初始�? (PWM 已启�?, TMR4_3 正在运行) ---- */
+    /* ---- BEMF 初始�?? (PWM 已启�??, TMR4_3 正在运行) ---- */
     Bemf_Init();
 
-    /* ---- 电流采样初始化 (ADC1_SEQ_B, PWM peak 触发, 频率见 MOTOR_PWM_FREQ_HZ) ---- */
+    /* ---- 电流采样初始�? (ADC1_SEQ_B, PWM peak 触发, 频率�? MOTOR_PWM_FREQ_HZ) ---- */
     I_Init();
 
     /* ---- 电流零偏校准 (阻塞500ms, 电机必须静止) ---- */
     I_Calibrate();
 
-    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 频率见 MOTOR_PWM_FREQ_HZ) ---- */
+    /* ---- 电流环初始化 (挂到 ADC1 EOCB ISR, 频率�? MOTOR_PWM_FREQ_HZ) ---- */
     CurLoop_Init();
 
 #if MOTOR_FOC_ENABLE
-    /* ---- FOC 初始化 (注册第二个 ISR 回调槽, 不启动输出; 模式 21 启动) ---- */
+    /* ---- FOC 初始�? (注册第二�? ISR 回调�?, 不启动输�?; 模式 21 启动) ---- */
     Foc_Init();
 #endif
 
@@ -170,9 +171,9 @@ int main(void)
 
     EventBus_Enable();
 
-    /* ---- 电流 VOFA+ 全速发�? (DMA 背压, ~2.9kHz max @921600, 16ch) ---- */
+    /* ---- 电流 VOFA+ 全速发�?? (DMA 背压, ~2.9kHz max @921600, 16ch) ---- */
 
-    /* ---- 主循�? ---- */
+    /* ---- 主循�?? ---- */
     static int   s_prev_mode     = -1;
     static float s_prev_duty     = 80.0f;
     static int   s_foc_fault_printed = 0;
@@ -180,25 +181,28 @@ int main(void)
     while (1) {
 //         App_Comm_Poll();
 
-        /* Keil Watch �?? CommRunner (调试�??/Modbus 下发的模式切�??) */
+        /* Keil Watch �??? CommRunner (调试�???/Modbus 下发的模式切�???) */
         if (comm_mode != s_prev_mode) {
             int s_prev_mode_before = s_prev_mode;
             s_prev_mode = comm_mode;
 #if MOTOR_FOC_ENABLE
-            if ((comm_mode == 21) || (comm_mode == 22)) {
+            if ((comm_mode == 21) || (comm_mode == 22) || (comm_mode == 23)) {
                 /* FOC mode: keep runner s_mode in sync (Update is no-op),
                  * then start FOC complementary PWM (21=open-loop,
-                 * 22=current-loop with rotor align). */
+                 * 22=current-loop I-F start, 23=standstill align). */
                 CommRunner_SetMode((comm_runner_mode_t)comm_mode);
                 if (comm_mode == 22) {
                     Foc_StartCurrentLoop();
+                } else if (comm_mode == 23) {
+                    Foc_StartAlign();
                 } else {
                     Foc_StartOpenLoop();
                 }
             } else {
-                /* Leaving FOC mode 21/22: stop FOC PWM, restart the shared
+                /* Leaving FOC mode 21/22/23: stop FOC PWM, restart the shared
                  * TMR4 counter (Foc_Stop stops it) for six-step modes. */
-                if ((s_prev_mode_before == 21) || (s_prev_mode_before == 22)) {
+                if ((s_prev_mode_before == 21) || (s_prev_mode_before == 22) ||
+                    (s_prev_mode_before == 23)) {
                     Foc_Stop();
                     TMR4_PWM_StartOutput();
                 }
@@ -213,16 +217,16 @@ int main(void)
             CommRunner_SetDuty(g_comm_duty_pct);
         }
 
-        /* 驱动换相状��?? */
+        /* 驱动换相状��??? */
         CommRunner_Update();
 
         /* ABZ encoder: position + speed */
         Encoder_Update();
 
-        /* g_bemf_wave_data �? Bemf_DataCallback() �? DMA BTC ISR 中自动更�?
-         * (根据 g_scope_step 选择浮空�?, 计算 floating_raw - neutral_raw) */
+        /* g_bemf_wave_data �?? Bemf_DataCallback() �?? DMA BTC ISR 中自动更�??
+         * (根据 g_scope_step 选择浮空�??, 计算 floating_raw - neutral_raw) */
 
-        /* CommRunner �?? Keil Watch (堵转等内部触发的 STOP 同�回�) */
+        /* CommRunner �??? Keil Watch (堵转等内部触发的 STOP 同�回�) */
         {
             int actual = (int)CommRunner_GetMode();
             if (actual != comm_mode) {
@@ -243,7 +247,7 @@ int main(void)
         }
 #endif
 
-        /* ---- BEMF 数据读取 (�??500ms打印一次观察数�??) ---- */
+        /* ---- BEMF 数据读取 (�???500ms打印一次观察数�???) ---- */
 #ifdef BEMF_PERIODIC_DBG
         {
             static uint32_t s_u32LastBemfPrintMs = 0;
@@ -269,7 +273,7 @@ int main(void)
             }
         }
 
-        /* ---- VOFA+ USART3: 全速电�? + 心跳 + RX 日志 ---- */
+        /* ---- VOFA+ USART3: 全速电�?? + 心跳 + RX 日志 ---- */
         if (!Usart3_Vofa_IsTxBusy()) {
             int32_t cur[22];
 
@@ -293,16 +297,16 @@ int main(void)
             }
 
             /* g_i_ix_disp = filt_mA * 10 + 10000, inverse: (disp - 10000) / 10 */
-            cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA �? A */
-            cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA �? A */
-            cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA �? A */
+            cur[0] = (int32_t)(g_i_iu_disp - 10000) / 10;   /* IU mA �?? A */
+            cur[1] = (int32_t)(g_i_iv_disp - 10000) / 10;   /* IV mA �?? A */
+            cur[2] = (int32_t)(g_i_iw_disp - 10000) / 10;   /* IW mA �?? A */
             /* Hall: reconstruct combined from scope bits (g_scope_ha=bit2, hb=bit1, hc=bit0) */
             uint8_t hall = (uint8_t)((g_scope_ha << 2) | (g_scope_hb << 1) | g_scope_hc);
-            cur[3] = (int32_t)hall * 1000;                  /* Hall combined ×1000 �? A */
-            cur[4] = (int32_t)g_scope_ha * 1000;            /* HU ×1000 �? A */
-            cur[5] = (int32_t)g_scope_hb * 1000;            /* HV ×1000 �? A */
-            cur[6] = (int32_t)g_scope_hc * 1000;            /* HW ×1000 �? A */
-            /* BEMF voltage (mV = EMA(raw) × 3300 / 4096, ×1000 �? VOFA+ displays mV) */
+            cur[3] = (int32_t)hall * 1000;                  /* Hall combined ×1000 �?? A */
+            cur[4] = (int32_t)g_scope_ha * 1000;            /* HU ×1000 �?? A */
+            cur[5] = (int32_t)g_scope_hb * 1000;            /* HV ×1000 �?? A */
+            cur[6] = (int32_t)g_scope_hc * 1000;            /* HW ×1000 �?? A */
+            /* BEMF voltage (mV = EMA(raw) × 3300 / 4096, ×1000 �?? VOFA+ displays mV) */
             #define RAW_TO_MV(r) ((int32_t)((int32_t)(r) * 3300 / 4096))
             cur[7]  = RAW_TO_MV((int32_t)s_fEmaM) * 1000;   /* M_BEMF (PA0) mV */
             cur[8]  = RAW_TO_MV((int32_t)s_fEmaU) * 1000;   /* U_BEMF (PA1) mV */

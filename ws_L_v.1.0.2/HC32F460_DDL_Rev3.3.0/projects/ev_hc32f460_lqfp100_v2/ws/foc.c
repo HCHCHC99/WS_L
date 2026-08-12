@@ -79,6 +79,9 @@ volatile float g_foc_vlim_v       = 0.0f;                     /* current voltage
 volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency (Hz) */
 volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
+/* Align calibration (mode 23) */
+volatile float   g_foc_align_id_ma  = (float)FOC_ALIGN_ID_MA;   /* d-axis current during align (mA), Watch tunable */
+volatile int32_t g_foc_align_offset = 0;                        /* recorded encoder electrical-zero count */
 
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live).
  * INMOP-style position PI: Kp = FOC_PI_KP (V/A), Ki = FOC_PI_KI (per-second
@@ -122,6 +125,7 @@ typedef enum {
     FOC_STATE_IDLE     = 0,
     FOC_STATE_IF_START = 1,   /* I-F current-controlled start (synthetic angle) */
     FOC_STATE_RUN      = 2,   /* encoder-angle FOC current loop */
+    FOC_STATE_ALIGN    = 3,   /* standstill electrical alignment (mode 23) */
 } foc_state_t;
 
 static foc_state_t s_state        = FOC_STATE_IDLE;
@@ -135,7 +139,9 @@ static float    s_if_diff_min   = 0.0f;
 static float    s_if_diff_max   = 0.0f;
 static uint32_t s_if_win_cnt    = 0u;
 static uint32_t s_if_good_wins  = 0u;
-static uint32_t s_if_tick       = 0u;
+static uint32_t s_if_tick       = 0u;static int32_t  s_align_last_cnt   = 0;
+static uint32_t s_align_stable_cnt = 0u;
+static uint32_t s_align_hold_cnt   = 0u;
 
 /* PI runtime states (bound to the Watch-tunable configs) */
 static pid_state_t s_pid_id;
@@ -358,6 +364,117 @@ void Foc_StartCurrentLoop(void)
 
     TMR4_PWM_StartOutput();
     g_foc_active = 1u;
+}
+
+/*******************************************************************************
+ * Foc_StartAlign - mode 23: standstill electrical alignment (INMOP-style)
+ *
+ *   Locks the rotor to the d-axis (theta = 0) with a small d-axis current
+ *   (current-controlled, safe for the +-2.5A sensor), waits until the encoder
+ *   count is stable, then records the encoder count as the electrical zero
+ *   (s_align_offset so Foc_CurLoopTheta() == 0). Holds briefly and then
+ *   releases the output automatically.
+ ******************************************************************************/
+void Foc_StartAlign(void)
+{
+    g_foc_fault       = 0u;
+    g_foc_fault_i_ma  = 0.0f;
+    s_oc_cnt          = 0u;
+    g_foc_mode        = FOC_MODE_ALIGN;
+    g_foc_theta_rad   = 0.0f;
+    g_foc_id_ma       = 0.0f;
+    g_foc_iq_ma       = 0.0f;
+    g_foc_vd          = 0.0f;
+    g_foc_vq          = 0.0f;
+
+    s_state            = FOC_STATE_ALIGN;
+    s_align_last_cnt   = (int32_t)g_enc_count;
+    s_align_stable_cnt = 0u;
+    s_align_hold_cnt   = 0u;
+    s_vlim             = 0.0f;
+    s_id_f             = 0.0f;
+    s_iq_f             = 0.0f;
+    g_foc_align_state  = 1u;   /* aligning */
+
+    PID_Reset(&s_pid_id);
+    PID_Reset(&s_pid_iq);
+
+    TMR4_PWM_SetFocMode(FOC_DEADTIME_NS);
+    g_foc_du = 50.0f;
+    g_foc_dv = 50.0f;
+    g_foc_dw = 50.0f;
+    TMR4_PWM_SetDuty3Phase(50.0f, 50.0f, 50.0f);
+    TMR4_PWM_StartOutput();
+    g_foc_active = 1u;
+}
+
+#define FOC_ALIGN_STABLE_CNT  ((uint32_t)FOC_ALIGN_STABLE_MS * FOC_ISR_HZ / 1000u)
+#define FOC_ALIGN_HOLD_CNT    ((uint32_t)FOC_ALIGN_HOLD_MS * FOC_ISR_HZ / 1000u)
+
+/* ALIGN step: d-axis current at theta=0; record encoder zero when rotor still. */
+static void Foc_AlignStep(const stc_i_data_t *pData)
+{
+    const float theta = 0.0f;   /* align on the d-axis (alpha) */
+    float id, iq, vd, vq, valpha, vbeta, du, dv, dw;
+    int32_t cnt;
+
+    if (Foc_OverCurrent(pData)) {
+        Foc_FaultStop(1u);
+        return;
+    }
+
+    /* currents in the dq frame at theta = 0 */
+    Foc_GetDq(pData, theta, &id, &iq);
+    Foc_EmaFilter(&id, &iq);
+    g_foc_id_ma = id * 1000.0f;
+    g_foc_iq_ma = iq * 1000.0f;
+
+    /* Id -> align current (lock d-axis), Iq -> 0 */
+    vd = PID_UpdateUs(&s_pid_id, g_foc_align_id_ma * 0.001f, id, FOC_ISR_DT_US);
+    vq = PID_UpdateUs(&s_pid_iq, 0.0f,                     iq, FOC_ISR_DT_US);
+    g_foc_vd = vd;
+    g_foc_vq = vq;
+
+    Foc_ApplyVoltageEnvelope(&vd, &vq);
+
+    Foc_InvPark(vd, vq, theta, &valpha, &vbeta);
+    Foc_Svpwm(valpha, vbeta, FOC_VBUS_V, &du, &dv, &dw);
+    TMR4_PWM_SetDuty3Phase(du, dv, dw);
+    g_foc_valpha = valpha;
+    g_foc_vbeta  = vbeta;
+    g_foc_du = du;
+    g_foc_dv = dv;
+    g_foc_dw = dw;
+
+    /* Rotor settled? encoder count unchanged for a while -> lock achieved. */
+    if (g_foc_align_state == 1u) {
+        cnt = (int32_t)g_enc_count;
+        if (cnt == s_align_last_cnt) {
+            if (++s_align_stable_cnt >= FOC_ALIGN_STABLE_CNT) {
+                /* Record electrical zero: Foc_CurLoopTheta() == 0 here */
+                s_align_offset     = (int32_t)g_enc_count;
+                g_foc_align_offset = s_align_offset;
+                g_foc_align_state  = 2u;   /* locked */
+                s_align_hold_cnt   = 0u;
+            }
+        } else {
+            s_align_last_cnt   = cnt;
+            s_align_stable_cnt = 0u;
+        }
+    }
+
+    /* Hold the lock briefly, then release output. */
+    if (g_foc_align_state == 2u) {
+        if (++s_align_hold_cnt >= FOC_ALIGN_HOLD_CNT) {
+            g_foc_align_state = 3u;   /* done */
+            g_foc_active      = 0u;
+            TMR4_PWM_EmergencyStop();
+            g_foc_du = 0.0f;
+            g_foc_dv = 0.0f;
+            g_foc_dw = 0.0f;
+            s_state  = FOC_STATE_IDLE;
+        }
+    }
 }
 
 /*******************************************************************************
@@ -627,6 +744,12 @@ void Foc_Isr(const stc_i_data_t *pData)
         g_foc_du = du;
         g_foc_dv = dv;
         g_foc_dw = dw;
+        return;
+    }
+
+    /* --- mode 23: standstill electrical alignment --- */
+    if (g_foc_mode == FOC_MODE_ALIGN) {
+        Foc_AlignStep(pData);
         return;
     }
 

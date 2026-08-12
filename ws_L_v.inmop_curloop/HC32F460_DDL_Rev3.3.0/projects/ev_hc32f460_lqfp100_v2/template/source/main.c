@@ -250,6 +250,17 @@ int main(void)
         }
 #endif
 #if MOTOR_FOC_ENABLE
+        /* Encoder manual-turn pulse counter (set g_enc_dbg_print=1 in Watch) */
+        if (g_enc_dbg_print) {
+            static uint32_t s_last_enc = 0u;
+            uint32_t now_e = tickTimer_GetCount();
+            if ((now_e - s_last_enc) >= 100u) {
+                s_last_enc = now_e;
+                MAIN_D("[ENC] cnt=%d rev=%u\r\n",
+                       (int)g_enc_count, (unsigned)g_enc_rev);
+            }
+        }
+
         /* FOC I-F high-rate burst (100ms x 30) right after hold done */
         if (s_if_burst_armed && g_foc_active && (g_foc_mode == FOC_MODE_CURLOOP)) {
             uint32_t now_b = tickTimer_GetCount();

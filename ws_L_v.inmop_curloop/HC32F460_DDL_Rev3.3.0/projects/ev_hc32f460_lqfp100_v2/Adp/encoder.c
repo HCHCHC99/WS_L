@@ -36,6 +36,7 @@
 
 /* J-Scope observability */
 volatile int32_t  g_enc_count     = 0;
+volatile uint8_t  g_enc_dbg_print = 0;
 volatile float    g_enc_count_f   = 0.0f;  /* float mirror of g_enc_count (JScope friendly) */
 volatile float    g_enc_angle_deg = 0.0f;
 volatile float    g_enc_speed_rpm = 0.0f;

@@ -77,7 +77,7 @@
 /* Align calibration (comm_mode 23) - INMOP-style fixed-voltage d-axis lock */
 #define FOC_ALIGN_VOLT_V     0.15f      /* fixed align voltage (V) along alpha: 0.15V/0.8ohm~0.2A, 0.15V/0.1ohm~1.5A worst case */
 #define FOC_ALIGN_STABLE_MS  300        /* encoder-stable window to declare lock (ms) */
-#define FOC_ALIGN_HOLD_MS    500        /* hold lock before releasing output (ms) */
+#define FOC_ALIGN_HOLD_MS    2000       /* hold lock before releasing output (ms) - long enough to read id/iq */
 #define FOC_OC_LIMIT_A       4.0f        /* over-current trip default (A, per phase; runtime: g_foc_oc_limit_a) */
 #define FOC_CUR_SIGN         1           /* current sign correction (+1/-1) */
 #define FOC_PI_KP            0.05f       /* current PI Kp (V/A) - low-R motor: 100mA needs only ~13mV */

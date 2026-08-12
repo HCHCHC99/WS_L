@@ -266,13 +266,14 @@ int main(void)
             uint32_t now_b = tickTimer_GetCount();
             if ((s_if_burst_last == 0u) || ((now_b - s_if_burst_last) >= 100u)) {
                 s_if_burst_last = now_b;
-                MAIN_D("[FOC][IFB] t=%u diff=%d spd=%d iq=%d cnt=%d rev=%u\r\n",
+                MAIN_D("[FOC][IFB] t=%u diff=%d spd=%d iq=%d cnt=%d rev=%u sweep=%d cHz\r\n",
                        (unsigned)(s_if_burst_cnt * 100u),
                        (int)(g_foc_if_diff_rad * 1000.0f),
                        (int)g_enc_speed_rpm,
                        (int)g_foc_iq_ma,
                        (int)g_enc_count,
-                       (unsigned)g_enc_rev);
+                       (unsigned)g_enc_rev,
+                       (int)g_foc_if_sweep_cHz);
                 if (++s_if_burst_cnt >= 30u) {
                     s_if_burst_armed = 0u;
                 }
@@ -285,12 +286,13 @@ int main(void)
             uint32_t now_ms = tickTimer_GetCount();
             if ((now_ms - s_last_if) >= 1000u) {
                 s_last_if = now_ms;
-                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA diff=%d mrad spd=%d rpm sync=%d\r\n",
+                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA diff=%d mrad spd=%d rpm sync=%d sweep=%d cHz\r\n",
                        (int)(g_foc_if_freq_hz * 100.0f),
                        (int)g_foc_iq_ma,
                        (int)(g_foc_if_diff_rad * 1000.0f),
                        (int)g_enc_speed_rpm,
-                       (int)g_foc_if_sync);
+                       (int)g_foc_if_sync,
+                       (int)g_foc_if_sweep_cHz);
             }
         }
 

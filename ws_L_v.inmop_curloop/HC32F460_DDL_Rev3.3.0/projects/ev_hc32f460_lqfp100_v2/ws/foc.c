@@ -80,6 +80,7 @@ volatile float g_foc_vlim_v       = 0.0f;                     /* current voltage
 /* I-F start observables */
 volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency (Hz) */
 volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
+volatile float   g_foc_if_sweep_cHz = 0.0f;  /* live diff sweep rate (cHz), 100ms window */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
 /* I-F start events for main-loop printing (ISR only sets flag+payload) */
 volatile uint8_t  g_foc_if_evt    = 0u;   /* 1=hold done 2=handover 3=timeout */
@@ -155,6 +156,8 @@ static uint32_t s_if_hold_tick  = 0u;
 static uint8_t  s_if_hold_done  = 0u;
 static float    s_if_last_diff = 0.0f;
 static uint32_t s_if_wrap_cnt  = 0u;
+static uint32_t s_if_sweep_last_wrap = 0u;
+static uint32_t s_if_sweep_last_tick = 0u;
 static uint32_t s_if_good_wins  = 0u;
 static uint32_t s_if_tick       = 0u;
 static int32_t  s_align_last_cnt   = 0;
@@ -369,6 +372,9 @@ void Foc_StartCurrentLoop(void)
     s_if_wrap_cnt     = 0u;
     g_foc_if_evt      = 0u;
     g_foc_if_evt_v4   = 0;
+    g_foc_if_sweep_cHz = 0.0f;
+    s_if_sweep_last_wrap = 0u;
+    s_if_sweep_last_tick = 0u;
     s_if_win_cnt      = 0u;
     s_if_good_wins    = 0u;
     s_if_diff_min     = 0.0f;
@@ -685,6 +691,14 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         if (dd >  FOC_MATH_PI) s_if_wrap_cnt++;
         if (dd < -FOC_MATH_PI) s_if_wrap_cnt++;
         s_if_last_diff = diff;
+    }
+
+    /* live sweep rate (cHz): wraps per 100ms window -> wraps/s * 100 */
+    if ((s_if_tick - s_if_sweep_last_tick) >= (uint32_t)(FOC_ISR_HZ / 10u)) {
+        uint32_t dwrap = s_if_wrap_cnt - s_if_sweep_last_wrap;
+        g_foc_if_sweep_cHz = (float)dwrap * 1000.0f;
+        s_if_sweep_last_wrap = s_if_wrap_cnt;
+        s_if_sweep_last_tick = s_if_tick;
     }
 
     if (g_foc_if_freq_hz >= FOC_IF_SYNC_MIN_HZ) {

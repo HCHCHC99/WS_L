@@ -266,14 +266,16 @@ int main(void)
             uint32_t now_b = tickTimer_GetCount();
             if ((s_if_burst_last == 0u) || ((now_b - s_if_burst_last) >= 100u)) {
                 s_if_burst_last = now_b;
-                MAIN_D("[FOC][IFB] t=%u diff=%d spd=%d iq=%d cnt=%d rev=%u sweep=%d cHz\r\n",
+                MAIN_D("[FOC][IFB] t=%u diff=%d spd=%d iq=%d cnt=%d rev=%u sweep=%d cHz vq=%d vlim=%d mV\r\n",
                        (unsigned)(s_if_burst_cnt * 100u),
                        (int)(g_foc_if_diff_rad * 1000.0f),
                        (int)g_enc_speed_rpm,
                        (int)g_foc_iq_ma,
                        (int)g_enc_count,
                        (unsigned)g_enc_rev,
-                       (int)g_foc_if_sweep_cHz);
+                       (int)g_foc_if_sweep_cHz,
+                       (int)(g_foc_vq * 1000.0f),
+                       (int)(g_foc_vlim_v * 1000.0f));
                 if (++s_if_burst_cnt >= 30u) {
                     s_if_burst_armed = 0u;
                 }
@@ -286,13 +288,29 @@ int main(void)
             uint32_t now_ms = tickTimer_GetCount();
             if ((now_ms - s_last_if) >= 1000u) {
                 s_last_if = now_ms;
-                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA diff=%d mrad spd=%d rpm sync=%d sweep=%d cHz\r\n",
+                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA iqref=%d mA diff=%d mrad spd=%d rpm sync=%d sweep=%d cHz vq=%d vlim=%d mV\r\n",
                        (int)(g_foc_if_freq_hz * 100.0f),
                        (int)g_foc_iq_ma,
+                       (int)g_foc_iq_ref_ma,
                        (int)(g_foc_if_diff_rad * 1000.0f),
                        (int)g_enc_speed_rpm,
                        (int)g_foc_if_sync,
-                       (int)g_foc_if_sweep_cHz);
+                       (int)g_foc_if_sweep_cHz,
+                       (int)(g_foc_vq * 1000.0f),
+                       (int)(g_foc_vlim_v * 1000.0f));
+            }
+        }
+
+        /* FOC open-loop status (1s): speed sign/value tells the field direction */
+        if (g_foc_active && (g_foc_mode == FOC_MODE_OPENLOOP)) {
+            static uint32_t s_last_ol = 0u;
+            uint32_t now_ol = tickTimer_GetCount();
+            if ((now_ol - s_last_ol) >= 1000u) {
+                s_last_ol = now_ol;
+                MAIN_D("[FOC][OL] spd=%d rpm theta=%d mrad volt=%d mV\r\n",
+                       (int)g_enc_speed_rpm,
+                       (int)(g_foc_theta_rad * 1000.0f),
+                       (int)(g_foc_openloop_volt_v * 1000.0f));
             }
         }
 
@@ -313,9 +331,10 @@ int main(void)
                        (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3);
                 break;
             case 3u:
-                MAIN_D("[FOC][IF] TIMEOUT freq=%d cHz iq=%d mA diff=%d mrad sweep=%d cHz\r\n",
+                MAIN_D("[FOC][IF] TIMEOUT freq=%d cHz iq=%d mA diff=%d mrad sweep=%d cHz vq=%d vlim=%d mV\r\n",
                        (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3,
-                       (int)g_foc_if_evt_v4);
+                       (int)g_foc_if_evt_v4,
+                       (int)(g_foc_vq * 1000.0f), (int)(g_foc_vlim_v * 1000.0f));
                 break;
             default:
                 break;

@@ -81,6 +81,10 @@ extern volatile float    g_foc_if_freq_hz;   /* current I-F electrical frequency
 extern volatile float    g_foc_if_diff_rad;  /* encoder-elec angle - synthetic angle (rad) */
 extern volatile float    g_foc_if_sweep_cHz; /* live diff sweep rate (cHz), 100ms window */
 extern volatile float    g_foc_if_hold_iq_ma; /* I-F hold Iq threshold (mA), Watch tunable */
+extern volatile float    g_foc_if_sync_band_rad; /* sync window band (rad), Watch tunable */
+extern volatile uint32_t g_foc_if_sync_win_cnt;  /* sync window length (samples @20k), Watch tunable */
+extern volatile uint32_t g_foc_if_sync_good_wins;/* consecutive good windows required, Watch tunable */
+extern volatile float    g_foc_if_lock_diff_rad; /* lock offset latched while aligned in hold (rad) */
 extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */extern volatile uint8_t  g_foc_if_evt;       /* 1=hold done 2=handover 3=timeout */
 extern volatile int32_t  g_foc_if_evt_v1;
 extern volatile int32_t  g_foc_if_evt_v2;

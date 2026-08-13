@@ -82,6 +82,10 @@ volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency
 volatile float   g_foc_if_diff_rad = 0.0f;   /* encoder-elec angle - synthetic angle (rad) */
 volatile float   g_foc_if_sweep_cHz = 0.0f;  /* live diff sweep rate (cHz), 100ms window */
 volatile float   g_foc_if_hold_iq_ma = (float)FOC_IF_HOLD_IQ_MA; /* hold threshold (mA), Watch tunable */
+volatile float   g_foc_if_sync_band_rad = FOC_IF_SYNC_BAND_RAD;   /* sync window band (rad), Watch tunable */
+volatile uint32_t g_foc_if_sync_win_cnt = FOC_IF_SYNC_WIN_CNT;    /* sync window length (samples @20k), Watch tunable */
+volatile uint32_t g_foc_if_sync_good_wins = FOC_IF_SYNC_GOOD_WINS;/* consecutive good windows required, Watch tunable */
+volatile float   g_foc_if_lock_diff_rad = 0.0f;                   /* lock offset latched while aligned in hold (rad) */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
 /* I-F start events for main-loop printing (ISR only sets flag+payload) */
 volatile uint8_t  g_foc_if_evt    = 0u;   /* 1=hold done 2=handover 3=timeout */
@@ -380,6 +384,7 @@ void Foc_StartCurrentLoop(void)
     s_if_sweep_last_tick = 0u;
     s_if_diff_unwrapped = 0.0f;
     s_if_diff_unwrapped_valid = 0u;
+   g_foc_if_lock_diff_rad = 0.0f;
     s_if_win_cnt      = 0u;
     s_if_good_wins    = 0u;
     s_if_diff_min     = 0.0f;
@@ -707,6 +712,17 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         }
     }
 
+    /* Lock reference: while the synthetic frequency is still 0 the rotor is
+     * aligned to the held current vector, so latch that angle offset as the
+     * sync baseline. The sync band is then measured RELATIVE to this offset:
+     * a locked rotor keeps diff near a constant, not near absolute zero.
+     */
+    if (!s_if_hold_done) {
+        g_foc_if_lock_diff_rad = diff;
+        s_if_diff_unwrapped = 0.0f;
+        s_if_diff_unwrapped_valid = 1u;
+    }
+
     /* live sweep rate (cHz): wraps per 100ms window -> wraps/s * 100 */
     if ((s_if_tick - s_if_sweep_last_tick) >= (uint32_t)(FOC_ISR_HZ / 10u)) {
         uint32_t dwrap = s_if_wrap_cnt - s_if_sweep_last_wrap;
@@ -716,6 +732,14 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     }
 
     if (g_foc_if_freq_hz >= FOC_IF_SYNC_MIN_HZ) {
+        float    band      = g_foc_if_sync_band_rad;
+        uint32_t win_cnt   = g_foc_if_sync_win_cnt;
+        uint32_t good_wins = g_foc_if_sync_good_wins;
+
+        if (band < 0.01f)    band = 0.01f;
+        if (win_cnt == 0u)   win_cnt = 1u;
+        if (good_wins == 0u) good_wins = 1u;
+
         if (s_if_win_cnt == 0u) {
             s_if_diff_min = s_if_diff_unwrapped;
             s_if_diff_max = s_if_diff_unwrapped;
@@ -724,9 +748,9 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
             if (s_if_diff_unwrapped > s_if_diff_max) s_if_diff_max = s_if_diff_unwrapped;
         }
         s_if_win_cnt++;
-        if (s_if_win_cnt >= FOC_IF_SYNC_WIN_CNT) {
-            if ((s_if_diff_max - s_if_diff_min) < FOC_IF_SYNC_BAND_RAD) {
-                if (++s_if_good_wins >= FOC_IF_SYNC_GOOD_WINS) {
+        if (s_if_win_cnt >= win_cnt) {
+            if ((s_if_diff_max - s_if_diff_min) < band) {
+                if (++s_if_good_wins >= good_wins) {
                     Foc_IfHandover(pData);
                     return;
                 }

@@ -88,9 +88,9 @@
 #define FOC_IF_HOLD_MAX_MS   5000       /* max hold time (ms) before forcing the ramp regardless */
 #define FOC_IF_FREQ_RAMP_HZ_S   1.0f     /* synthetic frequency ramp (Hz/s) - slower = rotor can follow */
 #define FOC_IF_SYNC_MIN_HZ      2.0f     /* min frequency before sync detection */
-#define FOC_IF_SYNC_WIN_CNT     2000u    /* sync window length (samples, 100ms @20k) */
-#define FOC_IF_SYNC_BAND_RAD    0.10f    /* allowed angle-diff band per window (rad) */
-#define FOC_IF_SYNC_GOOD_WINS   2u       /* consecutive good windows required */
+#define FOC_IF_SYNC_WIN_CNT     2000u    /* sync window length (samples @20k, default 2000=100ms; runtime g_foc_if_sync_win_cnt Watch tunable) */
+#define FOC_IF_SYNC_BAND_RAD    0.10f    /* allowed angle-diff band per window (rad, relative to hold lock offset; runtime g_foc_if_sync_band_rad Watch tunable) */
+#define FOC_IF_SYNC_GOOD_WINS   2u       /* consecutive good windows required (runtime g_foc_if_sync_good_wins Watch tunable) */
 #define FOC_IF_TIMEOUT_MS       15000u   /* start timeout -> fault code 2 */
 /* Align calibration (comm_mode 23) - INMOP-style two-step (beta -> alpha) FIXED voltage */
 #define FOC_ALIGN_VOLT_V     0.4f       /* fixed align voltage (V): 0.4V/(R=0.1 + loop R) ~ 2.5-4A -> ~31mNm lock torque (< OC 5.5A), Watch tunable */

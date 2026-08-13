@@ -464,7 +464,8 @@ void Foc_StartAlign(void)
  *   step2 (alpha): fixed voltage along theta=0 deg; once the encoder count is
  *                  stable for FOC_ALIGN_STABLE_MS the rotor is locked on the
  *                  d-axis and the encoder count is recorded as the zero.
- * Current = V/R (0.4V / 0.15ohm ~ 2.7A, within OC 4A); OC still protects.
+ * Current = V/R (0.4V / 0.1ohm -> ~4A worst case, measured ~2.5A including
+ * driver/wire resistance; well within OC 5.5A). OC still protects.
  * The measured id/iq during step2 reveal the current-mapping rotation. */
 static void Foc_AlignStep(const stc_i_data_t *pData)
 {

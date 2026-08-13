@@ -35,7 +35,7 @@ param(
     [float]$VrampVS                            = 0.5,
     [float]$HoldIqMa                           = 800,
     [float]$Kp                                 = 0.1,
-    [float]$Ki                                 = 100,
+    [float]$Ki                                 = 240,
     [float]$OutputMaxV                         = 1.0,
     [float]$OlFreqHz                           = 5.0,
     [float]$OlVoltV                            = 0.4,

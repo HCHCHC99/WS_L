@@ -47,6 +47,7 @@ except Exception:
     pass
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+HISTORY_FILE = Path(__file__).resolve().parent / "history.txt"
 
 PHASE_NAMES = {0: "idle", 1: "hold", 2: "ramp/sync", 3: "run", 4: "align"}
 MODE_NAMES = {0: "停止", 1: "开环", 2: "电流环", 3: "对齐"}
@@ -180,7 +181,7 @@ class RttParser:
 # ======================================================================
 
 class DataHub:
-    def __init__(self, max_history=500, max_log=2000):
+    def __init__(self, max_history=100, max_log=2000):
         self.lock = threading.Lock()
         self.seq = 0
         self.latest = None
@@ -188,6 +189,7 @@ class DataHub:
         self.log_lines = deque(maxlen=max_log)
         self.log_seq = 0
         self.start_time = time.time()
+        self._hf = None
         self.frames_total = 0
         self.status = "starting"
         self.detail = ""
@@ -199,8 +201,36 @@ class DataHub:
             self.latest = frame
             self.frames_total += 1
             self.status = "running"
+            self._history_append(frame)
         if raw:
             self.log(raw)
+
+    def _history_append(self, frame: FocFrame):
+        """消费过的帧追加写入 history.txt（页面退出时由 /clear_history 清空）。"""
+        try:
+            ts = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                  + f".{int(time.time() * 1000) % 1000:03d}")
+            line = ts + " MOTF," + ",".join(str(x) for x in frame.to_list()) + "\n"
+            if self._hf is None:
+                self._hf = open(HISTORY_FILE, "a", encoding="utf-8")
+            self._hf.write(line)
+            self._hf.flush()
+        except Exception:
+            pass
+
+    def clear_history(self):
+        """清空 history.txt（页面退出时调用）。"""
+        with self.lock:
+            if self._hf is not None:
+                try:
+                    self._hf.close()
+                except Exception:
+                    pass
+                self._hf = None
+        try:
+            HISTORY_FILE.write_text("", encoding="utf-8")
+        except Exception:
+            pass
 
     def log(self, text: str):
         with self.lock:
@@ -529,6 +559,9 @@ class MotorHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_POST(self):
+        self.do_GET()
+
     def do_GET(self):
         path = self.path.split("?")[0]
         if path.startswith("/data"):
@@ -590,6 +623,11 @@ class MotorHandler(BaseHTTPRequestHandler):
         if path.startswith("/clearlogs"):
             with self.hub.lock:
                 self.hub.log_lines.clear()
+            body = json.dumps({"ok": True}).encode("utf-8")
+            self._send(200, "application/json; charset=utf-8", body)
+            return
+        if path.startswith("/clear_history"):
+            self.hub.clear_history()
             body = json.dumps({"ok": True}).encode("utf-8")
             self._send(200, "application/json; charset=utf-8", body)
             return

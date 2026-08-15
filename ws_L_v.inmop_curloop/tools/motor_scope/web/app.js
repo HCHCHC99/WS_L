@@ -46,6 +46,7 @@ async function poll() {
     const d = await r.json();
     hub.status = d.status; hub.detail = d.detail || "--"; hub.fps = d.fps || 0;
     if (d.last_age_ms !== undefined) hub.lastAgeMs = d.last_age_ms;
+    if (d.seq < hub.lastSeq) hub.lastSeq = 0;   // 服务器重启（seq 倒退）：重新对齐
     if (d.latest) {
       hub.latest = {
         mode: d.latest[0], phase: d.latest[1], rotor: d.latest[2],
@@ -126,9 +127,9 @@ setInterval(health, 1000);
 async function doReconnect(ch) {
   const url = "/reconnect" + (ch !== undefined && ch !== null ? "?channel=" + ch : "");
   try { await fetch(url); } catch (e) {}
-  hub.lastSeq = 0;
+  // 注意：lastSeq（帧消费游标）不重置——已消费的帧绝不重发、不重新处理
   hub.lastLogSeq = 0;
-  hub.logs = [];        // 重连后 seq 可能重置，重新对齐
+  hub.logs = [];
   scopeClear();
   hub.latest = null;
   health();
@@ -795,6 +796,13 @@ document.getElementById("logClear").addEventListener("click", async () => {
   hub.logs = [];
   hub.lastLogSeq = 0;
   renderLog();
+});
+
+/* 页面退出：自动清空 history.txt（sendBeacon 在 unload 时也能发出） */
+window.addEventListener("pagehide", () => {
+  try { navigator.sendBeacon("/clear_history"); } catch (e) {
+    fetch("/clear_history").catch(() => {});
+  }
 });
 
 /* ================= 主循环 ================= */

@@ -1036,10 +1036,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
  *
  * 帧格式（文本）：
  *   MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
- *        <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,
- *        <rotor_mech_mrad>
- *   rotor_mrad      = 折返电角度（控制/波形用）
- *   rotor_mech_mrad = 连续机械角（跨圈不折返，动画用；g_enc_count 连续累计）
+ *        <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>
  ******************************************************************************/
 #ifndef FOC_RTT_ENABLE
 #define FOC_RTT_ENABLE      1u
@@ -1068,7 +1065,6 @@ typedef struct __attribute__((packed)) {
     int32_t  spd_rpm;      /* g_enc_speed_rpm */
     int32_t  diff_mrad;    /* g_foc_if_diff_rad * 1000 */
     int32_t  freq_cHz;     /* g_foc_if_freq_hz * 100 */
-    int32_t  rotor_mech_mrad; /* 连续机械角 mrad（跨圈，动画用） */
     uint8_t  mode;         /* FOC_MODE_* */
     uint8_t  phase;        /* g_foc_phase */
     uint8_t  sync;         /* g_foc_if_sync */
@@ -1108,10 +1104,6 @@ static void Foc_RttIsrSend(void)
     g_foc_if_rotor_rad = Foc_RotorAngleFromEncoderRad();
     {
         float rotor_rad = g_foc_if_rotor_rad;
-        /* 连续机械角：g_enc_count 连续累计（Z 不复位），直接换算，跨圈不折返 */
-        int32_t rotor_mech_mrad = (int32_t)(
-            (float)g_enc_count * (float)g_foc_enc_dir
-            * (FOC_MATH_2PI / (float)ENCODER_CPR) * 1000.0f);
 
 #if FOC_RTT_RATE_HZ > 2000u
     {
@@ -1128,7 +1120,6 @@ static void Foc_RttIsrSend(void)
         fr.spd_rpm    = (int32_t)g_enc_speed_rpm;
         fr.diff_mrad  = (int32_t)(g_foc_if_diff_rad * 1000.0f);
         fr.freq_cHz   = (int32_t)(g_foc_if_freq_hz * 100.0f);
-        fr.rotor_mech_mrad = rotor_mech_mrad;
         fr.mode       = g_foc_mode;
         fr.phase      = g_foc_phase;
         fr.sync       = g_foc_if_sync;
@@ -1141,7 +1132,7 @@ static void Foc_RttIsrSend(void)
         int  n;
 
         n = snprintf(buf, sizeof(buf),
-            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u,%d\r\n",
+            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u\r\n",
             (unsigned)g_foc_mode, (unsigned)g_foc_phase,
             (int)(rotor_rad * 1000.0f),
             (int)(g_foc_theta_rad  * 1000.0f),
@@ -1151,8 +1142,7 @@ static void Foc_RttIsrSend(void)
             (unsigned)g_foc_if_sync,
             (int)(g_foc_if_diff_rad * 1000.0f),
             (int)(g_foc_if_freq_hz * 100.0f),
-            (unsigned)ms,
-            rotor_mech_mrad);
+            (unsigned)ms);
         if (n > 0) {
             SEGGER_RTT_Write(FOC_RTT_CH, buf, (unsigned)n);
         }

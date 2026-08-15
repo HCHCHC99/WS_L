@@ -1,7 +1,7 @@
 "use strict";
 
 /* ================= 常量 ================= */
-const POLL_MS = 50;
+const POLL_MS = 15;             // 轮询周期：越短则数据越鲜、外推间隙越小（快速扭动不过冲）
 const STALE_MS = 400;            // 超过该时长没有新帧 => 数据中断，转子冻结（不得用旧转速假装转动）
 const POLE_PAIRS = 10;          // 与 motor_config.h FOC_POLE_PAIRS 一致
 const DEG = Math.PI / 180;
@@ -190,8 +190,8 @@ function advance(now) {
   const tLast = s.t[iLast], tPrev = s.t[iPrev];
   const span = tLast - tPrev;
 
-  // 外推窗口：距最新数据点收到的时间（≤轮询周期）；数据中断则冻结
-  const ext = stale ? 0 : Math.min((Date.now() - (hub.lastFrameWall || Date.now())) / 1000, 0.06);
+  // 外推窗口：距最新数据点收到的时间（≤轮询周期，上限 20ms 避免快速瞬态过冲）；数据中断则冻结
+  const ext = stale ? 0 : Math.min((Date.now() - (hub.lastFrameWall || Date.now())) / 1000, 0.02);
 
   let rot = s.rotorDeg[iLast];
   let th = s.thetaDeg[iLast];

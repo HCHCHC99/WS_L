@@ -17,6 +17,17 @@ main { display: grid; grid-template-columns: 560px 1fr; gap: 16px; padding: 16px
 .legend { display: flex; gap: 14px; font-size: 12px; color: #9fb0c0; margin-top: 8px; justify-content: center; font-family: Consolas, monospace; flex-wrap: wrap; }
 .legend i { display: inline-block; width: 16px; height: 4px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
 .right-col { display: flex; flex-direction: column; gap: 14px; }
+.conn-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.conn-row label { color: #9fb0c0; font-size: 13px; }
+.conn-row input { width: 64px; background: #0c1116; border: 1px solid #2a3643; color: #e8eef4; border-radius: 6px; padding: 6px 8px; font-family: Consolas, monospace; font-size: 13px; }
+.conn-row button { background: #18212b; border: 1px solid #2a3643; color: #c8d3de; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.conn-row button:hover { border-color: #3d4d5e; }
+.conn-row button.btn-primary { background: #1d4ed8; border-color: #2563eb; color: #fff; }
+.conn-row button.btn-primary:hover { background: #2563eb; }
+.conn-grid { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; font-size: 13px; }
+.conn-grid .k { color: #7c8794; }
+.conn-grid .v { text-align: right; font-family: Consolas, monospace; color: #e8eef4; font-weight: 600; }
+.hint { margin-top: 8px; font-size: 12px; color: #f59e0b; min-height: 14px; font-family: Consolas, monospace; }
 .gauges { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 #rpmGauge { width: 260px; height: 170px; }
 .num-grid { flex: 1; min-width: 250px; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13px; align-content: start; }

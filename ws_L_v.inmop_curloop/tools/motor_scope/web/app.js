@@ -77,6 +77,65 @@ async function poll() {
 }
 setInterval(poll, POLL_MS);
 
+/* ================= 连接健康检查 / 重连 ================= */
+async function health() {
+  try {
+    const r = await fetch("/health?_=" + Date.now());
+    const d = await r.json();
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    let stText = d.status;
+    if (d.status === "running") stText += " ✅";
+    else if (d.status === "error") stText += " ❌";
+    else stText += " ⏳";
+    set("cStatus", stText);
+    set("cDetail", d.detail || "--");
+    set("cChannel", d.channel !== null && d.channel !== undefined ? String(d.channel) : "--");
+    set("cFrames", d.frames);
+    set("cAge", d.last_age_ms < 0 ? "--" : d.last_age_ms.toFixed(0) + " ms");
+    set("cFps", d.fps.toFixed(0) + " fps");
+    const dot = document.getElementById("connDot");
+    dot.className = "dot " + (d.status === "running" ? "good" : d.status === "error" ? "bad" : "");
+    document.getElementById("connText").textContent =
+      d.status === "running" ? "实时连接" : d.status === "error" ? "连接异常" : "连接中…";
+    const hint = document.getElementById("cHint");
+    if (d.status === "running" && d.last_age_ms >= 0) {
+      hint.textContent = "收到 RTT 帧，动画应已更新。若画面不动，检查目标是否在 mode 22 运行。";
+      hint.style.color = "#4ade80";
+    } else if (d.status === "running") {
+      hint.textContent = "已连接但尚未收到帧：确认目标在运行、固件含 MOTF 发送（通道 " +
+        (d.channel ?? "?") + "）。";
+      hint.style.color = "#f59e0b";
+    } else if (d.status === "error") {
+      hint.textContent = "连接异常：" + (d.detail || "");
+      hint.style.color = "#ef4444";
+    } else {
+      hint.textContent = "正在连接 J-Link / 搜索 RTT 控制块…";
+      hint.style.color = "#f59e0b";
+    }
+  } catch (e) { /* 页面刚打开或服务器重启，忽略 */ }
+}
+setInterval(health, 1000);
+
+async function doReconnect(ch) {
+  const url = "/reconnect" + (ch !== undefined && ch !== null ? "?channel=" + ch : "");
+  try { await fetch(url); } catch (e) {}
+  hub.lastSeq = 0;        // 重连后 seq 可能重置，重新对齐
+  hub.curHist = [];
+  hub.latest = null;
+  health();
+}
+
+document.getElementById("chApply").addEventListener("click", () => {
+  const ch = parseInt(document.getElementById("chInput").value, 10);
+  if (isNaN(ch)) { return; }
+  doReconnect(ch);
+});
+document.getElementById("reconnBtn").addEventListener("click", () => {
+  const raw = document.getElementById("chInput").value;
+  const ch = parseInt(raw, 10);
+  doReconnect(isNaN(ch) ? undefined : ch);
+});
+
 function anchorFromFrame(f) {
   visRotorMech = ((f[2] / 1000) * RAD2DEG) / POLE_PAIRS;   // 转子机械角
   visCtrlElec = (f[3] / 1000) * RAD2DEG;                   // 控制电角度

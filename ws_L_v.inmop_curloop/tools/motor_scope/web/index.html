@@ -38,6 +38,25 @@
 
   <section class="right-col">
     <div class="card">
+      <h2>&#128268; 连接 / RTT 通道</h2>
+      <div class="conn-row">
+        <label for="chInput">通道</label>
+        <input id="chInput" type="number" min="0" max="15" value="6">
+        <button id="chApply" title="切换到指定通道并重连">应用</button>
+        <button id="reconnBtn" class="btn-primary" title="重新连接 J-Link 并重找 RTT 控制块">刷新 / 重连</button>
+      </div>
+      <div class="conn-grid">
+        <div class="k">状态</div><div class="v" id="cStatus">--</div>
+        <div class="k">数据源</div><div class="v" id="cDetail">--</div>
+        <div class="k">RTT 通道</div><div class="v" id="cChannel">--</div>
+        <div class="k">已收帧数</div><div class="v" id="cFrames">--</div>
+        <div class="k">最新帧年龄</div><div class="v" id="cAge">--</div>
+        <div class="k">帧率</div><div class="v" id="cFps">--</div>
+      </div>
+      <div class="hint" id="cHint"></div>
+    </div>
+
+    <div class="card">
       <h2>&#9969; 仪表</h2>
       <div class="gauges">
         <canvas id="rpmGauge" width="260" height="170"></canvas>

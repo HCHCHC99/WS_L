@@ -1135,12 +1135,14 @@ void Foc_Isr(const stc_i_data_t *pData)
     float theta, valpha, vbeta;
     float du, dv, dw;
 
+#if FOC_RTT_ENABLE
+    /* 心跳：无论电机是否运行都按 1kHz 上报，便于上位机确认连接/通道 */
+    Foc_RttIsrSend();
+#endif
+
     if (!g_foc_active) {
         return;
     }
-#if FOC_RTT_ENABLE
-    Foc_RttIsrSend();
-#endif
 
     Foc_ClampOpenLoopVolt();   /* open-loop voltage hard cap (overheat protection) */
 

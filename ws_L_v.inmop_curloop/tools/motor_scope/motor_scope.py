@@ -185,6 +185,12 @@ class DataHub:
         with self.lock:
             self.log_lines.append(text)
 
+    def last_frame_age_ms(self):
+        with self.lock:
+            if not self.history:
+                return -1.0
+            return (time.time() - self.history[-1][1]) * 1000.0
+
     def set_status(self, status: str, detail: str = ""):
         with self.lock:
             self.status = status
@@ -315,7 +321,9 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
 # ======================================================================
 
 class JLinkRttSource:
-    def __init__(self, device: str, speed_khz: int = 4000, channel: int = 6):
+    def __init__(self, device: str, speed_khz: int = 4000, channel: int = 6,
+                 rtt_addr: int = 0, ram_base: int = 0x1FFF8000,
+                 ram_size: int = 0x2F000):
         try:
             import pylink  # type: ignore
         except Exception as exc:
@@ -327,10 +335,47 @@ class JLinkRttSource:
         self.device = device
         self.speed_khz = speed_khz
         self.channel = channel
+        self.rtt_addr = rtt_addr
+        self.ram_base = ram_base
+        self.ram_size = ram_size
         self.jl = None
+        self._lock = threading.Lock()
+        self.reconnect_evt = threading.Event()
 
     def describe(self):
         return f"J-Link RTT ch{self.channel} @ {self.device} ({self.speed_khz} kHz)"
+
+    def set_channel(self, channel: int):
+        with self._lock:
+            self.channel = int(channel)
+        self.reconnect_evt.set()
+
+    def close(self):
+        with self._lock:
+            jl = self.jl
+            self.jl = None
+        if jl is not None:
+            try:
+                jl.close()
+            except Exception:
+                pass
+
+    def _scan_rtt_cb(self, jl):
+        """RAM 魔数扫描：找 "SEGGER RTT\0"。
+        HC32F460 默认 RAM 0x1FFF8000 ~ 0x20026FFF (188K=0x2F000)，
+        可用 --rtt-ram-base / --rtt-ram-size 覆盖。"""
+        magic = b"SEGGER RTT\x00"
+        chunk = 0x4000
+        try:
+            for off in range(0, self.ram_size, chunk):
+                data = bytes(jl.memory_read(self.ram_base + off,
+                                            min(chunk, self.ram_size - off)))
+                idx = data.find(magic)
+                if idx >= 0:
+                    return self.ram_base + off + idx
+        except Exception:
+            pass
+        return 0
 
     def open(self):
         jl = self.pylink.JLink()
@@ -338,11 +383,43 @@ class JLinkRttSource:
         print(f"[J-Link] SN={jl.serial_number} 固件={jl.firmware_version}")
         jl.connect(self.device, speed=self.speed_khz, verbose=True)
         try:
-            jl.go()             # 确保目标处于运行态（attach 可能停核，避免打断正在跑的电机）
+            if jl.halted():     # attach 可能停核；尽量恢复运行（部分 DLL 支持 exec Go）
+                jl.exec_command("Go")
         except Exception:
             pass
-        jl.rtt_start()          # 自动搜索 RTT 控制块
-        print(f"[J-Link] RTT 控制块已定位，读取上行通道 {self.channel} ...")
+        addr = self.rtt_addr
+        auto_ok = False
+        if not addr:
+            try:
+                jl.rtt_start()          # J-Link DLL 自动搜索
+                jl.rtt_get_num_up_buffers()
+                auto_ok = True
+            except Exception:
+                addr = self._scan_rtt_cb(jl)
+                if not addr:
+                    raise RuntimeError(
+                        "未找到 RTT 控制块。请确认：1) 目标在运行且固件包含 SEGGER RTT；"
+                        "2) 在 Keil 里看 _SEGGER_RTT 的地址，用 --rtt-addr 0x地址 指定")
+                print(f"[J-Link] 自动搜索失败，RAM 扫描定位到 RTT 控制块 @ 0x{addr:08X}")
+                try:
+                    jl.rtt_stop()       # 复位 RTT 状态，否则后续指定地址会被忽略
+                except Exception:
+                    pass
+        if addr and not auto_ok:
+            jl.rtt_start(block_address=addr)
+        nbuf = None
+        for _ in range(5):          # DLL 读取 CB 需要一点时间，重试几次
+            try:
+                nbuf = jl.rtt_get_num_up_buffers()
+                break
+            except Exception:
+                time.sleep(0.1)
+        if nbuf is None:
+            raise RuntimeError("RTT 控制块已定位但读取失败，请重试")
+        if nbuf < (self.channel + 1):
+            print(f"[J-Link] 警告：固件只有 {nbuf} 个上行通道（无 ch{self.channel}）。"
+                  "请确认已烧录新固件（SEGGER_RTT_MAX_NUM_UP_BUFFERS=7）")
+        print(f"[J-Link] RTT 控制块已定位（{nbuf} 个上行通道），读取通道 {self.channel} ...")
         self.jl = jl
 
     def next_chunk(self) -> bytes:
@@ -350,25 +427,34 @@ class JLinkRttSource:
 
 
 def jlink_loop(hub: DataHub, src: JLinkRttSource):
-    try:
-        src.open()
-    except Exception as exc:
-        hub.set_status("error", f"J-Link 连接失败: {exc}")
-        print(f"[MotorScope] {exc}")
-        return
-    hub.set_status("running", src.describe())
-    parser = RttParser()
     while True:
         try:
-            chunk = src.next_chunk()
+            src.open()
         except Exception as exc:
-            hub.set_status("error", f"RTT 读取失败: {exc}")
-            time.sleep(0.5)
+            hub.set_status("error", f"J-Link 连接失败: {exc}")
+            print(f"[MotorScope] {exc}")
+            src.reconnect_evt.wait(timeout=3.0)
+            src.reconnect_evt.clear()
             continue
-        if not chunk:
-            time.sleep(0.003)
-            continue
-        parser.feed(chunk, hub.push)
+        hub.set_status("running", src.describe())
+        parser = RttParser()
+        while True:
+            if src.reconnect_evt.is_set():
+                src.reconnect_evt.clear()
+                src.close()
+                break
+            try:
+                chunk = src.next_chunk()
+            except Exception as exc:
+                hub.set_status("error", f"RTT 读取失败: {exc}")
+                print(f"[MotorScope] {exc}")
+                src.close()
+                break
+            if not chunk:
+                time.sleep(0.003)
+                continue
+            parser.feed(chunk, hub.push)
+        time.sleep(0.2)
 
 
 # ======================================================================
@@ -377,6 +463,7 @@ def jlink_loop(hub: DataHub, src: JLinkRttSource):
 
 class MotorHandler(BaseHTTPRequestHandler):
     hub: DataHub = None
+    src = None
 
     def log_message(self, *args):
         pass
@@ -399,6 +486,46 @@ class MotorHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     since = 0
             body = json.dumps(self.hub.snapshot(since)).encode("utf-8")
+            self._send(200, "application/json; charset=utf-8", body)
+            return
+        if path.startswith("/health"):
+            ch = getattr(self.src, "channel", None) if self.src is not None else None
+            with self.hub.lock:
+                now = time.time()
+                age = -1.0
+                if self.hub.history:
+                    age = (now - self.hub.history[-1][1]) * 1000.0
+                status = self.hub.status
+                detail = self.hub.detail
+                frames = self.hub.frames_total
+                seq = self.hub.seq
+                fps = self.hub.frames_total / max(now - self.hub.start_time, 1e-6)
+                uptime = now - self.hub.start_time
+            body = json.dumps({
+                "ok": True,
+                "status": status,
+                "detail": detail,
+                "channel": ch,
+                "frames": frames,
+                "seq": seq,
+                "fps": round(fps, 1),
+                "last_age_ms": round(age, 1),
+                "uptime": round(uptime, 1),
+            }).encode("utf-8")
+            self._send(200, "application/json; charset=utf-8", body)
+            return
+        if path.startswith("/reconnect"):
+            ch = None
+            if "channel=" in self.path:
+                try:
+                    ch = int(self.path.split("channel=")[1].split("&")[0])
+                except ValueError:
+                    ch = None
+            if (self.src is not None and hasattr(self.src, "set_channel")
+                    and ch is not None):
+                self.src.set_channel(ch)
+                self.hub.set_status("connecting", f"重连中 ch{ch} ...")
+            body = json.dumps({"ok": True, "channel": ch}).encode("utf-8")
             self._send(200, "application/json; charset=utf-8", body)
             return
         rel = "index.html" if path in ("/", "/index.html") else path.lstrip("/")
@@ -426,6 +553,12 @@ def main():
     ap.add_argument("--device", default="HC32F460")
     ap.add_argument("--speed-khz", type=int, default=4000)
     ap.add_argument("--channel", type=int, default=6, help="RTT 上行通道号")
+    ap.add_argument("--rtt-addr", type=lambda x: int(x, 0), default=0,
+                    help="RTT 控制块地址（十六进制）；0 = 自动搜索")
+    ap.add_argument("--rtt-ram-base", type=lambda x: int(x, 0), default=0x1FFF8000,
+                    help="RAM 起始地址（用于扫描，HC32F460 默认 0x1FFF8000）")
+    ap.add_argument("--rtt-ram-size", type=lambda x: int(x, 0), default=0x2F000,
+                    help="RAM 大小（用于扫描，HC32F460 默认 0x2F000）")
     ap.add_argument("--rate", type=int, default=200, help="仿真采样率 Hz")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--no-browser", action="store_true")
@@ -442,7 +575,8 @@ def main():
 
     hub = DataHub()
     if args.mode == "jlink":
-        src = JLinkRttSource(args.device, args.speed_khz, args.channel)
+        src = JLinkRttSource(args.device, args.speed_khz, args.channel,
+                             args.rtt_addr, args.rtt_ram_base, args.rtt_ram_size)
         thread = threading.Thread(target=jlink_loop, args=(hub, src), daemon=True)
     else:
         src = SimFoc(args.rate)
@@ -451,6 +585,7 @@ def main():
     thread.start()
 
     MotorHandler.hub = hub
+    MotorHandler.src = src
     try:
         httpd = ThreadingHTTPServer(("127.0.0.1", args.port), MotorHandler)
     except OSError as exc:

@@ -1127,6 +1127,7 @@ static void Foc_RttIsrSend(void)
 }
 #endif /* FOC_RTT_ENABLE */
 
+/*******************************************************************************
  * Foc_Isr - 20 kHz ISR callback (ADC1 EOCB, second callback slot)
  ******************************************************************************/
 void Foc_Isr(const stc_i_data_t *pData)

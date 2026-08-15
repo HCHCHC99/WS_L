@@ -325,8 +325,11 @@ class SimFoc:
             th = self._last_theta + 2 * math.pi * freq * dt
             th %= 2 * math.pi
             self._last_theta = th
-            # 转子滞后于合成角，滞后量随时间收敛
-            lag = max(0.05, 1.2 * (1 - (t - 2.5) / 5.0))
+            # 转子滞后于合成角：滞后量从 0 起呈铃形（先增大后收敛），
+            # 避免 hold->ramp 切换时转子角突变（否则星星会跳一下）
+            ramp_t = t - 2.5
+            lag = 1.2 * math.sin(min(1.0, ramp_t / 5.5) * math.pi)
+            lag = max(0.05, lag)
             rotor = th - lag
             rotor %= 2 * math.pi
             f.theta_mrad = th * 1000.0

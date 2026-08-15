@@ -166,7 +166,17 @@ function updateStatus() {
 }
 
 /* ================= 显示角度（帧间按转速/频率积分，动画平滑） ================= */
-let visRotorMech = 0, visRotorElec = 0, visCtrlElec = 0, lastNow = performance.now();
+let visRotorMech = 0, visRotorElec = 0, visCtrlElec = 0, visRotorElecUnwrapped = 0;
+let lastNow = performance.now();
+
+// 角度解卷：把折返的 [0,360) 电角度展开成连续角度。
+// 10 对极电机每转 36° 机械角电角度就折返一次，不展开的话星星会每隔
+// 一次电周期'瞬移'回同样式的 N 极（看起来像回到初始位置）。
+function unwrapAngle(cur, prevUnwrapped) {
+  let d = cur - (prevUnwrapped % 360);
+  d = ((d % 360) + 540) % 360 - 180;      // 最短角差 [-180,180)
+  return prevUnwrapped + d;
+}
 function advance(now) {
   const s = hub.scope;
   if (!s.n || !hub.latest) return;
@@ -194,7 +204,8 @@ function advance(now) {
     th  = s.thetaDeg[iLast]  + dTh  / span * ext;
   }
   visRotorElec = rot;
-  visRotorMech = rot / POLE_PAIRS;
+  visRotorElecUnwrapped = unwrapAngle(rot, visRotorElecUnwrapped);
+  visRotorMech = visRotorElecUnwrapped / POLE_PAIRS;   // 连续机械角，跟随整圈转动
   visCtrlElec = th;
 }
 

@@ -31,6 +31,9 @@
 
 /* Speed EMA coefficient (10ms window -> tau ~50ms) */
 #define ENC_SPEED_ALPHA  (0.2f)
+/* Direction deadband (rpm): below this |speed| the direction is reported as 0.
+ * The 10ms window count sign flips at low speed from +/-1 count noise. */
+#define ENC_DIR_DEADBAND_RPM  (5.0f)
 /* Speed integration window (us) */
 #define ENC_SPEED_WIN_US (10000u)
 
@@ -50,6 +53,7 @@ static volatile uint32_t s_us_sum   = 0;   /* speed window: time accumulator */
 static volatile uint64_t s_last_us  = 0;
 static float   s_speed_rpm = 0.0f;
 static int8_t  s_dir       = 0;
+static int8_t  s_dir_printed = 0;   /* last direction printed (switch event) */
 static uint8_t s_inited    = 0;
 
 /* ============================================================================
@@ -192,7 +196,9 @@ void Encoder_Update(void)
         float rpm = (float)s_cnt_sum * 60000000.0f
                   / ((float)s_us_sum * (float)ENCODER_CPR);
         s_speed_rpm += ENC_SPEED_ALPHA * (rpm - s_speed_rpm);
-        s_dir = (s_cnt_sum > 0) ? 1 : (s_cnt_sum < 0) ? -1 : 0;
+        if (s_speed_rpm >  ENC_DIR_DEADBAND_RPM) s_dir = 1;
+        else if (s_speed_rpm < -ENC_DIR_DEADBAND_RPM) s_dir = -1;
+        else s_dir = 0;
         s_cnt_sum = 0;
         s_us_sum  = 0;
     }
@@ -207,6 +213,16 @@ void Encoder_Update(void)
     }
     g_enc_speed_rpm = s_speed_rpm;
     g_enc_dir       = s_dir;
+
+    /* direction-switch event (main-loop context; ABZ quadrature counting is
+     * hardware, only the Z index uses an interrupt, so direction is detected here) */
+    if (s_dir != s_dir_printed) {
+        s_dir_printed = s_dir;
+        if (s_dir != 0) {
+            MAIN_D("[ENC] switch direction! dir=%d spd=%d rpm cnt=%d rev=%u\r\n",
+                   (int)s_dir, (int)s_speed_rpm, (int)s_count, (unsigned)g_enc_rev);
+        }
+    }
 }
 
 int32_t  Encoder_GetCount(void)     { return g_enc_count; }

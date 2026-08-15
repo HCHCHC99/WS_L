@@ -16,7 +16,7 @@
  *          Foc_StartCurrentLoop() -> IF_START runs the current loop from the
  *          first tick with a synthetic angle (I-F start):
  *            - frequency ramps 0 -> g_foc_openloop_freq_hz
- *            - Iq ramps 0 -> g_foc_iq_ref_cmd_ma (100 mA)
+ *            - Iq ramps 0 -> g_foc_iq_ref_cmd_ma (FOC_IQ_REF_MA = 2000 mA)
  *            - voltage envelope ramps 0 -> g_foc_vmax_v
  *          Current is controlled from tick 1, so it never exceeds the Iq
  *          target (no open-loop 3A surge, no sensor clipping, no heat).
@@ -56,7 +56,7 @@ volatile float   g_foc_openloop_volt_v  = FOC_OPENLOOP_VOLT_V;
 volatile uint8_t g_foc_mode             = FOC_MODE_NONE;
 volatile int32_t g_foc_cur_sign         = (int32_t)FOC_CUR_SIGN;
 volatile int32_t g_foc_enc_dir         = (int32_t)FOC_ENC_DIR;  /* encoder direction, Watch tunable */
-volatile int32_t g_foc_pi_off_180      = 0;                    /* 1 = +180deg control angle (flip torque), Watch tunable */
+volatile int32_t g_foc_pi_off_180      = (int32_t)FOC_PI_OFF_180;   /* 1 = +180deg control angle (flip torque), Watch tunable */
 volatile float   g_foc_iq_ref_cmd_ma    = (float)FOC_IQ_REF_MA;
 volatile float   g_foc_iq_ref_ma        = 0.0f;
 volatile float   g_foc_id_ma            = 0.0f;
@@ -69,6 +69,12 @@ volatile uint8_t g_foc_fault            = 0u;
 /* Over-current limit (Watch tunable) + fault diagnostic */
 volatile float g_foc_oc_limit_a    = (float)FOC_OC_LIMIT_A;
 volatile float g_foc_fault_i_ma    = 0.0f;   /* |phase current| at OC trip (mA) */
+/* Startup substage + OC trip diagnostics (latched in Foc_OverCurrent) */
+volatile uint8_t g_foc_phase       = 0u;   /* 0=idle 1=hold 2=ramp/sync 3=run 4=align */
+volatile uint8_t g_foc_fault_stage = 0u;   /* g_foc_phase at OC trip */
+volatile int16_t g_foc_fault_iu_ma = 0;    /* phase currents at OC trip (mA) */
+volatile int16_t g_foc_fault_iv_ma = 0;
+volatile int16_t g_foc_fault_iw_ma = 0;
 
 /* Voltage envelope / feedback filter (all Watch tunable) */
 volatile float g_foc_vmax_v       = (float)FOC_VMAX_V;        /* current-loop max |v| (V) */
@@ -76,6 +82,17 @@ volatile float g_foc_vramp_v_s    = (float)FOC_VRAMP_V_S;     /* voltage envelop
 volatile float g_foc_cur_fb_alpha = FOC_CUR_FB_ALPHA;         /* EMA weight on id/iq (1.0=off) */
 volatile float g_foc_iq_ramp_ma_s = (float)FOC_IQ_RAMP_MA_S;  /* Iq soft-start ramp (mA/s) */
 volatile float g_foc_vlim_v       = 0.0f;                     /* current voltage envelope (V) */
+/* RUN speed control (mode22 after handover): speed PI via g_foc_pid_spd_cfg.
+ * RUN is a torque loop with no speed loop -> without it the rotor would
+ * accelerate to the voltage limit ~1000rpm and trip OC. */
+volatile float g_foc_run_target_rpm = -30.0f;
+volatile float g_foc_iq_pi_ma        = 0.0f;   /* actual RUN Iq reference from speed PI (mA) */
+volatile float g_foc_anchor_deg      = (float)FOC_RUN_ANCHOR_DEG;   /* extra angle (deg) added to phi_hold: sweep 0/90/180/270
+                                                * with g_foc_run_iq_sign to find the correct RUN frame;
+                                                * correct frame -> spd settles at -30, no reversal */
+volatile float g_foc_run_iq_sign     = (float)FOC_RUN_IQ_SIGN;  /* RUN Iq sign: -1 because field-oriented RUN + cur_sign=-1
+                                                * makes positive Iq produce POSITIVE-direction torque (motor
+                                                * reversed); flip to +1 if direction comes out wrong */
 
 /* I-F start observables */
 volatile float   g_foc_if_freq_hz  = 0.0f;   /* current I-F electrical frequency (Hz) */
@@ -86,6 +103,12 @@ volatile float   g_foc_if_sync_band_rad = FOC_IF_SYNC_BAND_RAD;   /* sync window
 volatile uint32_t g_foc_if_sync_win_cnt = FOC_IF_SYNC_WIN_CNT;    /* sync window length (samples @20k), Watch tunable */
 volatile uint32_t g_foc_if_sync_good_wins = FOC_IF_SYNC_GOOD_WINS;/* consecutive good windows required, Watch tunable */
 volatile float   g_foc_if_lock_diff_rad = 0.0f;                   /* lock offset latched while aligned in hold (rad) */
+volatile float   g_foc_if_rotor_rad   = 0.0f;   /* rotor electrical angle, folded [0,2PI) (rad) */
+volatile float   g_foc_if_rel_diff_rad = 0.0f;  /* unwrapped diff relative to lock offset (rad) */
+volatile float   g_foc_if_win_min_rad  = 0.0f;  /* current sync-window min of rel diff (rad) */
+volatile float   g_foc_if_win_max_rad  = 0.0f;  /* current sync-window max of rel diff (rad) */
+volatile uint32_t g_foc_if_win_cnt     = 0u;    /* samples collected in current window */
+volatile uint32_t g_foc_if_good_cnt    = 0u;    /* consecutive good windows so far */
 volatile uint8_t g_foc_if_sync     = 0u;     /* 1 = rotor synchronized, handed over to encoder */
 /* I-F start events for main-loop printing (ISR only sets flag+payload) */
 volatile uint8_t  g_foc_if_evt    = 0u;   /* 1=hold done 2=handover 3=timeout */
@@ -136,6 +159,23 @@ pid_config_t g_foc_pid_iq_cfg = {
     .update_ms    = 0,        /* no throttle: every ISR */
 };
 
+/* RUN speed PI: output = Iq reference (mA), error = actual_rpm - target_rpm,
+ * so a rotor faster than target drives the output to 0 (fast brake). */
+pid_config_t g_foc_pid_spd_cfg = {
+    .enabled      = true,
+    .p_valid      = true,
+    .i_valid      = true,
+    .d_valid      = false,
+    .kp           = 50.0f,    /* mA/rpm */
+    .ki           = 10.0f,    /* mA/(rpm*s) */
+    .kd           = 0.0f,
+    .output_min   = 0.0f,     /* positive Iq only (torque direction fixed by pi_off) */
+    .output_max   = (float)FOC_IQ_REF_MA,
+    .integral_max = 50.0f,    /* rpm*s: limit windup */
+    .i_term_max   = 0.0f,
+    .update_ms    = 0,
+};
+
 /* Local state */
 static uint8_t s_bInited = 0u;
 
@@ -164,6 +204,8 @@ static uint32_t s_if_wrap_cnt  = 0u;
 static uint32_t s_if_sweep_last_wrap = 0u;
 static uint32_t s_if_sweep_last_tick = 0u;
 static float    s_if_diff_unwrapped = 0.0f;   /* continuous diff for sync band (no +/-pi wrap) */
+static uint8_t  s_run_blend_cnt  = 0u;        /* handover angle blend progress */
+static float    s_run_blend_from = 0.0f;      /* synthetic angle at handover (blend start) */
 static uint8_t  s_if_diff_unwrapped_valid = 0u;
 static uint32_t s_if_good_wins  = 0u;
 static uint32_t s_if_tick       = 0u;
@@ -176,10 +218,15 @@ static uint32_t s_align_phase_tick = 0u;
 /* PI runtime states (bound to the Watch-tunable configs) */
 static pid_state_t s_pid_id;
 static pid_state_t s_pid_iq;
+static pid_state_t s_pid_spd;
 
 /* ISR period in us (FOC_ISR_HZ = 20000 -> 50 us) */
 #define FOC_ISR_DT_US  (1000000u / FOC_ISR_HZ)
 #define FOC_IF_HOLD_MAX_CNT ((uint32_t)FOC_IF_HOLD_MAX_MS * FOC_ISR_HZ / 1000u)
+/* Handover angle blend: rotate the RUN control frame from the synthetic I-F
+ * angle to the true rotor angle over this many ISRs (200 = 10 ms @20 kHz).
+ * Avoids the current kick when the frame jumps by the I-F load angle. */
+#define FOC_RUN_BLEND_CNT    200u
 
 /* OC debounce: require N consecutive over-limit samples (N x 50us) before trip */
 #define FOC_OC_DEBOUNCE_SAMPLES  4u
@@ -229,6 +276,12 @@ static uint8_t Foc_OverCurrent(const stc_i_data_t *pData)
         if (++s_oc_cnt >= FOC_OC_DEBOUNCE_SAMPLES) {
             s_oc_cnt        = 0u;
             g_foc_fault_i_ma = imax;   /* diagnostic: current that tripped OC */
+            g_foc_fault_stage = g_foc_phase;
+            if (pData != NULL) {
+                g_foc_fault_iu_ma = pData->i16IU_mA;
+                g_foc_fault_iv_ma = pData->i16IV_mA;
+                g_foc_fault_iw_ma = pData->i16IW_mA;
+            }
             return 1u;
         }
     } else {
@@ -321,6 +374,7 @@ void Foc_Init(void)
     Foc_Math_Init();
     PID_Init(&s_pid_id, &g_foc_pid_id_cfg);
     PID_Init(&s_pid_iq, &g_foc_pid_iq_cfg);
+    PID_Init(&s_pid_spd, &g_foc_pid_spd_cfg);
     I_RegisterFocCallback(Foc_Isr);
     s_bInited = 1u;
 }
@@ -334,8 +388,11 @@ void Foc_StartOpenLoop(void)
     g_foc_fault       = 0u;
     g_foc_fault_i_ma  = 0.0f;
     s_oc_cnt          = 0u;
-    g_foc_openloop_volt_v = FOC_OPENLOOP_VOLT_V;   /* mode 21 starts at configured voltage */
+    if (g_foc_openloop_volt_v <= 0.0f) {
+        g_foc_openloop_volt_v = FOC_OPENLOOP_VOLT_V;   /* keep Watch-tuned value; recover default if zeroed */
+    }
     g_foc_mode        = FOC_MODE_OPENLOOP;
+    g_foc_phase       = 0u;
     s_state           = FOC_STATE_IDLE;
     g_foc_align_state = 0u;
 
@@ -361,8 +418,9 @@ void Foc_StartCurrentLoop(void)
     g_foc_fault_i_ma  = 0.0f;
     s_oc_cnt          = 0u;
     g_foc_mode        = FOC_MODE_CURLOOP;
+    g_foc_phase       = 1u;   /* hold */
     g_foc_theta_rad   = 0.0f;
-    g_foc_iq_ref_ma   = 0.0f;      /* ramps to g_foc_iq_ref_cmd_ma (100 mA) */
+    g_foc_iq_ref_ma   = 0.0f;      /* ramps to g_foc_iq_ref_cmd_ma (FOC_IQ_REF_MA = 3000 mA) */
     g_foc_id_ma       = 0.0f;
     g_foc_iq_ma       = 0.0f;
     g_foc_vd          = 0.0f;
@@ -384,7 +442,13 @@ void Foc_StartCurrentLoop(void)
     s_if_sweep_last_tick = 0u;
     s_if_diff_unwrapped = 0.0f;
     s_if_diff_unwrapped_valid = 0u;
-   g_foc_if_lock_diff_rad = 0.0f;
+    g_foc_if_lock_diff_rad = 0.0f;
+    g_foc_if_rotor_rad   = 0.0f;
+    g_foc_if_rel_diff_rad = 0.0f;
+    g_foc_if_win_min_rad  = 0.0f;
+    g_foc_if_win_max_rad  = 0.0f;
+    g_foc_if_win_cnt      = 0u;
+    g_foc_if_good_cnt     = 0u;
     s_if_win_cnt      = 0u;
     s_if_good_wins    = 0u;
     s_if_diff_min     = 0.0f;
@@ -397,6 +461,7 @@ void Foc_StartCurrentLoop(void)
     /* Fresh PI state */
     PID_Reset(&s_pid_id);
     PID_Reset(&s_pid_iq);
+    PID_Reset(&s_pid_spd);
 
     /* Complementary PWM, neutral 50% before enabling output */
     TMR4_PWM_SetFocMode(FOC_DEADTIME_NS);
@@ -424,6 +489,7 @@ void Foc_StartAlign(void)
     g_foc_fault_i_ma  = 0.0f;
     s_oc_cnt          = 0u;
     g_foc_mode        = FOC_MODE_ALIGN;
+    g_foc_phase       = 4u;   /* align */
     g_foc_theta_rad   = 0.0f;
     g_foc_id_ma       = 0.0f;
     g_foc_iq_ma       = 0.0f;
@@ -443,6 +509,7 @@ void Foc_StartAlign(void)
 
     PID_Reset(&s_pid_id);
     PID_Reset(&s_pid_iq);
+    PID_Reset(&s_pid_spd);
 
     g_foc_align_evt    = 1u;
     g_foc_align_evt_v1 = (int32_t)(g_foc_align_volt_v * 1000.0f);   /* mV */
@@ -574,6 +641,7 @@ void Foc_Stop(void)
 {
     g_foc_active      = 0u;
     g_foc_mode        = FOC_MODE_NONE;
+    g_foc_phase       = 0u;
     s_state           = FOC_STATE_IDLE;
     g_foc_align_state = 0u;
     TMR4_PWM_EmergencyStop();
@@ -602,6 +670,8 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         return;
     }
 
+    g_foc_phase = (s_if_hold_done != 0u) ? 2u : 1u;   /* 1=hold, 2=ramp/sync */
+
     /* 0) initial hold: keep theta=0 and freq=0 until the Iq reference has
      *    ramped up enough to lock the rotor onto the initial current vector,
      *    so the field always starts rotating from a synchronized state. */
@@ -616,6 +686,20 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
             g_foc_if_evt_v1 = (int32_t)(g_foc_if_freq_hz * 100.0f);
             g_foc_if_evt_v2 = (int32_t)g_foc_iq_ref_ma;
             g_foc_if_evt_v3 = 0;
+            /* Rotor is aligned with the hold current vector, so its d-axis is at
+             * phi_hold = ctrl_theta + 90deg = pi/2 + pi_off*pi. Anchor the RUN
+             * frame here: Foc_CurLoopTheta() then returns the TRUE rotor angle
+             * (field-oriented, direction fixed, no dependence on encoder Z). */
+            {
+                float phi_hold = FOC_MATH_HALF_PI
+                               + ((g_foc_pi_off_180 != 0) ? FOC_MATH_PI : 0.0f)
+                               + (g_foc_anchor_deg * FOC_MATH_PI / 180.0f);
+                float per_cnt = FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR;
+                s_align_offset = Foc_ModPos(((int32_t)g_enc_count * (int32_t)g_foc_enc_dir)
+                                            - (int32_t)(phi_hold / per_cnt),
+                                            (int32_t)ENCODER_CPR);
+                g_foc_align_offset = s_align_offset;
+            }
         }
         /* 1) frequency ramp 0 -> g_foc_openloop_freq_hz */
         if (g_foc_if_freq_hz < g_foc_openloop_freq_hz) {
@@ -643,7 +727,7 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     g_foc_id_ma = id * 1000.0f;
     g_foc_iq_ma = iq * 1000.0f;
 
-    /* 4) Iq soft ramp 0 -> g_foc_iq_ref_cmd_ma (100 mA) */
+    /* 4) Iq soft ramp 0 -> g_foc_iq_ref_cmd_ma (FOC_IQ_REF_MA = 2000 mA) */
     {
         float step = g_foc_iq_ramp_ma_s / (float)FOC_ISR_HZ;
         if (g_foc_iq_ref_ma < g_foc_iq_ref_cmd_ma) {
@@ -695,6 +779,7 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
     if (diff >  FOC_MATH_PI) diff -= FOC_MATH_2PI;
     if (diff < -FOC_MATH_PI) diff += FOC_MATH_2PI;
     g_foc_if_diff_rad = diff;
+    g_foc_if_rotor_rad = enc_elec;   /* rotor electrical angle (folded [0,2PI)) for diagnostics */
 
     /* count diff wraps + keep a continuous (unwrapped) diff for the sync
      * band: the wrapped diff jumps by +-2PI at the +-PI boundary, which would
@@ -722,6 +807,7 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
         s_if_diff_unwrapped = 0.0f;
         s_if_diff_unwrapped_valid = 1u;
     }
+    g_foc_if_rel_diff_rad = s_if_diff_unwrapped;   /* unwrapped diff relative to lock (sync basis) */
 
     /* live sweep rate (cHz): wraps per 100ms window -> wraps/s * 100 */
     if ((s_if_tick - s_if_sweep_last_tick) >= (uint32_t)(FOC_ISR_HZ / 10u)) {
@@ -759,6 +845,18 @@ static void Foc_IfStartStep(const stc_i_data_t *pData)
             }
             s_if_win_cnt = 0u;
         }
+
+        /* diagnostics: current window progress + observed rel-diff interval */
+        g_foc_if_win_cnt     = s_if_win_cnt;
+        g_foc_if_good_cnt    = s_if_good_wins;
+        g_foc_if_win_min_rad = s_if_diff_min;
+        g_foc_if_win_max_rad = s_if_diff_max;
+    } else {
+        /* sync not enabled yet (freq < min): no window data */
+        g_foc_if_win_cnt     = 0u;
+        g_foc_if_good_cnt    = 0u;
+        g_foc_if_win_min_rad = s_if_diff_unwrapped;
+        g_foc_if_win_max_rad = s_if_diff_unwrapped;
     }
 
     /* safety timeout: never synchronized -> fault code 2 */
@@ -783,15 +881,11 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
     float id, iq;
     float vd_seed, vq_seed;
 
-    /* Anchor encoder so Foc_CurLoopTheta() == theta (rotor synchronized). */
-    {
-        float per_cnt = FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR;
-        int32_t diff  = (int32_t)(theta / per_cnt);   /* 0..4095 */
-        /* store the anchor in enc_dir-scaled counts so CurLoopTheta() == theta
-         * also when g_foc_enc_dir = -1 (no-op for +1). */
-        s_align_offset = Foc_ModPos(((int32_t)g_enc_count * (int32_t)g_foc_enc_dir) - diff,
-                                    (int32_t)ENCODER_CPR);
-    }
+    /* RUN frame = true rotor d-axis (anchored at hold-done). Do NOT overwrite
+     * s_align_offset here. The angle blend rotates the control frame from the
+     * synthetic I-F angle to the true rotor angle over ~10 ms. */
+    s_run_blend_cnt  = 0u;
+    s_run_blend_from = g_foc_theta_rad;   /* RUN frame starts at the synthetic angle, blends to rotor */
 
     /* Current dq for PI seeding. */
     Foc_GetDq(pData, ctrl_theta, &id, &iq);
@@ -805,12 +899,23 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
     if (vq_seed < -FOC_PI_UMAX_V) vq_seed = -FOC_PI_UMAX_V;
 
     PID_Seed(&s_pid_id, 0.0f,                     id, vd_seed);
-    PID_Seed(&s_pid_iq, g_foc_iq_ref_ma * 0.001f, iq, vq_seed);
+    /* seed the Iq loop with the speed PI's initial output (kp*error), NOT the
+     * I-F ramp current: avoids a 2.4A -> 0 reference step at handover. */
+    {
+        float iq_seed = g_foc_run_iq_sign * (g_foc_pid_spd_cfg.kp * (g_enc_speed_rpm - g_foc_run_target_rpm));
+        if (iq_seed >  (float)FOC_IQ_REF_MA) iq_seed =  (float)FOC_IQ_REF_MA;
+        if (iq_seed < -(float)FOC_IQ_REF_MA) iq_seed = -(float)FOC_IQ_REF_MA;
+        PID_Seed(&s_pid_iq, iq_seed * 0.001f, iq, vq_seed);
+    }
 
     s_id_f = 0.0f;
     s_iq_f = 0.0f;
+    PID_Reset(&s_pid_spd);   /* fresh speed PI: do NOT inject I-F ramp current into the integral (caused windup -> stall) */
+
+    g_foc_align_offset = s_align_offset;   /* expose the RUN anchor (was stale from mode23) */
 
     s_state           = FOC_STATE_RUN;
+    g_foc_phase       = 3u;   /* run */
     g_foc_align_state = 2u;
     g_foc_if_sync     = 1u;
     g_foc_if_evt      = 2u;
@@ -847,9 +952,32 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
         }
     }
 
-    /* Electrical angle from the aligned encoder */
+    /* Electrical angle: true rotor angle (field-oriented), blended from the
+     * synthetic I-F angle over FOC_RUN_BLEND_CNT ticks to avoid a current kick. */
     theta = Foc_CurLoopTheta();
+    if (s_run_blend_cnt < FOC_RUN_BLEND_CNT) {
+        float d = theta - s_run_blend_from;
+        if (d >  FOC_MATH_PI) d -= FOC_MATH_2PI;
+        if (d < -FOC_MATH_PI) d += FOC_MATH_2PI;
+        theta = s_run_blend_from + d * ((float)s_run_blend_cnt / (float)FOC_RUN_BLEND_CNT);
+        s_run_blend_cnt++;
+    }
     g_foc_theta_rad = theta;
+    /* live diagnostics in RUN: rotor = TRUE encoder electrical angle, and
+     * diff = RUN control-frame offset vs true rotor (should stay at the handover
+     * load angle ~0.3-0.5 rad; ~1.57 rad or +/-pi indicates a frame/phase bug). */
+    {
+        float enc = (float)Foc_ModPos(((int32_t)g_enc_count * (int32_t)g_foc_enc_dir),
+                                      (int32_t)ENCODER_CPR)
+                  * (FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR);
+        enc -= (float)((int32_t)(enc * (1.0f / FOC_MATH_2PI))) * FOC_MATH_2PI;
+        if (enc < 0.0f) enc += FOC_MATH_2PI;
+        g_foc_if_rotor_rad = enc;
+        g_foc_if_diff_rad = enc - theta;
+        while (g_foc_if_diff_rad >  FOC_MATH_PI) g_foc_if_diff_rad -= FOC_MATH_2PI;
+        while (g_foc_if_diff_rad < -FOC_MATH_PI) g_foc_if_diff_rad += FOC_MATH_2PI;
+        g_foc_if_rel_diff_rad = 0.0f;
+    }
     ctrl_theta = theta + ((g_foc_pi_off_180 != 0) ? FOC_MATH_PI : 0.0f);
 
     /* Phase currents -> dq + EMA */
@@ -858,8 +986,17 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
     g_foc_id_ma = id * 1000.0f;
     g_foc_iq_ma = iq * 1000.0f;
 
-    /* PI */
-    iq_ref_a = g_foc_iq_ref_ma * 0.001f;
+    /* Iq reference: RUN speed PI (fast cut when rotor exceeds target).
+     * PID_UpdateUs(spd, actual, target): error = actual - target, output mA,
+     * clamped to [0, FOC_IQ_REF_MA]. Falls back to ramped ref when kp <= 0. */
+    if (g_foc_pid_spd_cfg.kp > 0.0f) {
+        iq_ref_a = g_foc_run_iq_sign * PID_UpdateUs(&s_pid_spd, g_enc_speed_rpm, g_foc_run_target_rpm,
+                                                     FOC_ISR_DT_US) * 0.001f;
+        g_foc_iq_pi_ma = iq_ref_a * 1000.0f;
+    } else {
+        iq_ref_a = g_foc_run_iq_sign * g_foc_iq_ref_ma * 0.001f;
+        g_foc_iq_pi_ma = iq_ref_a * 1000.0f;
+    }
     vd = PID_UpdateUs(&s_pid_id, 0.0f,     id, FOC_ISR_DT_US);
     vq = PID_UpdateUs(&s_pid_iq, iq_ref_a, iq, FOC_ISR_DT_US);
     g_foc_vd = vd;

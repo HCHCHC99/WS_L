@@ -120,6 +120,7 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>DLGUARM</Key>
+          <Name>缊?</Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -314,102 +315,197 @@
         <Ww>
           <count>3</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_spd_ref</ItemText>
+          <ItemText>g_spd_pid_cfg</ItemText>
         </Ww>
         <Ww>
           <count>4</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_spd_rpm</ItemText>
+          <ItemText>g_spd_pid_cfg.kp</ItemText>
         </Ww>
         <Ww>
           <count>5</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_spd_err</ItemText>
+          <ItemText>g_spd_pid_cfg.ki</ItemText>
         </Ww>
         <Ww>
           <count>6</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_spd_out</ItemText>
+          <ItemText>g_cur_pid_cfg</ItemText>
         </Ww>
         <Ww>
           <count>7</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_i_ref</ItemText>
+          <ItemText>g_cur_pid_cfg.kp</ItemText>
         </Ww>
         <Ww>
           <count>8</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_i_fb</ItemText>
+          <ItemText>g_cur_pid_cfg.ki</ItemText>
         </Ww>
         <Ww>
           <count>9</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_i_duty</ItemText>
+          <ItemText>g_i_ref_ma</ItemText>
         </Ww>
         <Ww>
           <count>10</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_i_err</ItemText>
+          <ItemText>g_cur_pid_cfg.i_valid</ItemText>
         </Ww>
         <Ww>
           <count>11</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_scope_rpm,0x0A</ItemText>
+          <ItemText>g_cur_fb_alpha</ItemText>
         </Ww>
         <Ww>
           <count>12</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_spd_pid_cfg</ItemText>
+          <ItemText>g_foc_cur_fb_alpha</ItemText>
         </Ww>
         <Ww>
           <count>13</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_spd_pid_cfg.kp</ItemText>
+          <ItemText>g_foc_pid_iq_cfg</ItemText>
         </Ww>
         <Ww>
           <count>14</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_spd_pid_cfg.ki</ItemText>
+          <ItemText>g_foc_enc_dir</ItemText>
         </Ww>
         <Ww>
           <count>15</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_pid_cfg</ItemText>
+          <ItemText>g_foc_cur_sign</ItemText>
         </Ww>
         <Ww>
           <count>16</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_pid_cfg.kp</ItemText>
+          <ItemText>g_foc_enc_dir</ItemText>
         </Ww>
         <Ww>
           <count>17</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_pid_cfg.ki</ItemText>
+          <ItemText>g_enc_dbg_print</ItemText>
         </Ww>
         <Ww>
           <count>18</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_i_ref_ma</ItemText>
+          <ItemText>g_foc_pi_off_180</ItemText>
         </Ww>
         <Ww>
           <count>19</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_pid_cfg.i_valid</ItemText>
+          <ItemText>g_foc_enc_dir</ItemText>
         </Ww>
         <Ww>
           <count>20</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_cur_fb_alpha</ItemText>
+          <ItemText>g_foc_iq_ref_cmd_ma</ItemText>
         </Ww>
         <Ww>
           <count>21</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_foc_cur_fb_alpha</ItemText>
+          <ItemText>g_foc_oc_limit_a</ItemText>
         </Ww>
         <Ww>
           <count>22</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_foc_pid_iq_cfg</ItemText>
+          <ItemText>cur_sign</ItemText>
+        </Ww>
+        <Ww>
+          <count>23</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_pi_off_180</ItemText>
+        </Ww>
+        <Ww>
+          <count>24</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_enc_dir</ItemText>
+        </Ww>
+        <Ww>
+          <count>25</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>spd</ItemText>
+        </Ww>
+        <Ww>
+          <count>26</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>sweep</ItemText>
+        </Ww>
+        <Ww>
+          <count>27</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>handover</ItemText>
+        </Ww>
+        <Ww>
+          <count>28</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_pi_off_180</ItemText>
+        </Ww>
+        <Ww>
+          <count>29</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_vmax_v</ItemText>
+        </Ww>
+        <Ww>
+          <count>30</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_vramp_v_s</ItemText>
+        </Ww>
+        <Ww>
+          <count>31</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_if_hold_iq_ma</ItemText>
+        </Ww>
+        <Ww>
+          <count>32</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_iq_ref_cmd_ma</ItemText>
+        </Ww>
+        <Ww>
+          <count>33</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_vq</ItemText>
+        </Ww>
+        <Ww>
+          <count>34</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_vlim_v</ItemText>
+        </Ww>
+        <Ww>
+          <count>35</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_iq_ma</ItemText>
+        </Ww>
+        <Ww>
+          <count>36</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>vlim</ItemText>
+        </Ww>
+        <Ww>
+          <count>37</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_openloop_volt_v</ItemText>
+        </Ww>
+        <Ww>
+          <count>38</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_openloop_freq_hz</ItemText>
+        </Ww>
+        <Ww>
+          <count>39</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_run_iq_sign</ItemText>
+        </Ww>
+        <Ww>
+          <count>40</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_anchor_deg</ItemText>
+        </Ww>
+        <Ww>
+          <count>41</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>phi_hold</ItemText>
         </Ww>
       </WatchWindow2>
       <Tracepoint>
@@ -418,7 +514,7 @@
       <DebugFlag>
         <trace>0</trace>
         <periodic>1</periodic>
-        <aLwin>1</aLwin>
+        <aLwin>0</aLwin>
         <aCover>0</aCover>
         <aSer1>0</aSer1>
         <aSer2>0</aSer2>
@@ -1887,7 +1983,7 @@
       <GroupNumber>10</GroupNumber>
       <FileNumber>101</FileNumber>
       <FileType>1</FileType>
-      <tvExp>0</tvExp>
+      <tvExp>1</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
       <PathWithFileName>..\..\ws\cur_loop.c</PathWithFileName>

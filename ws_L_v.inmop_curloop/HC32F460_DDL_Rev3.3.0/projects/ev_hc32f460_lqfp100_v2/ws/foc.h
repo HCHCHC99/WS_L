@@ -69,12 +69,21 @@ extern volatile uint8_t  g_foc_fault;            /* 1 = over-current fault */
 /* Over-current limit (A, Keil Watch editable) and trip diagnostic (mA) */
 extern volatile float    g_foc_oc_limit_a;
 extern volatile float    g_foc_fault_i_ma;
+extern volatile uint8_t  g_foc_phase;       /* 0=idle 1=hold 2=ramp/sync 3=run 4=align */
+extern volatile uint8_t  g_foc_fault_stage; /* g_foc_phase at OC trip */
+extern volatile int16_t  g_foc_fault_iu_ma; /* phase currents at OC trip (mA) */
+extern volatile int16_t  g_foc_fault_iv_ma;
+extern volatile int16_t  g_foc_fault_iw_ma;
 /* Gentle handover / voltage envelope / feedback filter (Keil Watch editable) */
 extern volatile float    g_foc_vmax_v;       /* current-loop max |v| (V) */
 extern volatile float    g_foc_vramp_v_s;    /* voltage envelope ramp (V/s) */
 extern volatile float    g_foc_cur_fb_alpha; /* EMA weight on id/iq (1.0 = off) */
 extern volatile float    g_foc_iq_ramp_ma_s; /* Iq soft-start ramp (mA/s) */
 extern volatile float    g_foc_vlim_v;       /* current voltage envelope (V) */
+extern volatile float    g_foc_run_target_rpm; /* RUN speed PI target (rpm), Watch tunable */
+extern volatile float    g_foc_iq_pi_ma;       /* actual RUN Iq reference from speed PI (mA) */
+extern volatile float    g_foc_anchor_deg;     /* extra anchor angle (deg), sweep to find RUN frame */
+extern volatile float    g_foc_run_iq_sign;    /* RUN Iq sign (+-1), Watch tunable */
 
 /* I-F start observables */
 extern volatile float    g_foc_if_freq_hz;   /* current I-F electrical frequency (Hz) */
@@ -85,7 +94,14 @@ extern volatile float    g_foc_if_sync_band_rad; /* sync window band (rad), Watc
 extern volatile uint32_t g_foc_if_sync_win_cnt;  /* sync window length (samples @20k), Watch tunable */
 extern volatile uint32_t g_foc_if_sync_good_wins;/* consecutive good windows required, Watch tunable */
 extern volatile float    g_foc_if_lock_diff_rad; /* lock offset latched while aligned in hold (rad) */
-extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */extern volatile uint8_t  g_foc_if_evt;       /* 1=hold done 2=handover 3=timeout */
+extern volatile float    g_foc_if_rotor_rad;     /* rotor electrical angle, folded [0,2PI) (rad) */
+extern volatile float    g_foc_if_rel_diff_rad;  /* unwrapped diff relative to lock offset (rad) */
+extern volatile float    g_foc_if_win_min_rad;   /* current sync-window min of rel diff (rad) */
+extern volatile float    g_foc_if_win_max_rad;   /* current sync-window max of rel diff (rad) */
+extern volatile uint32_t g_foc_if_win_cnt;       /* samples collected in current window */
+extern volatile uint32_t g_foc_if_good_cnt;      /* consecutive good windows so far */
+extern volatile uint8_t  g_foc_if_sync;      /* 1 = synchronized, handed over to encoder */
+extern volatile uint8_t  g_foc_if_evt;       /* 1=hold done 2=handover 3=timeout */
 extern volatile int32_t  g_foc_if_evt_v1;
 extern volatile int32_t  g_foc_if_evt_v2;
 extern volatile int32_t  g_foc_if_evt_v3;
@@ -102,6 +118,7 @@ extern volatile int32_t  g_foc_align_evt_v3;
 /* Current-loop PI configs (volatile, Keil Watch can tune kp/ki live) */
 extern pid_config_t g_foc_pid_id_cfg;
 extern pid_config_t g_foc_pid_iq_cfg;
+extern pid_config_t g_foc_pid_spd_cfg;
 
 /*******************************************************************************
  * Global function prototypes

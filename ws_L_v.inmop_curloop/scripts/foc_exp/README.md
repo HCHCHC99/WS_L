@@ -37,7 +37,7 @@ PowerShell:
 
     # 3) tuned parameter run (the handoff's next-step values are the defaults)
     .\foc_exp.ps1 -Mode 22 -PiOff180 1 -EncDir -1 -DurationSec 20 `
-        -IqRefMa 2000 -VmaxV 1.0 -VrampVS 0.5 -HoldIqMa 800 -Kp 0.1 -Ki 100 -OutputMaxV 1.0
+        -IqRefMa 2000 -VmaxV 1.0 -VrampVS 0.5 -HoldIqMa 800 -Kp 0.1 -Ki 240 -OutputMaxV 1.0
 
 ## What each run reports
 

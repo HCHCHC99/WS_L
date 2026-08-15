@@ -243,7 +243,9 @@ int main(void)
         if (g_foc_fault != 0u) {
             if (!s_foc_fault_printed) {
                 s_foc_fault_printed = 1;
-                MAIN_D("[FOC] FAULT oc=%d i=%d mA\r\n", (int)g_foc_fault, (int)g_foc_fault_i_ma);
+                MAIN_D("[FOC] FAULT oc=%d stage=%d i=%d mA iu=%d iv=%d iw=%d mA\r\n",
+                      (int)g_foc_fault, (int)g_foc_fault_stage, (int)g_foc_fault_i_ma,
+                      (int)g_foc_fault_iu_ma, (int)g_foc_fault_iv_ma, (int)g_foc_fault_iw_ma);
             }
         } else {
             s_foc_fault_printed = 0;
@@ -266,16 +268,27 @@ int main(void)
             uint32_t now_b = tickTimer_GetCount();
             if ((s_if_burst_last == 0u) || ((now_b - s_if_burst_last) >= 100u)) {
                 s_if_burst_last = now_b;
-                MAIN_D("[FOC][IFB] t=%u diff=%d spd=%d iq=%d cnt=%d rev=%u sweep=%d cHz vq=%d vlim=%d mV\r\n",
-                       (unsigned)(s_if_burst_cnt * 100u),
-                       (int)(g_foc_if_diff_rad * 1000.0f),
-                       (int)g_enc_speed_rpm,
-                       (int)g_foc_iq_ma,
-                       (int)g_enc_count,
-                       (unsigned)g_enc_rev,
-                       (int)g_foc_if_sweep_cHz,
-                       (int)(g_foc_vq * 1000.0f),
-                       (int)(g_foc_vlim_v * 1000.0f));
+                MAIN_D("[FOC][IFB] t=%u rotor=%d mrad theta=%d mrad diff=%d mrad rel=%d mrad win=[%d,%d] band=%d mrad dir=%d spd=%d iq=%d mA iqref=%d mA iqpi=%d mA id=%d mA vd=%d mV cnt=%d rev=%u sweep=%d cHz vq=%d vlim=%d mV\r\n",
+                              (unsigned)(s_if_burst_cnt * 100u),
+                              (int)(g_foc_if_rotor_rad * 1000.0f),
+                              (int)(g_foc_theta_rad * 1000.0f),
+                              (int)(g_foc_if_diff_rad * 1000.0f),
+                              (int)(g_foc_if_rel_diff_rad * 1000.0f),
+                              (int)(g_foc_if_win_min_rad * 1000.0f),
+                              (int)(g_foc_if_win_max_rad * 1000.0f),
+                              (int)(g_foc_if_sync_band_rad * 1000.0f),
+                              (int)g_enc_dir,
+                              (int)g_enc_speed_rpm,
+                              (int)g_foc_iq_ma,
+                              (int)g_foc_iq_ref_ma,
+                              (int)g_foc_iq_pi_ma,
+                              (int)g_foc_id_ma,
+                              (int)(g_foc_vd * 1000.0f),
+                              (int)g_enc_count,
+                              (unsigned)g_enc_rev,
+                              (int)g_foc_if_sweep_cHz,
+                              (int)(g_foc_vq * 1000.0f),
+                              (int)(g_foc_vlim_v * 1000.0f));
                 if (++s_if_burst_cnt >= 30u) {
                     s_if_burst_armed = 0u;
                 }
@@ -288,17 +301,29 @@ int main(void)
             uint32_t now_ms = tickTimer_GetCount();
             if ((now_ms - s_last_if) >= 1000u) {
                 s_last_if = now_ms;
-                MAIN_D("[FOC][IF] freq=%d cHz iq=%d mA iqref=%d mA diff=%d mrad lock=%d mrad spd=%d rpm sync=%d sweep=%d cHz vq=%d vlim=%d mV\r\n",
-                       (int)(g_foc_if_freq_hz * 100.0f),
-                       (int)g_foc_iq_ma,
-                       (int)g_foc_iq_ref_ma,
-                       (int)(g_foc_if_diff_rad * 1000.0f),
-                       (int)(g_foc_if_lock_diff_rad * 1000.0f),
-                       (int)g_enc_speed_rpm,
-                       (int)g_foc_if_sync,
-                       (int)g_foc_if_sweep_cHz,
-                       (int)(g_foc_vq * 1000.0f),
-                       (int)(g_foc_vlim_v * 1000.0f));
+                MAIN_D("[FOC][IF] freq=%d cHz ph=%d iq=%d mA iqref=%d mA iqpi=%d mA id=%d mA vd=%d mV rotor=%d mrad theta=%d mrad diff=%d mrad lock=%d mrad rel=%d mrad win=[%d,%d] band=%d mrad good=%d dir=%d spd=%d rpm sync=%d sweep=%d cHz vq=%d vlim=%d mV\r\n",
+                              (int)(g_foc_if_freq_hz * 100.0f),
+                              (int)g_foc_phase,
+                              (int)g_foc_iq_ma,
+                              (int)g_foc_iq_ref_ma,
+                              (int)g_foc_iq_pi_ma,
+                              (int)g_foc_id_ma,
+                              (int)(g_foc_vd * 1000.0f),
+                              (int)(g_foc_if_rotor_rad * 1000.0f),
+                              (int)(g_foc_theta_rad * 1000.0f),
+                              (int)(g_foc_if_diff_rad * 1000.0f),
+                              (int)(g_foc_if_lock_diff_rad * 1000.0f),
+                              (int)(g_foc_if_rel_diff_rad * 1000.0f),
+                              (int)(g_foc_if_win_min_rad * 1000.0f),
+                              (int)(g_foc_if_win_max_rad * 1000.0f),
+                              (int)(g_foc_if_sync_band_rad * 1000.0f),
+                              (int)g_foc_if_good_cnt,
+                              (int)g_enc_dir,
+                              (int)g_enc_speed_rpm,
+                              (int)g_foc_if_sync,
+                              (int)g_foc_if_sweep_cHz,
+                              (int)(g_foc_vq * 1000.0f),
+                              (int)(g_foc_vlim_v * 1000.0f));
             }
         }
 
@@ -332,10 +357,18 @@ int main(void)
                        (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3);
                 break;
             case 3u:
-                MAIN_D("[FOC][IF] TIMEOUT freq=%d cHz iq=%d mA diff=%d mrad sweep=%d cHz vq=%d vlim=%d mV\r\n",
-                       (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2, (int)g_foc_if_evt_v3,
-                       (int)g_foc_if_evt_v4,
-                       (int)(g_foc_vq * 1000.0f), (int)(g_foc_vlim_v * 1000.0f));
+                MAIN_D("[FOC][IF] TIMEOUT freq=%d cHz iq=%d mA rotor=%d mrad theta=%d mrad diff=%d mrad lock=%d mrad rel=%d mrad win=[%d,%d] band=%d mrad sweep=%d cHz vq=%d vlim=%d mV\r\n",
+                              (int)g_foc_if_evt_v1, (int)g_foc_if_evt_v2,
+                              (int)(g_foc_if_rotor_rad * 1000.0f),
+                              (int)(g_foc_theta_rad * 1000.0f),
+                              (int)(g_foc_if_diff_rad * 1000.0f),
+                              (int)(g_foc_if_lock_diff_rad * 1000.0f),
+                              (int)(g_foc_if_rel_diff_rad * 1000.0f),
+                              (int)(g_foc_if_win_min_rad * 1000.0f),
+                              (int)(g_foc_if_win_max_rad * 1000.0f),
+                              (int)(g_foc_if_sync_band_rad * 1000.0f),
+                              (int)g_foc_if_evt_v4,
+                              (int)(g_foc_vq * 1000.0f), (int)(g_foc_vlim_v * 1000.0f));
                 break;
             default:
                 break;
@@ -475,3 +508,4 @@ int main(void)
 #endif
     }
 }
+

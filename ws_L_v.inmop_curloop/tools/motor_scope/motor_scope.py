@@ -458,48 +458,61 @@ class JLinkRttSource:
 
     def open(self):
         jl = self.pylink.JLink()
-        jl.open()
-        print(f"[J-Link] SN={jl.serial_number} 固件={jl.firmware_version}")
-        jl.connect(self.device, speed=self.speed_khz, verbose=True)
         try:
-            if jl.halted():     # attach 可能停核；尽量恢复运行（部分 DLL 支持 exec Go）
-                jl.exec_command("Go")
-        except Exception:
-            pass
-        addr = self.rtt_addr
-        auto_ok = False
-        if not addr:
+            jl.open()
+            # 关键：显式指定 SWD 接口。否则 J-Link DLL 可能"connect 不报错但目标访问
+            # 全部失败（Target is not connected）"，导致找不到 RTT 控制块。
             try:
-                jl.rtt_start()          # J-Link DLL 自动搜索
-                jl.rtt_get_num_up_buffers()
-                auto_ok = True
+                jl.set_tif(self.pylink.enums.JLinkInterfaces.SWD)
             except Exception:
-                addr = self._scan_rtt_cb(jl)
-                if not addr:
-                    raise RuntimeError(
-                        "未找到 RTT 控制块。请确认：1) 目标在运行且固件包含 SEGGER RTT；"
-                        "2) 在 Keil 里看 _SEGGER_RTT 的地址，用 --rtt-addr 0x地址 指定")
-                print(f"[J-Link] 自动搜索失败，RAM 扫描定位到 RTT 控制块 @ 0x{addr:08X}")
+                pass
+            print(f"[J-Link] SN={jl.serial_number} 固件={jl.firmware_version}")
+            jl.connect(self.device, speed=self.speed_khz, verbose=True)
+            try:
+                if jl.halted():     # attach 可能停核；尽量恢复运行（部分 DLL 支持 exec Go）
+                    jl.exec_command("Go")
+            except Exception:
+                pass
+            addr = self.rtt_addr
+            auto_ok = False
+            if not addr:
                 try:
-                    jl.rtt_stop()       # 复位 RTT 状态，否则后续指定地址会被忽略
+                    jl.rtt_start()          # J-Link DLL 自动搜索
+                    jl.rtt_get_num_up_buffers()
+                    auto_ok = True
                 except Exception:
-                    pass
-        if addr and not auto_ok:
-            jl.rtt_start(block_address=addr)
-        nbuf = None
-        for _ in range(5):          # DLL 读取 CB 需要一点时间，重试几次
+                    addr = self._scan_rtt_cb(jl)
+                    if not addr:
+                        raise RuntimeError(
+                            "未找到 RTT 控制块。请确认：1) 目标在运行且固件包含 SEGGER RTT；"
+                            "2) 在 Keil 里看 _SEGGER_RTT 的地址，用 --rtt-addr 0x地址 指定")
+                    print(f"[J-Link] 自动搜索失败，RAM 扫描定位到 RTT 控制块 @ 0x{addr:08X}")
+                    try:
+                        jl.rtt_stop()       # 复位 RTT 状态，否则后续指定地址会被忽略
+                    except Exception:
+                        pass
+            if addr and not auto_ok:
+                jl.rtt_start(block_address=addr)
+            nbuf = None
+            for _ in range(5):          # DLL 读取 CB 需要一点时间，重试几次
+                try:
+                    nbuf = jl.rtt_get_num_up_buffers()
+                    break
+                except Exception:
+                    time.sleep(0.1)
+            if nbuf is None:
+                raise RuntimeError("RTT 控制块已定位但读取失败，请重试")
+            if nbuf < (self.channel + 1):
+                print(f"[J-Link] 警告：固件只有 {nbuf} 个上行通道（无 ch{self.channel}）。"
+                      "请确认已烧录新固件（SEGGER_RTT_MAX_NUM_UP_BUFFERS=7）")
+            print(f"[J-Link] RTT 控制块已定位（{nbuf} 个上行通道），读取通道 {self.channel} ...")
+            self.jl = jl
+        except Exception:
             try:
-                nbuf = jl.rtt_get_num_up_buffers()
-                break
+                jl.close()      # 连接失败务必释放，避免泄漏 J-Link 连接（多次重试会耗尽）
             except Exception:
-                time.sleep(0.1)
-        if nbuf is None:
-            raise RuntimeError("RTT 控制块已定位但读取失败，请重试")
-        if nbuf < (self.channel + 1):
-            print(f"[J-Link] 警告：固件只有 {nbuf} 个上行通道（无 ch{self.channel}）。"
-                  "请确认已烧录新固件（SEGGER_RTT_MAX_NUM_UP_BUFFERS=7）")
-        print(f"[J-Link] RTT 控制块已定位（{nbuf} 个上行通道），读取通道 {self.channel} ...")
-        self.jl = jl
+                pass
+            raise
 
     def next_chunk(self) -> bytes:
         return self.jl.rtt_read(self.channel, 2048)

@@ -73,6 +73,7 @@ class FocFrame:
     diff_mrad: float = 0.0     # 控制角 vs 转子角偏差
     freq_cHz: float = 0.0      # I-F 电频率
     ms: int = 0
+    rotor_mech_mrad: float = 0.0  # 连续机械角（跨圈不折返，动画用）
 
     def to_list(self):
         return [self.mode, self.phase, int(round(self.rotor_mrad)),
@@ -80,7 +81,8 @@ class FocFrame:
                 int(round(self.id_ma)), int(round(self.vq_mv)),
                 int(round(self.vd_mv)), int(round(self.spd_rpm)),
                 self.sync, int(round(self.diff_mrad)),
-                int(round(self.freq_cHz)), self.ms]
+                int(round(self.freq_cHz)), self.ms,
+                int(round(self.rotor_mech_mrad))]
 
 
 def _clean_rtt_line(line: str) -> str:
@@ -107,12 +109,13 @@ def parse_text_line(line: str):
             spd_rpm=float(p[9]), sync=int(p[10]),
             diff_mrad=float(p[11]), freq_cHz=float(p[12]),
             ms=int(p[13]) if len(p) > 13 else 0,
+            rotor_mech_mrad=float(p[14]) if len(p) > 14 else 0.0,
         )
     except (ValueError, IndexError):
         return None
 
 
-_BIN_FMT = "<4sIiiiiiiiiiBBBB"      # 48 字节小端二进制帧
+_BIN_FMT = "<4sIiiiiiiiiiiBBBB"      # 52 字节小端二进制帧（含连续机械角）
 _BIN_SIZE = struct.calcsize(_BIN_FMT)
 
 
@@ -120,13 +123,13 @@ def parse_binary(buf: bytes):
     """解析 48 字节二进制帧（MOTF magic）。"""
     if len(buf) < _BIN_SIZE or buf[:4] != b"MOTF":
         return None
-    (magic, ms, rotor, theta, iq, id_, vq, vd, spd, diff, freq,
+    (magic, ms, rotor, theta, iq, id_, vq, vd, spd, diff, freq, mech,
      mode, phase, sync, rsv) = struct.unpack(_BIN_FMT, buf[:_BIN_SIZE])
     return FocFrame(mode=mode, phase=phase, rotor_mrad=float(rotor),
                     theta_mrad=float(theta), iq_ma=float(iq), id_ma=float(id_),
                     vq_mv=float(vq), vd_mv=float(vd), spd_rpm=float(spd),
                     sync=sync, diff_mrad=float(diff), freq_cHz=float(freq),
-                    ms=ms)
+                    ms=ms, rotor_mech_mrad=float(mech))
 
 
 class RttParser:
@@ -317,6 +320,7 @@ class SimFoc:
 
     def next_frame(self) -> FocFrame:
         t = time.time() - self.t0
+        self._mech_cum = getattr(self, "_mech_cum", 0.0)
         dt = 1.0 / self.sample_hz
         f = FocFrame(mode=2, sync=0)
 
@@ -375,6 +379,12 @@ class SimFoc:
         if f.phase == 2 or f.phase == 3:
             f.rotor_mrad = f.rotor_mrad % 6283.0
             f.theta_mrad = f.theta_mrad % 6283.0
+        # 连续机械角（度）：由折返电角度解卷 / 极对数，跨圈累计（模拟 Z 不复位）
+        elec_deg = f.rotor_mrad / 1000.0 * (180.0 / math.pi)
+        d = elec_deg - (self._mech_cum * self.pp)
+        d = ((d % 360.0) + 540.0) % 360.0 - 180.0
+        self._mech_cum += d / self.pp
+        f.rotor_mech_mrad = int(self._mech_cum * (math.pi / 180.0) * 1000.0)
         return f
 
 

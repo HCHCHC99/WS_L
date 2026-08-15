@@ -64,7 +64,9 @@ static void encoder_z_isr(void)
     EXTINT_ClearExtIntStatus(ENC_Z_EIRQ);
     TMRA_SetCountValue(CM_TMRA_1, 0u);   /* restart quadrature count from 0 */
     s_last_cnt = 0;
-    s_count    = 0;
+    /* 注意：s_count 不再清零，保持连续累计（跨圈）。
+     * 之前每圈清零会让角度在加速/丢步时"回退到 0"；
+     * 需要圈内角度的地方用 % ENCODER_CPR 折返即可。 */
     s_cnt_sum  = 0;
     s_us_sum   = 0;
     g_enc_rev++;

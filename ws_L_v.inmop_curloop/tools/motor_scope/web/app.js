@@ -64,7 +64,9 @@ async function poll() {
       scopeAppend({
         t: h[1],
         iq: f[4], id: f[5],
-        rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °
+        rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °（波形用）
+        rotorMechDeg: f[13] !== undefined ? (f[13] / 1000) * RAD2DEG
+                                          : (f[2] / 1000) * RAD2DEG / POLE_PAIRS,
         thetaDeg: (f[3] / 1000) * RAD2DEG,
         diffRad: f[10] / 1000,
       });
@@ -193,19 +195,18 @@ function advance(now) {
   // 外推窗口：距最新数据点收到的时间（≤轮询周期）；数据中断则冻结
   const ext = stale ? 0 : Math.min((Date.now() - (hub.lastFrameWall || Date.now())) / 1000, 0.06);
 
-  let rot = s.rotorDeg[iLast];
+  let mech = s.rotorMechDeg[iLast];
   let th = s.thetaDeg[iLast];
   if (span > 1e-6) {
-    let dRot = s.rotorDeg[iLast] - s.rotorDeg[iPrev];
-    dRot = ((dRot % 360) + 540) % 360 - 180;      // 连续旋转的最小角差
+    let dMech = s.rotorMechDeg[iLast] - s.rotorMechDeg[iPrev];
+    dMech = ((dMech % 360) + 540) % 360 - 180;   // 兜底：跨圈折返取最短差
     let dTh = s.thetaDeg[iLast] - s.thetaDeg[iPrev];
     dTh = ((dTh % 360) + 540) % 360 - 180;
-    rot = s.rotorDeg[iLast] + dRot / span * ext;
-    th  = s.thetaDeg[iLast]  + dTh  / span * ext;
+    mech = s.rotorMechDeg[iLast] + dMech / span * ext;
+    th   = s.thetaDeg[iLast]    + dTh   / span * ext;
   }
-  visRotorElec = rot;
-  visRotorElecUnwrapped = unwrapAngle(rot, visRotorElecUnwrapped);
-  visRotorMech = visRotorElecUnwrapped / POLE_PAIRS;   // 连续机械角，跟随整圈转动
+  visRotorMech = mech;                             // 连续机械角，直接驱动星星/磁钢
+  visRotorElec = mech * POLE_PAIRS;                // 读数用（电角度）
   visCtrlElec = th;
 }
 
@@ -476,6 +477,7 @@ hub.scope = {
   iq: new Float32Array(SCOPE_CAP),
   id: new Float32Array(SCOPE_CAP),
   rotorDeg: new Float32Array(SCOPE_CAP),
+  rotorMechDeg: new Float32Array(SCOPE_CAP),
   thetaDeg: new Float32Array(SCOPE_CAP),
   diffRad: new Float32Array(SCOPE_CAP),
 };
@@ -488,7 +490,8 @@ function scopeAppend(p) {
   const s = hub.scope;
   const idx = (s.head + s.n) % s.cap;
   s.t[idx] = p.t; s.iq[idx] = p.iq; s.id[idx] = p.id;
-  s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.diffRad[idx] = p.diffRad;
+  s.rotorDeg[idx] = p.rotorDeg; s.rotorMechDeg[idx] = p.rotorMechDeg;
+  s.thetaDeg[idx] = p.thetaDeg; s.diffRad[idx] = p.diffRad;
   if (s.n < s.cap) s.n++; else s.head = (s.head + 1) % s.cap;
 }
 function scopeTrim() {

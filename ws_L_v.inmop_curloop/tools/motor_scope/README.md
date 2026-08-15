@@ -32,14 +32,14 @@ python motor_scope.py --mode jlink --device HC32F460 --speed-khz 4000
 
 ```
 MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
-     <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>
+     <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,<rotor_mech_mrad>
 ```
 
 | 字段 | 来源 | 说明 |
 |------|------|------|
 | mode | g_foc_mode | 0=停止 1=开环 2=电流环 3=对齐 |
 | phase | g_foc_phase | 0=idle 1=hold 2=ramp/sync 3=run 4=align |
-| rotor_mrad | g_foc_if_rotor_rad×1000 | 编码器实测转子电角度 |
+| rotor_mrad | g_foc_if_rotor_rad×1000 | 编码器实测转子电角度（折返 [0,2π)） |
 | theta_mrad | g_foc_theta_rad×1000 | 控制角（I-F 合成角/RUN 控制角） |
 | iq_ma / id_ma | g_foc_iq_ma / g_foc_id_ma | dq 电流反馈 |
 | vq_mv / vd_mv | g_foc_vq / g_foc_vd ×1000 | dq 电压 PI 输出 |
@@ -47,6 +47,7 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 | sync | g_foc_if_sync | 1 = 已同步（handover） |
 | diff_mrad | g_foc_if_diff_rad×1000 | 控制角-转子角偏差 |
 | freq_cHz | g_foc_if_freq_hz×100 | I-F 电频率 |
+| rotor_mech_mrad | g_enc_count 连续累计×2π/CPR×1000 | **连续机械角**（跨圈不折返，动画用，Z 不复位） |
 
 `FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **48 字节小端二进制帧**
 （magic "MOTF"，字段同上），本工具自动识别两种格式。
@@ -66,6 +67,7 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 - I-F 启动阶段 `g_foc_theta_rad` 是合成角，动画会显示"控制角指针"与"转子
   磁钢"分离直到同步——这正是调试 I-F 启动要看的现象。
 - `g_foc_if_rotor_rad` 依赖编码器方向/零位（FOC_ENC_DIR / 对齐校准）。
+
 
 
 

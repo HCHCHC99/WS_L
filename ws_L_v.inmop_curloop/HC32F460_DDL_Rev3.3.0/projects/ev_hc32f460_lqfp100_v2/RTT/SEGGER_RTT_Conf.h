@@ -80,7 +80,7 @@ Revision: $Rev: 23635 $
 // Up-channel 1: SystemView
 //
 #ifndef   SEGGER_RTT_MAX_NUM_UP_BUFFERS
-  #define SEGGER_RTT_MAX_NUM_UP_BUFFERS             (3)     // Max. number of up-buffers (T->H) available on this target    (Default: 3)
+  #define SEGGER_RTT_MAX_NUM_UP_BUFFERS             (7)     // MotorScope: +ch6 for 1kHz FOC animation frames (was 3)     // Max. number of up-buffers (T->H) available on this target    (Default: 3)
 #endif
 //
 // Most common case:

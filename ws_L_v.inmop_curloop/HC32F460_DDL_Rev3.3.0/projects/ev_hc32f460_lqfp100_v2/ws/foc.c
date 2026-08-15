@@ -38,6 +38,8 @@
 #include "motor_config.h"
 #include "dev_pid.h"
 #include <math.h>
+#include "SEGGER_RTT.h"
+#include <stdio.h>
 
 /*******************************************************************************
  * Global variables for JScope / Keil Watch
@@ -1018,6 +1020,113 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 }
 
 /*******************************************************************************
+ * MotorScope RTT 实时动画数据发送（ISR 内，非阻塞）
+ * ----------------------------------------------------------------------------
+ * 把 FOC 控制环关键量以 1kHz 文本帧（或 >2kHz 的 48B 二进制帧）写入独立 RTT
+ * 上行通道，PC 端（tools/motor_scope）读取后在浏览器实时绘制电机动画。
+ *
+ * 配置（可用编译器 -D 覆盖；若想统一收口到 motor_config.h 也可移过去）：
+ *   FOC_RTT_ENABLE   : 1 = 使能
+ *   FOC_RTT_CH       : RTT 上行通道号（默认 6，需 SEGGER_RTT_MAX_NUM_UP_BUFFERS >= 7）
+ *   FOC_RTT_RATE_HZ  : 帧率，默认 1000；>2000 时自动切换为二进制帧
+ *
+ * 帧格式（文本）：
+ *   MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
+ *        <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>
+ ******************************************************************************/
+#ifndef FOC_RTT_ENABLE
+#define FOC_RTT_ENABLE      1u
+#endif
+#ifndef FOC_RTT_CH
+#define FOC_RTT_CH          6u
+#endif
+#ifndef FOC_RTT_RATE_HZ
+#define FOC_RTT_RATE_HZ     1000u
+#endif
+
+#if FOC_RTT_ENABLE && (FOC_RTT_RATE_HZ > 0u) && (FOC_RTT_RATE_HZ <= FOC_ISR_HZ)
+#define FOC_RTT_DIV         ((uint16_t)(FOC_ISR_HZ / FOC_RTT_RATE_HZ))
+
+#if FOC_RTT_RATE_HZ > 2000u
+/* 二进制帧：48 字节（小端），PC 端按小端解析 */
+typedef struct __attribute__((packed)) {
+    uint32_t magic;        /* 0x46544F4D = "MOTF" */
+    uint32_t ms;
+    int32_t  rotor_mrad;   /* g_foc_if_rotor_rad * 1000 */
+    int32_t  theta_mrad;   /* g_foc_theta_rad  * 1000 */
+    int32_t  iq_ma;        /* g_foc_iq_ma */
+    int32_t  id_ma;        /* g_foc_id_ma */
+    int32_t  vq_mv;        /* g_foc_vq * 1000 */
+    int32_t  vd_mv;        /* g_foc_vd * 1000 */
+    int32_t  spd_rpm;      /* g_enc_speed_rpm */
+    int32_t  diff_mrad;    /* g_foc_if_diff_rad * 1000 */
+    int32_t  freq_cHz;     /* g_foc_if_freq_hz * 100 */
+    uint8_t  mode;         /* FOC_MODE_* */
+    uint8_t  phase;        /* g_foc_phase */
+    uint8_t  sync;         /* g_foc_if_sync */
+    uint8_t  rsv;
+} foc_rtt_frame_t;
+#endif /* FOC_RTT_RATE_HZ > 2000u */
+
+static uint32_t s_foc_rtt_tick = 0u;
+static uint32_t s_foc_rtt_ms   = 0u;
+
+static void Foc_RttIsrSend(void)
+{
+    uint32_t ms;
+
+    if ((++s_foc_rtt_tick % FOC_RTT_DIV) != 0u) {
+        return;
+    }
+    ms = s_foc_rtt_ms;
+    s_foc_rtt_ms += (1000u / FOC_RTT_RATE_HZ);
+
+#if FOC_RTT_RATE_HZ > 2000u
+    {
+        foc_rtt_frame_t fr;
+
+        fr.magic      = 0x46544F4Du;
+        fr.ms         = ms;
+        fr.rotor_mrad = (int32_t)(g_foc_if_rotor_rad * 1000.0f);
+        fr.theta_mrad = (int32_t)(g_foc_theta_rad  * 1000.0f);
+        fr.iq_ma      = (int32_t)g_foc_iq_ma;
+        fr.id_ma      = (int32_t)g_foc_id_ma;
+        fr.vq_mv      = (int32_t)(g_foc_vq * 1000.0f);
+        fr.vd_mv      = (int32_t)(g_foc_vd * 1000.0f);
+        fr.spd_rpm    = (int32_t)g_enc_speed_rpm;
+        fr.diff_mrad  = (int32_t)(g_foc_if_diff_rad * 1000.0f);
+        fr.freq_cHz   = (int32_t)(g_foc_if_freq_hz * 100.0f);
+        fr.mode       = g_foc_mode;
+        fr.phase      = g_foc_phase;
+        fr.sync       = g_foc_if_sync;
+        fr.rsv        = 0u;
+        SEGGER_RTT_Write(FOC_RTT_CH, (const char *)&fr, (unsigned)sizeof(fr));
+    }
+#else
+    {
+        char buf[96];
+        int  n;
+
+        n = snprintf(buf, sizeof(buf),
+            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u\r\n",
+            (unsigned)g_foc_mode, (unsigned)g_foc_phase,
+            (int)(g_foc_if_rotor_rad * 1000.0f),
+            (int)(g_foc_theta_rad  * 1000.0f),
+            (int)g_foc_iq_ma, (int)g_foc_id_ma,
+            (int)(g_foc_vq * 1000.0f), (int)(g_foc_vd * 1000.0f),
+            (int)g_enc_speed_rpm,
+            (unsigned)g_foc_if_sync,
+            (int)(g_foc_if_diff_rad * 1000.0f),
+            (int)(g_foc_if_freq_hz * 100.0f),
+            (unsigned)ms);
+        if (n > 0) {
+            SEGGER_RTT_Write(FOC_RTT_CH, buf, (unsigned)n);
+        }
+    }
+#endif
+}
+#endif /* FOC_RTT_ENABLE */
+
  * Foc_Isr - 20 kHz ISR callback (ADC1 EOCB, second callback slot)
  ******************************************************************************/
 void Foc_Isr(const stc_i_data_t *pData)
@@ -1028,6 +1137,9 @@ void Foc_Isr(const stc_i_data_t *pData)
     if (!g_foc_active) {
         return;
     }
+#if FOC_RTT_ENABLE
+    Foc_RttIsrSend();
+#endif
 
     Foc_ClampOpenLoopVolt();   /* open-loop voltage hard cap (overheat protection) */
 

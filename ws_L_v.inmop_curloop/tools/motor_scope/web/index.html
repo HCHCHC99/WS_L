@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MotorScope - J-Link RTT FOC 电机动画</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo">&#9671;</span> MotorScope
+    <span class="sub">J-Link RTT · FOC 实时动画（mode 22）</span>
+  </div>
+  <div class="status">
+    <span class="dot" id="connDot"></span><span id="connText">连接中…</span>
+    <span class="pill" id="modePill">--</span>
+    <span class="pill" id="phasePill">--</span>
+    <span class="pill" id="syncPill">--</span>
+    <span class="pill" id="srcPill">--</span>
+    <span class="pill" id="fpsPill">--</span>
+  </div>
+</header>
+
+<main>
+  <section class="card motor-card">
+    <h2>&#9874; 电机（极对数 10 · 20 磁钢 · 定子示意）</h2>
+    <canvas id="motor" width="560" height="560"></canvas>
+    <div class="legend">
+      <span><i style="background:#e5484d"></i>N 极</span>
+      <span><i style="background:#3b82f6"></i>S 极</span>
+      <span><i style="background:#22d3ee"></i>id（d 轴）</span>
+      <span><i style="background:#fb923c"></i>iq（q 轴）</span>
+      <span><i style="background:#facc15"></i>is = id+j·iq</span>
+      <span><i style="background:#e879f9"></i>v（电压矢量）</span>
+      <span><i style="border-top:2px dashed #fff;width:22px;height:0"></i>控制角 θ</span>
+    </div>
+  </section>
+
+  <section class="right-col">
+    <div class="card">
+      <h2>&#9969; 仪表</h2>
+      <div class="gauges">
+        <canvas id="rpmGauge" width="260" height="170"></canvas>
+        <div class="num-grid" id="numGrid"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>&#9878; I-F 启动状态机</h2>
+      <div class="phases" id="phaseRow"></div>
+      <div class="sync-row">
+        <span class="led" id="syncLed"></span>
+        <span id="syncText">未同步</span>
+      </div>
+    </div>
+
+    <div class="card scope-wrap">
+      <h2>&#9836; iq / id（mA）</h2>
+      <canvas id="scope1" width="640" height="150" class="scope"></canvas>
+      <h2>&#9680; 转子角 vs 控制角（°）</h2>
+      <canvas id="scope2" width="640" height="120" class="scope"></canvas>
+      <h2>&#9651; 角度偏差 diff（rad）</h2>
+      <canvas id="scope3" width="640" height="110" class="scope"></canvas>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="card">
+    <h2>&#9993; RTT 帧日志</h2>
+    <div id="log" class="log">等待数据…</div>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -26,6 +26,7 @@ const hub = {
   status: "connecting", detail: "--", fps: 0,
   rpmMax: 500, curMax: 1000,
   lastAgeMs: -1,          // 最新帧年龄（ms），-1 = 尚未收到帧
+  lastFrameWall: 0,       // 最近一次收到新帧的墙钟时间（用于外推窗口）
   logs: [],
   lastLogSeq: 0,
   logFilter: "",
@@ -69,6 +70,7 @@ async function poll() {
       });
     }
     scopeTrim();
+    if (d.history && d.history.length) hub.lastFrameWall = Date.now();
     if (d.logs && d.logs.length) {
       for (const e of d.logs) {
         if (e[0] > hub.lastLogSeq) { hub.logs.push(e[1]); hub.lastLogSeq = e[0]; }
@@ -166,34 +168,34 @@ function updateStatus() {
 /* ================= 显示角度（帧间按转速/频率积分，动画平滑） ================= */
 let visRotorMech = 0, visRotorElec = 0, visCtrlElec = 0, lastNow = performance.now();
 function advance(now) {
-  const dt = (now - lastNow) / 1000; lastNow = now;
-  const f = hub.latest;
-  if (!f) return;
-  // 数据新鲜度：超过 STALE_MS 没有新帧 => 停止（不得用旧转速继续假装转动）
+  const s = hub.scope;
+  if (!s.n || !hub.latest) return;
+  // 数据新鲜度：超过 STALE_MS 没有新帧 => 冻结在最新位置
   const stale = hub.lastAgeMs < 0 || hub.lastAgeMs > STALE_MS;
-  const spd = stale ? 0 : f.spd;
-  const freq = stale ? 0 : f.freq;
 
-  // 转子：速度积分推进 + 向最新帧目标平滑收敛。
-  // 之前每 50ms 把角度硬性回弹到帧值，与积分打架会造成抖动/像没跟上；
-  // 现在只做小幅校正，既平滑又不会漂移。
-  const targetMech = ((f.rotor / 1000) * RAD2DEG) / POLE_PAIRS;
-  visRotorMech = (visRotorMech + (spd / 60) * 360 * dt + 360) % 360;
-  if (!stale) {
-    let d = targetMech - visRotorMech;
-    d = ((d % 360) + 540) % 360 - 180;      // 最短角差 [-180,180)
-    visRotorMech = (visRotorMech + d * 0.18 + 360) % 360;
-  }
-  visRotorElec = visRotorMech * POLE_PAIRS;
+  // 转子/控制角：用最新两个数据点做"线性插值/外推"，完全跟随真实帧数据。
+  // 不再用转速积分、不做收敛校正——彻底避免"转一点又弹回原位"。
+  const iLast = (s.head + s.n - 1) % s.cap;
+  const iPrev = (s.head + s.n - 2) % s.cap;
+  const tLast = s.t[iLast], tPrev = s.t[iPrev];
+  const span = tLast - tPrev;
 
-  // 控制角：电频率积分 + 向帧目标收敛
-  const targetCtrl = (f.theta / 1000) * RAD2DEG;
-  visCtrlElec = (visCtrlElec + (freq / 100) * 360 * dt + 360) % 360;
-  if (!stale) {
-    let dc = targetCtrl - visCtrlElec;
-    dc = ((dc % 360) + 540) % 360 - 180;
-    visCtrlElec = (visCtrlElec + dc * 0.18 + 360) % 360;
+  // 外推窗口：距最新数据点收到的时间（≤轮询周期）；数据中断则冻结
+  const ext = stale ? 0 : Math.min((Date.now() - (hub.lastFrameWall || Date.now())) / 1000, 0.06);
+
+  let rot = s.rotorDeg[iLast];
+  let th = s.thetaDeg[iLast];
+  if (span > 1e-6) {
+    let dRot = s.rotorDeg[iLast] - s.rotorDeg[iPrev];
+    dRot = ((dRot % 360) + 540) % 360 - 180;      // 连续旋转的最小角差
+    let dTh = s.thetaDeg[iLast] - s.thetaDeg[iPrev];
+    dTh = ((dTh % 360) + 540) % 360 - 180;
+    rot = s.rotorDeg[iLast] + dRot / span * ext;
+    th  = s.thetaDeg[iLast]  + dTh  / span * ext;
   }
+  visRotorElec = rot;
+  visRotorMech = rot / POLE_PAIRS;
+  visCtrlElec = th;
 }
 
 /* ================= 电机剖视图 ================= */

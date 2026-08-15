@@ -67,9 +67,6 @@ async function poll() {
         thetaDeg: (f[3] / 1000) * RAD2DEG,
         diffRad: f[10] / 1000,
       });
-      if (hub.lastSeq < h[0]) {                  // 用最新一帧锚定显示角度
-        anchorFromFrame(f);
-      }
     }
     scopeTrim();
     if (d.logs && d.logs.length) {
@@ -146,12 +143,6 @@ document.getElementById("reconnBtn").addEventListener("click", () => {
   doReconnect(isNaN(ch) ? undefined : ch);
 });
 
-function anchorFromFrame(f) {
-  visRotorMech = ((f[2] / 1000) * RAD2DEG) / POLE_PAIRS;   // 转子机械角
-  visCtrlElec = (f[3] / 1000) * RAD2DEG;                   // 控制电角度
-  visRotorElec = (f[2] / 1000) * RAD2DEG;
-}
-
 /* ================= 状态栏 ================= */
 function updateStatus() {
   const dot = document.getElementById("connDot");
@@ -182,12 +173,27 @@ function advance(now) {
   const stale = hub.lastAgeMs < 0 || hub.lastAgeMs > STALE_MS;
   const spd = stale ? 0 : f.spd;
   const freq = stale ? 0 : f.freq;
-  // 转子按机械转速积分（mech rev/s = rpm/60）
+
+  // 转子：速度积分推进 + 向最新帧目标平滑收敛。
+  // 之前每 50ms 把角度硬性回弹到帧值，与积分打架会造成抖动/像没跟上；
+  // 现在只做小幅校正，既平滑又不会漂移。
+  const targetMech = ((f.rotor / 1000) * RAD2DEG) / POLE_PAIRS;
   visRotorMech = (visRotorMech + (spd / 60) * 360 * dt + 360) % 360;
-  // 转子电角度 = 机械角 x 极对数（锚定来自最新帧，帧间按转速积分平滑）
+  if (!stale) {
+    let d = targetMech - visRotorMech;
+    d = ((d % 360) + 540) % 360 - 180;      // 最短角差 [-180,180)
+    visRotorMech = (visRotorMech + d * 0.18 + 360) % 360;
+  }
   visRotorElec = visRotorMech * POLE_PAIRS;
-  // 控制角按电频率积分
+
+  // 控制角：电频率积分 + 向帧目标收敛
+  const targetCtrl = (f.theta / 1000) * RAD2DEG;
   visCtrlElec = (visCtrlElec + (freq / 100) * 360 * dt + 360) % 360;
+  if (!stale) {
+    let dc = targetCtrl - visCtrlElec;
+    dc = ((dc % 360) + 540) % 360 - 180;
+    visCtrlElec = (visCtrlElec + dc * 0.18 + 360) % 360;
+  }
 }
 
 /* ================= 电机剖视图 ================= */
@@ -274,10 +280,12 @@ function drawMotor() {
     const mx = Math.cos(visRotorMech * DEG) * (R_R + R_M) / 2;
     const my = Math.sin(visRotorMech * DEG) * (R_R + R_M) / 2;
     ctx.save();
-    ctx.shadowColor = "#facc15"; ctx.shadowBlur = 14;
+    ctx.shadowColor = "#facc15"; ctx.shadowBlur = 16;
     ctx.fillStyle = "#fde047";
-    ctx.font = "bold 22px sans-serif";
+    ctx.strokeStyle = "#241505"; ctx.lineWidth = 2.5;
+    ctx.font = "bold 26px sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.strokeText("★", mx, my + 1);
     ctx.fillText("★", mx, my + 1);
     ctx.restore();
   }

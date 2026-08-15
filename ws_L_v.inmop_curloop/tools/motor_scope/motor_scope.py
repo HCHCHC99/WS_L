@@ -228,6 +228,9 @@ class DataHub:
             ]
             latest = self.latest.to_list() if self.latest else None
             logs = [[s, txt] for s, txt in self.log_lines if s > log_since]
+            last_age = -1.0
+            if self.history:
+                last_age = (now - self.history[-1][1]) * 1000.0
             return {
                 "ok": True,
                 "status": self.status,
@@ -239,6 +242,7 @@ class DataHub:
                 "history": history,
                 "logs": logs,
                 "log_seq": self.log_seq,
+                "last_age_ms": round(last_age, 1),
             }
 
 
@@ -257,11 +261,12 @@ def _wrap_rad(a):
 class SimFoc:
     """生成与固件 MOTF 文本帧一致的仿真数据。极对数 10、母线 12V。"""
 
-    def __init__(self, sample_hz: int = 200):
+    def __init__(self, sample_hz: int = 200, stop_at: float = 0.0):
         self.sample_hz = sample_hz
         self.pp = 10
         self.t0 = time.time()
         self._last_theta = 0.0
+        self.stop_at = stop_at      # >0 时：超过该秒数停止产生帧（模拟数据中断）
 
     def describe(self):
         return f"仿真FOC (I-F启动->同步->运行, 极对数{self.pp}, {self.sample_hz}Hz)"
@@ -334,6 +339,9 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
     last_motf_log = 0.0
     prev_state = None
     while True:
+        if src.stop_at > 0.0 and (time.time() - src.t0) > src.stop_at:
+            time.sleep(0.2)         # 模拟"电机停止/数据中断"：不再产生帧
+            continue
         f = src.next_frame()
         hub.push(f)
         now = time.time()
@@ -617,6 +625,8 @@ def main():
     ap.add_argument("--rtt-ram-size", type=lambda x: int(x, 0), default=0x2F000,
                     help="RAM 大小（用于扫描，HC32F460 默认 0x2F000）")
     ap.add_argument("--rate", type=int, default=200, help="仿真采样率 Hz")
+    ap.add_argument("--sim-stop-after", type=float, default=0.0,
+                    help="仿真运行 N 秒后停止发帧（模拟数据中断，0=不停）")
     ap.add_argument("--port", type=int, default=8080)
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args()
@@ -636,7 +646,7 @@ def main():
                              args.rtt_addr, args.rtt_ram_base, args.rtt_ram_size)
         thread = threading.Thread(target=jlink_loop, args=(hub, src), daemon=True)
     else:
-        src = SimFoc(args.rate)
+        src = SimFoc(args.rate, args.sim_stop_after)
         thread = threading.Thread(target=sim_loop, args=(hub, src, args.rate),
                                   daemon=True)
     thread.start()

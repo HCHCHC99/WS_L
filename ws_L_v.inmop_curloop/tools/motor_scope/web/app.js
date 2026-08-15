@@ -2,6 +2,7 @@
 
 /* ================= 常量 ================= */
 const POLL_MS = 50;
+const STALE_MS = 400;            // 超过该时长没有新帧 => 数据中断，转子冻结（不得用旧转速假装转动）
 const POLE_PAIRS = 10;          // 与 motor_config.h FOC_POLE_PAIRS 一致
 const DEG = Math.PI / 180;
 const TAU = Math.PI * 2;
@@ -24,7 +25,7 @@ const hub = {
   latest: null, lastSeq: 0,
   status: "connecting", detail: "--", fps: 0,
   rpmMax: 500, curMax: 1000,
-  curHist: [],          // {t, iq, id, rotorDeg, thetaDeg, diffRad}
+  lastAgeMs: -1,          // 最新帧年龄（ms），-1 = 尚未收到帧
   logs: [],
   lastLogSeq: 0,
   logFilter: "",
@@ -44,6 +45,7 @@ async function poll() {
     const r = await fetch(`/data?since=${hub.lastSeq}&_=${Date.now()}`);
     const d = await r.json();
     hub.status = d.status; hub.detail = d.detail || "--"; hub.fps = d.fps || 0;
+    if (d.last_age_ms !== undefined) hub.lastAgeMs = d.last_age_ms;
     if (d.latest) {
       hub.latest = {
         mode: d.latest[0], phase: d.latest[1], rotor: d.latest[2],
@@ -98,12 +100,12 @@ async function health() {
     set("cFrames", d.frames);
     set("cAge", d.last_age_ms < 0 ? "--" : d.last_age_ms.toFixed(0) + " ms");
     set("cFps", d.fps.toFixed(0) + " fps");
-    const dot = document.getElementById("connDot");
-    dot.className = "dot " + (d.status === "running" ? "good" : d.status === "error" ? "bad" : "");
-    document.getElementById("connText").textContent =
-      d.status === "running" ? "实时连接" : d.status === "error" ? "连接异常" : "连接中…";
+    const stale = d.status === "running" && d.last_age_ms >= 0 && d.last_age_ms > STALE_MS;
     const hint = document.getElementById("cHint");
-    if (d.status === "running" && d.last_age_ms >= 0) {
+    if (stale) {
+      hint.textContent = "数据中断：" + d.last_age_ms.toFixed(0) + " ms 无新帧（目标可能已停止、复位或连接断开）。";
+      hint.style.color = "#f59e0b";
+    } else if (d.status === "running" && d.last_age_ms >= 0) {
       hint.textContent = "收到 RTT 帧，动画应已更新。若画面不动，检查目标是否在 mode 22 运行。";
       hint.style.color = "#4ade80";
     } else if (d.status === "running") {
@@ -153,7 +155,9 @@ function anchorFromFrame(f) {
 function updateStatus() {
   const dot = document.getElementById("connDot");
   const txt = document.getElementById("connText");
-  if (hub.status === "running") { dot.className = "dot good"; txt.textContent = "实时连接"; }
+  const stale = hub.status === "running" && hub.lastAgeMs >= 0 && hub.lastAgeMs > STALE_MS;
+  if (hub.status === "running" && !stale) { dot.className = "dot good"; txt.textContent = "实时连接"; }
+  else if (hub.status === "running" && stale) { dot.className = "dot"; txt.textContent = "数据中断（无新帧）"; }
   else if (hub.status === "error") { dot.className = "dot bad"; txt.textContent = "连接异常"; }
   else { dot.className = "dot"; txt.textContent = "连接中…"; }
   const f = hub.latest;
@@ -171,12 +175,16 @@ function advance(now) {
   const dt = (now - lastNow) / 1000; lastNow = now;
   const f = hub.latest;
   if (!f) return;
+  // 数据新鲜度：超过 STALE_MS 没有新帧 => 停止（不得用旧转速继续假装转动）
+  const stale = hub.lastAgeMs < 0 || hub.lastAgeMs > STALE_MS;
+  const spd = stale ? 0 : f.spd;
+  const freq = stale ? 0 : f.freq;
   // 转子按机械转速积分（mech rev/s = rpm/60）
-  visRotorMech = (visRotorMech + (f.spd / 60) * 360 * dt + 360) % 360;
+  visRotorMech = (visRotorMech + (spd / 60) * 360 * dt + 360) % 360;
   // 转子电角度 = 机械角 x 极对数（锚定来自最新帧，帧间按转速积分平滑）
   visRotorElec = visRotorMech * POLE_PAIRS;
   // 控制角按电频率积分
-  visCtrlElec = (visCtrlElec + (f.freq / 100) * 360 * dt + 360) % 360;
+  visCtrlElec = (visCtrlElec + (freq / 100) * 360 * dt + 360) % 360;
 }
 
 /* ================= 电机剖视图 ================= */

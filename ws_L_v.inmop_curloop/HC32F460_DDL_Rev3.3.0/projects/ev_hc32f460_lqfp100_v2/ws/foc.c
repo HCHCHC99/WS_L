@@ -1072,6 +1072,21 @@ typedef struct __attribute__((packed)) {
 } foc_rtt_frame_t;
 #endif /* FOC_RTT_RATE_HZ > 2000u */
 
+/* ABZ 编码器计数 -> 转子电角度 [0,2PI)，与 RUN 状态机同公式。
+ * 心跳里用它时刻刷新 g_foc_if_rotor_rad：即使 FOC 未运行（停止/开环/手转），
+ * 动画里的转子位置也会跟随真实转子。 */
+static float Foc_RotorAngleFromEncoderRad(void)
+{
+    int32_t cnt = Foc_ModPos(((int32_t)g_enc_count * (int32_t)g_foc_enc_dir),
+                             (int32_t)ENCODER_CPR);
+    float enc = (float)cnt * (FOC_MATH_2PI * (float)FOC_POLE_PAIRS / (float)ENCODER_CPR);
+    enc -= (float)((int32_t)(enc * (1.0f / FOC_MATH_2PI))) * FOC_MATH_2PI;
+    if (enc < 0.0f) {
+        enc += FOC_MATH_2PI;
+    }
+    return enc;
+}
+
 static uint32_t s_foc_rtt_tick = 0u;
 static uint32_t s_foc_rtt_ms   = 0u;
 
@@ -1085,13 +1100,18 @@ static void Foc_RttIsrSend(void)
     ms = s_foc_rtt_ms;
     s_foc_rtt_ms += (1000u / FOC_RTT_RATE_HZ);
 
+    /* 时刻从 ABZ 编码器刷新转子电角度（FOC 未运行时也更新，手转电机动画跟随） */
+    g_foc_if_rotor_rad = Foc_RotorAngleFromEncoderRad();
+    {
+        float rotor_rad = g_foc_if_rotor_rad;
+
 #if FOC_RTT_RATE_HZ > 2000u
     {
         foc_rtt_frame_t fr;
 
         fr.magic      = 0x46544F4Du;
         fr.ms         = ms;
-        fr.rotor_mrad = (int32_t)(g_foc_if_rotor_rad * 1000.0f);
+        fr.rotor_mrad = (int32_t)(rotor_rad * 1000.0f);
         fr.theta_mrad = (int32_t)(g_foc_theta_rad  * 1000.0f);
         fr.iq_ma      = (int32_t)g_foc_iq_ma;
         fr.id_ma      = (int32_t)g_foc_id_ma;
@@ -1114,7 +1134,7 @@ static void Foc_RttIsrSend(void)
         n = snprintf(buf, sizeof(buf),
             "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u\r\n",
             (unsigned)g_foc_mode, (unsigned)g_foc_phase,
-            (int)(g_foc_if_rotor_rad * 1000.0f),
+            (int)(rotor_rad * 1000.0f),
             (int)(g_foc_theta_rad  * 1000.0f),
             (int)g_foc_iq_ma, (int)g_foc_id_ma,
             (int)(g_foc_vq * 1000.0f), (int)(g_foc_vd * 1000.0f),
@@ -1128,6 +1148,7 @@ static void Foc_RttIsrSend(void)
         }
     }
 #endif
+    }
 }
 #endif /* FOC_RTT_ENABLE */
 

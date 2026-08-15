@@ -73,7 +73,7 @@
 #define FOC_VBUS_V              12.0f      /* 母线电压（V）：电机额定 12V（3505-KV650） */
 #define FOC_OPENLOOP_FREQ_HZ    5.0f       /* 默认开环电频率（Hz） */
 #define FOC_OPENLOOP_VOLT_V     0.9f       /* 开环电压（V）：0.4V 拉力不足（转子 -32~-38rpm 打滑）；0.9V 在 5Hz 稳定同步 -30rpm */
-#define FOC_OPENLOOP_VOLT_MAX  1.5f       /* 硬上限：开环相电压不得超过此值（过热保护） */
+#define FOC_OPENLOOP_VOLT_MAX   1.5f       /* 硬上限：开环相电压不得超过此值（过热保护） */
 #define FOC_ISR_HZ              20000      /* FOC ISR 频率（Hz）：10k PWM x 双触发 = 20k */
 #define FOC_DEADTIME_NS         500u       /* 互补 PWM 死区（ns） */
 

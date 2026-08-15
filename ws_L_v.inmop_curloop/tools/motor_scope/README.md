@@ -1,6 +1,6 @@
 # MotorScope —— J-Link RTT 电机实时动画（FOC，分支 inmop_cur_loop_rtt）
 
-目标固件（`ws/foc.c`）在 FOC ISR（20kHz）内以 **1kHz** 向 RTT 通道 6 发送
+目标固件（`ws/foc.c`）在 FOC ISR（20kHz）内以 **1kHz** 向 RTT 通道 0 发送
 MOTF 帧，本工具用 pylink 读取、解析后，在浏览器 Canvas 里**根据真实数据**
 实时绘制电机动画：
 
@@ -55,8 +55,8 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 
 1. `ws/foc.c`：新增 `Foc_RttIsrSend()`，在 `Foc_Isr` 里每 `FOC_ISR_HZ/FOC_RTT_RATE_HZ`
    个周期调用一次；`SEGGER_RTT_Write` 非阻塞，缓冲满丢帧不影响控制环。
-2. `RTT/SEGGER_RTT_Conf.h`：`SEGGER_RTT_MAX_NUM_UP_BUFFERS` 3 → 7（启用通道 6）。
-3. 配置宏在 `foc.c` 顶部（`FOC_RTT_ENABLE / FOC_RTT_CH / FOC_RTT_RATE_HZ`），
+2. `RTT/SEGGER_RTT_Conf.h`：`SEGGER_RTT_MAX_NUM_UP_BUFFERS` 3 → 7（启用更多通道；MOTF 帧走通道 0）。
+3. 配置宏在 `foc.c` 顶部（`FOC_RTT_ENABLE / FOC_RTT_CH / FOC_RTT_RATE_HZ`，`FOC_RTT_CH` 默认 0，与 `MAIN_D/E` 日志共用通道 0；若用 `MAIN_E()` 打印 MOTF 行，上位机解析器同样兼容），
    可用编译器 `-D` 覆盖；如需统一收口可移入 `motor_config.h`。
 
 ## 注意
@@ -66,4 +66,5 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 - I-F 启动阶段 `g_foc_theta_rad` 是合成角，动画会显示"控制角指针"与"转子
   磁钢"分离直到同步——这正是调试 I-F 启动要看的现象。
 - `g_foc_if_rotor_rad` 依赖编码器方向/零位（FOC_ENC_DIR / 对齐校准）。
+
 

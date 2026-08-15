@@ -1027,8 +1027,12 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
  *
  * 配置（可用编译器 -D 覆盖；若想统一收口到 motor_config.h 也可移过去）：
  *   FOC_RTT_ENABLE   : 1 = 使能
- *   FOC_RTT_CH       : RTT 上行通道号（默认 6，需 SEGGER_RTT_MAX_NUM_UP_BUFFERS >= 7）
+ *   FOC_RTT_CH       : RTT 上行通道号（默认 0，与 MAIN_D/E 日志共用通道 0）
  *   FOC_RTT_RATE_HZ  : 帧率，默认 1000；>2000 时自动切换为二进制帧
+ *
+ * 说明：目标机目前只有通道 0 可用，MOTF 帧与日志都走通道 0；上位机解析器
+ *       会自动过滤 MOTF 行、把其余文本当日志显示。若想用 MAIN_E(...) 打印
+ *       也一样兼容（解析器会剥掉 ANSI 颜色和 [MAIN] 前缀）。
  *
  * 帧格式（文本）：
  *   MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
@@ -1038,7 +1042,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 #define FOC_RTT_ENABLE      1u
 #endif
 #ifndef FOC_RTT_CH
-#define FOC_RTT_CH          6u
+#define FOC_RTT_CH          0u
 #endif
 #ifndef FOC_RTT_RATE_HZ
 #define FOC_RTT_RATE_HZ     1000u

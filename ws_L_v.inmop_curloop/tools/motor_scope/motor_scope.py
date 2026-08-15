@@ -30,6 +30,7 @@ import argparse
 import json
 import math
 import random
+import re
 import struct
 import sys
 import threading
@@ -80,9 +81,16 @@ class FocFrame:
                 int(round(self.freq_cHz)), self.ms]
 
 
+def _clean_rtt_line(line: str) -> str:
+    """剥掉 ANSI 颜色码与 [MAIN] 之类的前缀（兼容 MAIN_E 打印）。"""
+    line = re.sub(r"\x1b\[[0-9;]*m", "", line)
+    line = re.sub(r"^\[[A-Za-z0-9_]+\]\s*", "", line)
+    return line.strip()
+
+
 def parse_text_line(line: str):
-    """解析文本帧：MOTF,<13 个字段>"""
-    line = line.strip()
+    """解析文本帧：MOTF,<13 个字段>（兼容 MAIN_E 的 [MAIN] 前缀/ANSI 颜色）。"""
+    line = _clean_rtt_line(line)
     if not line.startswith("MOTF,"):
         return None
     p = line.split(",")
@@ -120,39 +128,41 @@ def parse_binary(buf: bytes):
 
 
 class RttParser:
-    """RTT 字节流 -> FocFrame。自动识别文本/二进制两种帧。"""
+    """RTT 字节流 -> FocFrame。ch0 为文本（日志 + MOTF 行），>2kHz 时另有二进制帧。"""
 
     def __init__(self):
         self.buf = bytearray()
 
-    def feed(self, data: bytes, sink):
+    def feed(self, data: bytes, sink, log_sink=None):
         self.buf.extend(data)
-        if len(self.buf) >= 5 and self.buf[:5] == b"MOTF,":
-            # 文本模式：按行切分
-            while True:
-                idx = self.buf.find(b"\n")
-                if idx < 0:
-                    break
-                line = bytes(self.buf[:idx]).decode("utf-8", errors="replace")
-                del self.buf[:idx + 1]
-                fr = parse_text_line(line)
-                if fr is not None:
-                    sink(fr)
-        else:
-            # 二进制模式：按 magic 扫描
+        # 文本模式优先：按行切分（ch0 混有 MAIN 日志与 MOTF 行）
+        while True:
+            idx = self.buf.find(b"\n")
+            if idx < 0:
+                break
+            line = bytes(self.buf[:idx]).decode("utf-8", errors="replace")
+            del self.buf[:idx + 1]
+            line = line.strip()
+            if not line:
+                continue
+            fr = parse_text_line(line)
+            if fr is not None:
+                sink(fr)
+            elif log_sink is not None:
+                log_sink(line)
+        # 二进制模式（>2kHz 帧率）：按 magic 扫描
+        if self.buf[:4] == b"MOTF" and len(self.buf) >= _BIN_SIZE:
             while True:
                 idx = self.buf.find(b"MOTF")
-                if idx < 0:
-                    if len(self.buf) > 3:
-                        del self.buf[:-3]
+                if idx < 0 or len(self.buf) - idx < _BIN_SIZE:
                     break
-                if len(self.buf) - idx >= _BIN_SIZE:
-                    fr = parse_binary(bytes(self.buf[idx:idx + _BIN_SIZE]))
-                    if fr is not None:
-                        sink(fr)
-                    del self.buf[:idx + _BIN_SIZE]
-                else:
-                    break
+                fr = parse_binary(bytes(self.buf[idx:idx + _BIN_SIZE]))
+                if fr is not None:
+                    sink(fr)
+                del self.buf[:idx + _BIN_SIZE]
+        # 防内存膨胀
+        if len(self.buf) > 8192:
+            del self.buf[:-4096]
 
 
 # ======================================================================
@@ -431,8 +441,10 @@ def jlink_loop(hub: DataHub, src: JLinkRttSource):
         try:
             src.open()
         except Exception as exc:
-            hub.set_status("error", f"J-Link 连接失败: {exc}")
-            print(f"[MotorScope] {exc}")
+            msg = f"J-Link 连接失败，3 秒后自动重试: {exc}"
+            hub.set_status("error", msg)
+            hub.log("[MotorScope] " + msg)
+            print("[MotorScope] " + msg)
             src.reconnect_evt.wait(timeout=3.0)
             src.reconnect_evt.clear()
             continue
@@ -446,14 +458,16 @@ def jlink_loop(hub: DataHub, src: JLinkRttSource):
             try:
                 chunk = src.next_chunk()
             except Exception as exc:
-                hub.set_status("error", f"RTT 读取失败: {exc}")
-                print(f"[MotorScope] {exc}")
+                msg = f"RTT 读取失败（连接丢失），3 秒后自动重连: {exc}"
+                hub.set_status("error", msg)
+                hub.log("[MotorScope] " + msg)
+                print("[MotorScope] " + msg)
                 src.close()
                 break
             if not chunk:
                 time.sleep(0.003)
                 continue
-            parser.feed(chunk, hub.push)
+            parser.feed(chunk, hub.push, hub.log)
         time.sleep(0.2)
 
 
@@ -552,7 +566,7 @@ def main():
     ap.add_argument("--mode", choices=["sim-foc", "jlink"], default="sim-foc")
     ap.add_argument("--device", default="HC32F460")
     ap.add_argument("--speed-khz", type=int, default=4000)
-    ap.add_argument("--channel", type=int, default=6, help="RTT 上行通道号")
+    ap.add_argument("--channel", type=int, default=0, help="RTT 上行通道号（默认 0）")
     ap.add_argument("--rtt-addr", type=lambda x: int(x, 0), default=0,
                     help="RTT 控制块地址（十六进制）；0 = 自动搜索")
     ap.add_argument("--rtt-ram-base", type=lambda x: int(x, 0), default=0x1FFF8000,

@@ -162,6 +162,8 @@ function updateStatus() {
   else if (hub.status === "error") { dot.className = "dot bad"; txt.textContent = "连接异常"; }
   else { dot.className = "dot"; txt.textContent = "连接中…"; }
   const f = hub.latest;
+  const simWarn = document.getElementById("simWarn");
+  if (simWarn) simWarn.style.display = (hub.detail || "").includes("仿真") ? "block" : "none";
   document.getElementById("modePill").textContent = f ? ("mode " + f.mode + " " + (MODE_NAMES[f.mode] || "")) : "--";
   document.getElementById("phasePill").textContent = f ? ("phase " + f.phase + " " + (f.phase <= 4 ? PHASE_LIST[f.phase].name : "")) : "--";
   const sp = document.getElementById("syncPill");

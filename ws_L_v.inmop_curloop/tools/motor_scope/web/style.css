@@ -10,6 +10,8 @@ header { display: flex; justify-content: space-between; align-items: center; pad
 .dot.good { background: #22c55e; box-shadow: 0 0 8px #22c55e88; }
 .dot.bad  { background: #ef4444; box-shadow: 0 0 8px #ef444488; }
 .pill { background: #18212b; border: 1px solid #263442; color: #9fb0c0; font-size: 12px; padding: 3px 10px; border-radius: 999px; font-family: Consolas, monospace; }
+.sim-warn { background: #3b1d10; border: 1px solid #b45309; color: #fdba74; font-size: 13px; padding: 8px 16px; text-align: center; }
+.sim-warn code { background: #1f1408; padding: 1px 6px; border-radius: 4px; font-family: Consolas, monospace; }
 main { display: grid; grid-template-columns: 560px 1fr; gap: 16px; padding: 16px; max-width: 1320px; margin: 0 auto; align-items: start; }
 .card { background: #10161c; border: 1px solid #1e2833; border-radius: 12px; padding: 14px; }
 .card h2 { font-size: 13px; color: #8fa0b0; letter-spacing: 1px; margin-bottom: 10px; border-bottom: 1px solid #1c2731; padding-bottom: 8px; }

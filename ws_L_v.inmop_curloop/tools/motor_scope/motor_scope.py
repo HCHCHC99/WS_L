@@ -698,6 +698,9 @@ def main():
         return 1
     url = f"http://127.0.0.1:{args.port}/"
     print(f"[MotorScope] 数据源: {src.describe()}")
+    if args.mode == "sim-foc":
+        print("[MotorScope] ⚠️ 仿真模式：显示的是模拟数据，不是真实电机。"
+              "实机请用 --mode jlink --device HC32F460 --speed-khz 1000")
     print(f"[MotorScope] 打开: {url}   (Ctrl+C 退出)")
     if not args.no_browser:
         import webbrowser

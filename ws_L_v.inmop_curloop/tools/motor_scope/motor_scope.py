@@ -339,12 +339,15 @@ class SimFoc:
             th = self._last_theta + 2 * math.pi * freq * dt
             th %= 2 * math.pi
             self._last_theta = th
-            # 转子滞后于合成角：滞后量从 0 起呈铃形（先增大后收敛），
-            # 避免 hold->ramp 切换时转子角突变（否则星星会跳一下）
+            # 转子滞后于合成角：滞后量从 0 起呈铃形（先增大后收敛）。
+            # 注意不要强制 lag 下限（否则 hold->ramp 瞬间 rotor=th-lag 变负取模，
+            # 出现 0->357° 跳变，会让前端解卷丢一整圈电角度、机械角显示出错）
             ramp_t = t - 2.5
             lag = 1.2 * math.sin(min(1.0, ramp_t / 5.5) * math.pi)
-            lag = max(0.05, lag)
-            rotor = th - lag
+            # 转子不反向：ramp 起步瞬间 th≈0 而 lag>0，若直接用 th-lag 会变负、
+            # 取模后出现 0->359.7° 跳变，让前端解卷丢一个电周期。max(0,..) 让转子
+            # 在磁场刚建立时保持不动，随后连续向前，与真实转子行为一致。
+            rotor = max(0.0, th - lag)
             rotor %= 2 * math.pi
             f.theta_mrad = th * 1000.0
             f.rotor_mrad = rotor * 1000.0

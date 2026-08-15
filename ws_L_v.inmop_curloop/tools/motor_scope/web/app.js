@@ -356,8 +356,8 @@ function drawMotor() {
     ctx.font = "13px Consolas, monospace"; ctx.fillStyle = "#9aa5b1";
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
     ctx.fillText(
-      `θe转子=${(visRotorElec % 360).toFixed(0)}°  θe控制=${(visCtrlElec % 360).toFixed(0)}°  ` +
-      `iq=${f.iq.toFixed(0)}mA  id=${f.id.toFixed(0)}mA  n=${f.spd.toFixed(0)}rpm`,
+      `θe转子=${(visRotorElec % 360).toFixed(0)}° θm机械=${(((visRotorMech % 360) + 360) % 360).toFixed(0)}° ` +
+      `θe控制=${(visCtrlElec % 360).toFixed(0)}°  iq=${f.iq.toFixed(0)}mA id=${f.id.toFixed(0)}mA n=${f.spd.toFixed(0)}rpm`,
       0, MH - 14);
   }
   ctx.restore();
@@ -409,7 +409,8 @@ function drawGauge() {
 function buildNumGrid() {
   const rows = [
     ["转速", "rpmVal", "0 rpm"], ["转子电角 θe", "rotorVal", "0°"],
-    ["控制角 θ", "ctrlVal", "0°"], ["iq", "iqVal", "0 mA"],
+    ["控制角 θ", "ctrlVal", "0°"], ["机械角 θm", "mechVal", "0°"],
+    ["iq", "iqVal", "0 mA"],
     ["id", "idVal", "0 mA"], ["vq", "vqVal", "0 mV"],
     ["vd", "vdVal", "0 mV"], ["电频率", "freqVal", "0 Hz"],
     ["角度偏差 diff", "diffVal", "0 rad"],
@@ -429,6 +430,7 @@ function updateNum() {
   set("rpmVal", f.spd.toFixed(0) + " rpm");
   set("rotorVal", ((f.rotor / 1000) * RAD2DEG % 360).toFixed(1) + "°");
   set("ctrlVal", ((f.theta / 1000) * RAD2DEG % 360).toFixed(1) + "°");
+  set("mechVal", (((visRotorMech % 360) + 360) % 360).toFixed(1) + "°");
   set("iqVal", f.iq.toFixed(0) + " mA");
   set("idVal", f.id.toFixed(0) + " mA");
   set("vqVal", f.vq.toFixed(0) + " mV");
@@ -512,7 +514,7 @@ function scopeLowerBound(t) {
 const scopeNav = { windowSec: 1.0, followLive: true, viewEnd: 0, hover: null };
 const scopeCfg = {
   cur:   { iq: true,  id: true },
-  angle: { rotor: true, theta: true },
+  angle: { rotor: true, theta: true, mech: true },
   diff:  { diff: true },
 };
 
@@ -599,6 +601,7 @@ function drawScope(cv, kind) {
     traces = [
       { key: "rotorDeg", color: "#e5484d", dash: false, on: () => scopeCfg.angle.rotor },
       { key: "thetaDeg", color: "#ffffff", dash: true,  on: () => scopeCfg.angle.theta },
+      { mech: true, key: "mech", color: "#4ade80", dash: false, on: () => scopeCfg.angle.mech },
     ];
   } else {
     const yMid = mT + ph / 2;
@@ -643,11 +646,26 @@ function drawScope(cv, kind) {
     if (tr.dash) ctx.setLineDash([5, 4]);
     ctx.beginPath();
     let started = false;
+    let mechCum = 0, mechInit = false, mechPrev = 0;
     for (let i = startIdx; i < n; i++) {
       const idx = (s.head + i) % s.cap;
       const tt = s.t[idx];
       if (tt > t1) break;
-      const px = x(tt), py = yMap(s[tr.key][idx]);
+      let v;
+      if (tr.mech) {
+        // 机械角：电角度逐点解卷 / 极对数（0~360° 机械，比电角度慢 P 倍）
+        if (!mechInit) { mechCum = s.rotorDeg[idx] / POLE_PAIRS; mechInit = true; }
+        else {
+          let d = s.rotorDeg[idx] - mechPrev;
+          d = ((d % 360) + 540) % 360 - 180;
+          mechCum += d / POLE_PAIRS;
+        }
+        mechPrev = s.rotorDeg[idx];
+        v = mechCum;
+      } else {
+        v = s[tr.key][idx];
+      }
+      const px = x(tt), py = yMap(v);
       if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
     }
     ctx.stroke();
@@ -663,7 +681,7 @@ function drawScope(cv, kind) {
     ctx.beginPath(); ctx.moveTo(x(th), mT); ctx.lineTo(x(th), mT + ph); ctx.stroke();
     const rows = [];
     for (const tr of traces) {
-      if (!tr.on()) continue;
+      if (!tr.on() || tr.mech) continue;   // 机械角在数值面板实时显示，悬停跳过
       const v = interpVal(th, tr.key);
       if (v === null) continue;
       const label = tr.key === "rotorDeg" ? "转子" : tr.key === "thetaDeg" ? "控制" : tr.key;

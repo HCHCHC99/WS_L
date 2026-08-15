@@ -4,7 +4,7 @@
  * @brief ABZ quadrature encoder via TIMERA_1 hardware quadrature count.
  *
  *        PA8  = TIMA1_CLKA (A phase), PA9 = TIMA1_CLKB (B phase)
- *        PA10 = Z index (EXTINT_CH10 rising edge clears the counter)
+ *        PA10 = Z index (EXTINT_CH10 rising edge -> g_enc_rev++，不复位计数)
  *
  *        4x quadrature: both edges of both phases are counted; the CLKA/CLKB
  *        level/edge combos select count up/down (CW = A leads B).
@@ -62,11 +62,10 @@ static uint8_t s_inited    = 0;
 static void encoder_z_isr(void)
 {
     EXTINT_ClearExtIntStatus(ENC_Z_EIRQ);
-    TMRA_SetCountValue(CM_TMRA_1, 0u);   /* restart quadrature count from 0 */
-    s_last_cnt = 0;
-    s_count    = 0;
-    s_cnt_sum  = 0;
-    s_us_sum   = 0;
+    /* Z 索引仅用于圈数统计 g_enc_rev。
+     * 注意：不再复位 TMRA 计数 / s_last_cnt / s_count —— ABZ 计数全部按真实
+     * 连续数据信任。之前每圈把 s_count 清零，会在加速/丢步时把角度强制
+     * "回退到 0"；需要圈内角度的地方用 % ENCODER_CPR 折返即可。 */
     g_enc_rev++;
 }
 
@@ -168,18 +167,11 @@ void Encoder_Update(void)
     uint64_t now_us = Timer6_Timebase_GetTimestamp();
     uint32_t cnt    = TMRA_GetCountValue(CM_TMRA_1);
 
-    /* 16-bit counter wrap is safe; but the Z-index ISR resets the counter and
-     * s_last_cnt between two Encoder_Update calls, which would show up as a
-     * spurious +/-4096 jump and corrupt the speed window (RPM spikes to
-     * -5000..-9000 once per revolution). Discard jumps larger than half a
-     * revolution: normal motion per update is only a few counts, so a large
-     * jump can only be a Z-reset race. */
-    int16_t d_cnt = (int16_t)(cnt - (uint32_t)s_last_cnt);
-    if ((d_cnt >  (int16_t)(ENCODER_CPR / 2)) ||
-        (d_cnt < -(int16_t)(ENCODER_CPR / 2))) {
-        d_cnt = 0;
-        s_last_cnt = (uint16_t)cnt;
-    }
+    /* 16 位计数器自然回绕由 (uint16) 差 + int16 转换得到正确的有符号增量。
+     * 不做任何"异常跳变丢弃/判断"——ABZ 计数全部按真实数据信任（加速瞬间的
+     * 大增量同样如实累计）。 */
+    int16_t d_cnt = (int16_t)((uint16_t)cnt - s_last_cnt);
+
     uint32_t d_us  = (s_last_us == 0u) ? 1000u : (uint32_t)(now_us - s_last_us);
     if (d_us > 1000000u) {
         d_us = 1000000u;   /* clamp after debugger halt / long stall */

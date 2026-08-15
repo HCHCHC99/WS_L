@@ -33,14 +33,14 @@ extern "C" {
 void    Encoder_Init(void);
 void    Encoder_Update(void);          /* periodic (main loop): position + speed */
 
-int32_t Encoder_GetCount(void);        /* position since last Z (signed, 4x counts) */
+int32_t Encoder_GetCount(void);        /* 连续累计计数（Z 不复位，signed, 4x counts） */
 float   Encoder_GetAngleDeg(void);     /* 0..360 within current revolution */
 float   Encoder_GetSpeedRpm(void);     /* filtered speed */
 int8_t  Encoder_GetDirection(void);    /* +1 CW, -1 CCW, 0 stopped */
 uint32_t Encoder_GetRevCount(void);    /* Z pulses seen (revolutions) */
 
 /* J-Scope observability */
-extern volatile int32_t  g_enc_count;      /* position since last Z (signed) */
+extern volatile int32_t  g_enc_count;      /* 连续累计计数（Z 不复位） */
 extern volatile uint8_t  g_enc_dbg_print;   /* 1 = main loop prints cnt/rev every 100ms (manual CPR test) */
 extern volatile float    g_enc_count_f;    /* float mirror of g_enc_count */
 extern volatile float    g_enc_angle_deg;  /* 0..360 */

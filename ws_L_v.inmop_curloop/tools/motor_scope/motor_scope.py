@@ -337,6 +337,10 @@ class JLinkRttSource:
         jl.open()
         print(f"[J-Link] SN={jl.serial_number} 固件={jl.firmware_version}")
         jl.connect(self.device, speed=self.speed_khz, verbose=True)
+        try:
+            jl.go()             # 确保目标处于运行态（attach 可能停核，避免打断正在跑的电机）
+        except Exception:
+            pass
         jl.rtt_start()          # 自动搜索 RTT 控制块
         print(f"[J-Link] RTT 控制块已定位，读取上行通道 {self.channel} ...")
         self.jl = jl
@@ -346,7 +350,12 @@ class JLinkRttSource:
 
 
 def jlink_loop(hub: DataHub, src: JLinkRttSource):
-    src.open()
+    try:
+        src.open()
+    except Exception as exc:
+        hub.set_status("error", f"J-Link 连接失败: {exc}")
+        print(f"[MotorScope] {exc}")
+        return
     hub.set_status("running", src.describe())
     parser = RttParser()
     while True:

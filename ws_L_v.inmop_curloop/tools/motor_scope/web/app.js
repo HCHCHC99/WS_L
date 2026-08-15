@@ -70,7 +70,7 @@ async function poll() {
     }
     if (hub.curHist.length) {
       const tEnd = hub.curHist[hub.curHist.length - 1].t;
-      while (hub.curHist.length && hub.curHist[0].t < tEnd - 2.0) hub.curHist.shift();
+      while (hub.curHist.length && hub.curHist[0].t < tEnd - 20.0) hub.curHist.shift();
     }
     if (d.logs && d.logs.length) {
       for (const e of d.logs) {
@@ -431,84 +431,239 @@ function updatePhases() {
   else { led.className = "led"; txt.textContent = "未同步（I-F 启动中）"; txt.style.color = "#f59e0b"; }
 }
 
-/* ================= 波形 ================= */
+/* ================= 示波器（坐标轴/时间回看/悬停读数） ================= */
+const scopeNav = { windowSec: 1.0, followLive: true, viewEnd: 0, hover: null };
+const scopeCfg = {
+  cur:   { iq: true,  id: true },
+  angle: { rotor: true, theta: true },
+  diff:  { diff: true },
+};
+
+function fmtVal(v) {
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v / 1e6).toFixed(2) + "M";
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + "k";
+  if (a >= 100) return v.toFixed(0);
+  if (a >= 1) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
+function scopeWindow() {
+  const hist = hub.curHist;
+  if (!hist.length) return null;
+  const maxT = hist[hist.length - 1].t;
+  const minT = hist[0].t;
+  let t1 = scopeNav.followLive ? maxT : scopeNav.viewEnd;
+  if (t1 > maxT) t1 = maxT;
+  let t0 = t1 - scopeNav.windowSec;
+  if (t0 < minT) { t0 = minT; t1 = t0 + scopeNav.windowSec; if (t1 > maxT) t1 = maxT; }
+  return { t0, t1, minT, maxT };
+}
+
+function interpVal(hist, t, key) {
+  if (!hist.length) return null;
+  if (t <= hist[0].t) return hist[0][key];
+  const last = hist[hist.length - 1];
+  if (t >= last.t) return last[key];
+  let lo = 0, hi = hist.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (hist[mid].t < t) lo = mid + 1; else hi = mid;
+  }
+  const b = hist[lo], a = hist[lo - 1];
+  const f = (t - a.t) / ((b.t - a.t) || 1);
+  return a[key] + (b[key] - a[key]) * f;
+}
+
 function drawScope(cv, kind) {
   const ctx = cv.getContext("2d");
   const W = cv.width, H = cv.height;
+  const mL = 58, mR = 14, mT = 16, mB = 26;
+  const pw = W - mL - mR, ph = H - mT - mB;
   ctx.clearRect(0, 0, W, H);
-  ctx.fillStyle = "#10151a"; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = "#1d242c"; ctx.lineWidth = 1;
-  for (let gx = 1; gx < 8; gx++) {
-    ctx.beginPath(); ctx.moveTo(gx * W / 8, 0); ctx.lineTo(gx * W / 8, H); ctx.stroke();
-  }
-  for (let gy = 1; gy < 4; gy++) {
-    ctx.beginPath(); ctx.moveTo(0, gy * H / 4); ctx.lineTo(W, gy * H / 4); ctx.stroke();
-  }
+  ctx.fillStyle = "#10151a";
+  ctx.fillRect(0, 0, W, H);
+
   const hist = hub.curHist;
-  if (hist.length < 2) {
+  const win = scopeWindow();
+  if (!win || hist.length < 2) {
     ctx.fillStyle = "#5b6672"; ctx.font = "12px sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("等待数据…", W / 2, H / 2);
     return;
   }
-  const tEnd = hist[hist.length - 1].t, tWin = 0.8, t0 = tEnd - tWin;
-  const x = (t) => (t - t0) / tWin * W;
-  const yMid = H / 2;
+  const t0 = win.t0, t1 = win.t1;
+  const x = (t) => mL + (t - t0) / (t1 - t0) * pw;
+
+  /* Y 轴配置 */
+  let ticks, fmt, yMap, unit, traces;
   if (kind === "cur") {
-    ctx.strokeStyle = "#2a333d";
-    ctx.beginPath(); ctx.moveTo(0, yMid); ctx.lineTo(W, yMid); ctx.stroke();
     let maxA = 1;
-    for (const p of hist) maxA = Math.max(maxA, Math.abs(p.iq), Math.abs(p.id));
-    maxA *= 1.2;
-    const traces = [["iq", "#fb923c"], ["id", "#22d3ee"]];
-    for (const [key, color] of traces) {
-      ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.beginPath();
-      let started = false;
-      for (const p of hist) {
-        if (p.t < t0) continue;
-        const px = x(p.t), py = yMid - (p[key] / maxA) * (H / 2 - 14);
-        if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
-      }
-      ctx.stroke();
+    for (const p of hist) {
+      if (p.t < t0 || p.t > t1) continue;
+      maxA = Math.max(maxA, Math.abs(p.iq), Math.abs(p.id));
     }
-    ctx.font = "11px Consolas, monospace"; ctx.textBaseline = "top";
-    ctx.textAlign = "left"; ctx.fillStyle = "#fb923c"; ctx.fillText("iq", 8, 8);
-    ctx.fillStyle = "#22d3ee"; ctx.fillText("id", 8, 22);
-    ctx.fillStyle = "#7c8794"; ctx.textAlign = "right"; ctx.fillText("±" + maxA.toFixed(0) + " mA", W - 8, 8);
+    maxA *= 1.15;
+    const yMid = mT + ph / 2;
+    ticks = [-maxA, -maxA / 2, 0, maxA / 2, maxA];
+    fmt = fmtVal; unit = "mA";
+    yMap = (v) => yMid - (v / maxA) * (ph / 2 - 16);
+    traces = [
+      { key: "iq", color: "#fb923c", dash: false, on: () => scopeCfg.cur.iq },
+      { key: "id", color: "#22d3ee", dash: false, on: () => scopeCfg.cur.id },
+    ];
   } else if (kind === "angle") {
-    const traces = [["rotorDeg", "#e5484d", false], ["thetaDeg", "#ffffff", true]];
-    for (const [key, color, dash] of traces) {
-      ctx.strokeStyle = color; ctx.lineWidth = 1.6;
-      if (dash) ctx.setLineDash([5, 4]);
-      ctx.beginPath(); let started = false;
-      for (const p of hist) {
-        if (p.t < t0) continue;
-        const px = x(p.t), py = H - 8 - ((p[key] % 360) / 360) * (H - 16);
-        if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
-      }
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-    ctx.font = "11px Consolas, monospace"; ctx.textBaseline = "top";
-    ctx.textAlign = "left"; ctx.fillStyle = "#e5484d"; ctx.fillText("转子角", 8, 8);
-    ctx.fillStyle = "#ffffff"; ctx.fillText("控制角", 8, 22);
-    ctx.fillStyle = "#7c8794"; ctx.textAlign = "right"; ctx.fillText("0–360°", W - 8, 8);
-  } else { // diff
-    ctx.strokeStyle = "#2a333d";
-    ctx.beginPath(); ctx.moveTo(0, yMid); ctx.lineTo(W, yMid); ctx.stroke();
-    ctx.strokeStyle = "#c084fc"; ctx.lineWidth = 1.6; ctx.beginPath();
+    ticks = [0, 90, 180, 270, 360];
+    fmt = (v) => v.toFixed(0); unit = "°";
+    yMap = (v) => mT + 10 + (360 - (((v % 360) + 360) % 360)) / 360 * (ph - 20);
+    traces = [
+      { key: "rotorDeg", color: "#e5484d", dash: false, on: () => scopeCfg.angle.rotor },
+      { key: "thetaDeg", color: "#ffffff", dash: true,  on: () => scopeCfg.angle.theta },
+    ];
+  } else {
+    const yMid = mT + ph / 2;
+    ticks = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
+    fmt = (v) => (v === 0 ? "0" : (v / Math.PI).toFixed(1) + "π");
+    unit = "rad";
+    yMap = (v) => yMid - (v / Math.PI) * (ph / 2 - 14);
+    traces = [{ key: "diffRad", color: "#c084fc", dash: false, on: () => scopeCfg.diff.diff }];
+  }
+
+  /* 网格 + Y 轴刻度 */
+  ctx.font = "10px Consolas, monospace";
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (const v of ticks) {
+    const y = yMap(v);
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(mL, y); ctx.lineTo(W - mR, y); ctx.stroke();
+    ctx.fillStyle = "#7c8794";
+    ctx.fillText(fmt(v), mL - 6, y);
+  }
+  ctx.fillStyle = "#5b6672"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+  ctx.fillText(unit, mL + 6, mT);
+
+  /* X 轴刻度 + 网格 */
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let k = 0; k <= 4; k++) {
+    const tt = t0 + (t1 - t0) * k / 4;
+    const xx = x(tt);
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.beginPath(); ctx.moveTo(xx, mT); ctx.lineTo(xx, mT + ph); ctx.stroke();
+    ctx.fillStyle = "#7c8794";
+    ctx.fillText((tt - t1) > -0.0005 ? "0" : (tt - t1).toFixed(2) + "s", xx, H - mB + 5);
+  }
+  ctx.fillStyle = "#5b6672"; ctx.textAlign = "right";
+  ctx.fillText("t/s", W - mR, H - mB + 5);
+
+  /* 波形 */
+  for (const tr of traces) {
+    if (!tr.on()) continue;
+    ctx.strokeStyle = tr.color;
+    ctx.lineWidth = 1.6;
+    if (tr.dash) ctx.setLineDash([5, 4]);
+    ctx.beginPath();
     let started = false;
     for (const p of hist) {
-      if (p.t < t0) continue;
-      const px = x(p.t), py = yMid - (p.diffRad / Math.PI) * (H / 2 - 12);
+      if (p.t < t0 || p.t > t1) continue;
+      const px = x(p.t), py = yMap(p[tr.key]);
       if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
     }
     ctx.stroke();
-    ctx.font = "11px Consolas, monospace"; ctx.textBaseline = "top";
-    ctx.textAlign = "left"; ctx.fillStyle = "#c084fc"; ctx.fillText("diff", 8, 8);
-    ctx.fillStyle = "#7c8794"; ctx.textAlign = "right"; ctx.fillText("±π rad", W - 8, 8);
+    ctx.setLineDash([]);
+  }
+
+  /* 悬停十字光标 + 读数 */
+  const hv = scopeNav.hover;
+  if (hv && hv.kind === kind && hv.x >= mL && hv.x <= W - mR) {
+    const th = t0 + (hv.x - mL) / pw * (t1 - t0);
+    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x(th), mT); ctx.lineTo(x(th), mT + ph); ctx.stroke();
+    const rows = [];
+    for (const tr of traces) {
+      if (!tr.on()) continue;
+      const v = interpVal(hist, th, tr.key);
+      if (v === null) continue;
+      const label = tr.key === "rotorDeg" ? "转子" : tr.key === "thetaDeg" ? "控制" : tr.key;
+      rows.push({ color: tr.color, text: label + " " + fmtVal(v) });
+    }
+    const bw = 150, bh = 18 * (rows.length + 1) + 6;
+    const bx = Math.min(W - mR - bw - 6, x(th) + 10), by = mT + 4;
+    ctx.fillStyle = "rgba(8,12,16,0.88)";
+    ctx.strokeStyle = "#2a3643";
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.font = "11px Consolas, monospace";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#8fa0b0";
+    ctx.fillText("t " + (th - t1).toFixed(3) + " s", bx + 6, by + 10);
+    rows.forEach((r, i) => {
+      ctx.fillStyle = r.color;
+      ctx.fillText(r.text, bx + 6, by + 10 + 18 * (i + 1));
+    });
   }
 }
+
+function updateSlider() {
+  const win = scopeWindow();
+  const s = document.getElementById("timeSlider");
+  const lbl = document.getElementById("timeLabel");
+  const live = document.getElementById("liveBtn");
+  const pause = document.getElementById("pauseBtn");
+  if (!win) { if (s) s.value = 1000; if (lbl) lbl.textContent = "--"; return; }
+  const { minT, maxT } = win;
+  const lo = minT + scopeNav.windowSec, hi = maxT;
+  if (scopeNav.followLive || hi <= lo + 1e-6) {
+    scopeNav.viewEnd = maxT;
+    if (s) s.value = 1000;
+    if (lbl) lbl.textContent = "实时";
+    if (live) live.classList.add("btn-primary");
+    if (pause) pause.classList.remove("btn-primary");
+  } else {
+    const frac = Math.min(1, Math.max(0, (scopeNav.viewEnd - lo) / (hi - lo)));
+    if (s) s.value = Math.round(frac * 1000);
+    if (lbl) lbl.textContent = "回看 " + Math.max(0, maxT - scopeNav.viewEnd).toFixed(2) + " s";
+    if (live) live.classList.remove("btn-primary");
+    if (pause) pause.classList.add("btn-primary");
+  }
+}
+
+document.getElementById("winSel").addEventListener("change", (e) => {
+  scopeNav.windowSec = parseFloat(e.target.value);
+  scopeNav.followLive = true;
+});
+document.getElementById("pauseBtn").addEventListener("click", () => {
+  scopeNav.followLive = false;
+  const win = scopeWindow();
+  if (win) scopeNav.viewEnd = win.maxT;
+});
+document.getElementById("liveBtn").addEventListener("click", () => { scopeNav.followLive = true; });
+document.getElementById("timeSlider").addEventListener("input", (e) => {
+  const win = scopeWindow();
+  if (!win) return;
+  scopeNav.followLive = false;
+  const lo = win.minT + scopeNav.windowSec, hi = win.maxT;
+  const frac = parseFloat(e.target.value) / 1000;
+  scopeNav.viewEnd = lo + frac * (hi - lo);
+});
+document.querySelectorAll(".chip").forEach((ch) => {
+  ch.addEventListener("click", () => {
+    const g = ch.dataset.group, k = ch.dataset.key;
+    if (!g || !k || !scopeCfg[g]) return;
+    scopeCfg[g][k] = !scopeCfg[g][k];
+    ch.classList.toggle("on", scopeCfg[g][k]);
+  });
+});
+[["scope1", "cur"], ["scope2", "angle"], ["scope3", "diff"]].forEach(([id, kind]) => {
+  const cv = document.getElementById(id);
+  cv.addEventListener("mousemove", (e) => {
+    const r = cv.getBoundingClientRect();
+    scopeNav.hover = { kind, x: (e.clientX - r.left) / r.width * cv.width };
+  });
+  cv.addEventListener("mouseleave", () => { scopeNav.hover = null; });
+});
+
 
 /* ================= 日志 ================= */
 function escapeHtml(s) {
@@ -595,6 +750,7 @@ function frame(now) {
   drawGauge();
   updateNum();
   updatePhases();
+  updateSlider();
   drawScope(scope1Cv, "cur");
   drawScope(scope2Cv, "angle");
   drawScope(scope3Cv, "diff");

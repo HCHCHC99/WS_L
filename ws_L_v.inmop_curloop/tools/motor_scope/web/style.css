@@ -40,6 +40,17 @@ main { display: grid; grid-template-columns: 560px 1fr; gap: 16px; padding: 16px
 .led { width: 16px; height: 16px; border-radius: 50%; background: #222b35; display: inline-block; }
 .led.on { background: #22c55e; box-shadow: 0 0 10px #22c55e88; }
 .scope-wrap { display: flex; flex-direction: column; gap: 10px; }
+.scope-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 2px; }
+.scope-toolbar button { background: #18212b; border: 1px solid #2a3643; color: #c8d3de; border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.scope-toolbar button:hover { border-color: #3d4d5e; }
+.scope-toolbar button.btn-primary { background: #1d4ed8; border-color: #2563eb; color: #fff; }
+.scope-toolbar label { color: #9fb0c0; font-size: 12px; }
+.scope-toolbar select { background: #0c1116; border: 1px solid #2a3643; color: #e8eef4; border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: Consolas, monospace; }
+.scope-toolbar input[type=range] { flex: 1; min-width: 120px; accent-color: #2563eb; }
+.scope-toolbar .pill { background: #18212b; border: 1px solid #263442; color: #9fb0c0; font-size: 11px; padding: 4px 10px; border-radius: 999px; font-family: Consolas, monospace; white-space: nowrap; }
+.scope-legend { float: right; display: inline-flex; gap: 6px; }
+.chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-family: Consolas, monospace; background: #18212b; border: 1px solid var(--c); color: var(--c); cursor: pointer; opacity: .45; user-select: none; }
+.chip.on { opacity: 1; background: rgba(255,255,255,0.06); }
 .scope { width: 100%; height: auto; background: #10151a; border: 1px solid #1c2731; border-radius: 8px; }
 footer { padding: 0 16px 24px; max-width: 1320px; margin: 0 auto; }
 .log-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }

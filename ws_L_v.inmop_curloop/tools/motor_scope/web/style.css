@@ -42,7 +42,16 @@ main { display: grid; grid-template-columns: 560px 1fr; gap: 16px; padding: 16px
 .scope-wrap { display: flex; flex-direction: column; gap: 10px; }
 .scope { width: 100%; height: auto; background: #10151a; border: 1px solid #1c2731; border-radius: 8px; }
 footer { padding: 0 16px 24px; max-width: 1320px; margin: 0 auto; }
-.log { height: 110px; overflow: auto; background: #0c1116; border: 1px solid #1c2731; border-radius: 8px; padding: 8px 10px; font-family: Consolas, monospace; font-size: 11.5px; line-height: 1.6; color: #8fa0b0; white-space: pre-wrap; word-break: break-all; }
+.log-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+.log-toolbar input { flex: 1; min-width: 160px; background: #0c1116; border: 1px solid #2a3643; color: #e8eef4; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-family: Consolas, monospace; }
+.log-toolbar input:focus { outline: none; border-color: #2563eb; }
+.log-toolbar button { background: #18212b; border: 1px solid #2a3643; color: #c8d3de; border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; }
+.log-toolbar button:hover { border-color: #3d4d5e; }
+.log-toolbar .pill { background: #18212b; border: 1px solid #263442; color: #9fb0c0; font-size: 11px; padding: 4px 10px; border-radius: 999px; font-family: Consolas, monospace; }
+.log { height: 150px; overflow: auto; background: #0c1116; border: 1px solid #1c2731; border-radius: 8px; padding: 8px 10px; font-family: Consolas, monospace; font-size: 11.5px; line-height: 1.6; color: #8fa0b0; white-space: pre-wrap; word-break: break-all; }
+.log .mot { color: #4ade80; }
+.log .bad { color: #ef4444; }
+.log mark { background: #facc15; color: #0b0f13; border-radius: 2px; padding: 0 1px; }
 .log .mot { color: #4ade80; }
 .log .bad { color: #ef4444; }
 @media (max-width: 900px) { main { grid-template-columns: 1fr; } }

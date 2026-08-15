@@ -26,6 +26,8 @@ const hub = {
   rpmMax: 500, curMax: 1000,
   curHist: [],          // {t, iq, id, rotorDeg, thetaDeg, diffRad}
   logs: [],
+  lastLogSeq: 0,
+  logFilter: "",
 };
 
 const motorCv = document.getElementById("motor");
@@ -70,7 +72,13 @@ async function poll() {
       const tEnd = hub.curHist[hub.curHist.length - 1].t;
       while (hub.curHist.length && hub.curHist[0].t < tEnd - 2.0) hub.curHist.shift();
     }
-    if (d.logs && d.logs.length) { hub.logs = d.logs; renderLog(); }
+    if (d.logs && d.logs.length) {
+      for (const e of d.logs) {
+        if (e[0] > hub.lastLogSeq) { hub.logs.push(e[1]); hub.lastLogSeq = e[0]; }
+      }
+      while (hub.logs.length > 2000) hub.logs.shift();
+      renderLog();
+    }
     if (d.latest && d.seq > hub.lastSeq) hub.lastSeq = d.seq;
     updateStatus();
   } catch (e) { hub.status = "error"; updateStatus(); }
@@ -119,7 +127,9 @@ setInterval(health, 1000);
 async function doReconnect(ch) {
   const url = "/reconnect" + (ch !== undefined && ch !== null ? "?channel=" + ch : "");
   try { await fetch(url); } catch (e) {}
-  hub.lastSeq = 0;        // 重连后 seq 可能重置，重新对齐
+  hub.lastSeq = 0;
+  hub.lastLogSeq = 0;
+  hub.logs = [];        // 重连后 seq 可能重置，重新对齐
   hub.curHist = [];
   hub.latest = null;
   health();
@@ -501,18 +511,79 @@ function drawScope(cv, kind) {
 }
 
 /* ================= 日志 ================= */
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function filteredLogs() {
+  const f = (hub.logFilter || "").toLowerCase();
+  return f ? hub.logs.filter(l => l.toLowerCase().includes(f)) : hub.logs.slice();
+}
+
 function renderLog() {
   const box = document.getElementById("log");
-  if (!hub.logs.length) { box.textContent = "等待数据…"; return; }
+  const cnt = document.getElementById("logCount");
+  const f = hub.logFilter || "";
+  if (!hub.logs.length) {
+    box.textContent = "等待数据…";
+    if (cnt) cnt.textContent = "0 / 0 条";
+    return;
+  }
+  const lines = filteredLogs();
+  if (cnt) cnt.textContent = lines.length + " / " + hub.logs.length + " 条";
   box.innerHTML = "";
-  for (const line of hub.logs.slice(-20)) {
+  for (const line of lines) {
     const div = document.createElement("div");
     if (line.startsWith("MOTF")) div.className = "mot";
-    div.textContent = line;
+    let html = escapeHtml(line);
+    if (f) {
+      const lc = html.toLowerCase();
+      const idx = lc.indexOf(f.toLowerCase());
+      if (idx >= 0) {
+        html = html.slice(0, idx) + "<mark>" + html.slice(idx, idx + f.length) +
+               "</mark>" + html.slice(idx + f.length);
+      }
+    }
+    div.innerHTML = html;
     box.appendChild(div);
   }
   box.scrollTop = box.scrollHeight;
 }
+
+function flashBtn(id, msg) {
+  const b = document.getElementById(id);
+  if (!b) return;
+  const old = b.textContent;
+  b.textContent = msg;
+  setTimeout(() => { b.textContent = old; }, 1200);
+}
+
+function copyText(txt, btnId) {
+  const done = () => flashBtn(btnId, "已复制");
+  const fb = () => {
+    const ta = document.createElement("textarea");
+    ta.value = txt; document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) {}
+    document.body.removeChild(ta);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(done).catch(fb);
+  } else { fb(); }
+}
+
+document.getElementById("logSearch").addEventListener("input", (e) => {
+  hub.logFilter = e.target.value;
+  renderLog();
+});
+document.getElementById("logCopy").addEventListener("click", () => {
+  copyText(filteredLogs().join("\n"), "logCopy");
+});
+document.getElementById("logClear").addEventListener("click", async () => {
+  try { await fetch("/clearlogs?_=" + Date.now()); } catch (e) {}
+  hub.logs = [];
+  hub.lastLogSeq = 0;
+  renderLog();
+});
 
 /* ================= 主循环 ================= */
 buildNumGrid();

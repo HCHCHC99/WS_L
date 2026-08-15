@@ -170,12 +170,13 @@ class RttParser:
 # ======================================================================
 
 class DataHub:
-    def __init__(self, max_history=500, max_log=300):
+    def __init__(self, max_history=500, max_log=2000):
         self.lock = threading.Lock()
         self.seq = 0
         self.latest = None
         self.history = deque(maxlen=max_history)
         self.log_lines = deque(maxlen=max_log)
+        self.log_seq = 0
         self.start_time = time.time()
         self.frames_total = 0
         self.status = "starting"
@@ -193,7 +194,8 @@ class DataHub:
 
     def log(self, text: str):
         with self.lock:
-            self.log_lines.append(text)
+            self.log_seq += 1
+            self.log_lines.append((self.log_seq, text))
 
     def last_frame_age_ms(self):
         with self.lock:
@@ -206,7 +208,7 @@ class DataHub:
             self.status = status
             self.detail = detail
 
-    def snapshot(self, last_seq: int = 0):
+    def snapshot(self, last_seq: int = 0, log_since: int = 0):
         with self.lock:
             now = time.time()
             fps = self.frames_total / max(now - self.start_time, 1e-6)
@@ -215,6 +217,7 @@ class DataHub:
                 for s, ts, fr in self.history if s > last_seq
             ]
             latest = self.latest.to_list() if self.latest else None
+            logs = [[s, txt] for s, txt in self.log_lines if s > log_since]
             return {
                 "ok": True,
                 "status": self.status,
@@ -224,7 +227,8 @@ class DataHub:
                 "uptime": round(now - self.start_time, 1),
                 "latest": latest,
                 "history": history,
-                "logs": list(self.log_lines)[-20:],
+                "logs": logs,
+                "log_seq": self.log_seq,
             }
 
 
@@ -316,8 +320,14 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
     hub.set_status("running", src.describe())
     interval = 1.0 / sample_hz
     next_t = time.perf_counter()
+    last_log = 0.0
     while True:
         hub.push(src.next_frame())
+        now = time.time()
+        if now - last_log >= 2.0:          # 每 2s 打一条心跳，方便预览日志搜索/复制
+            last_log = now
+            f = src.latest if hasattr(src, "latest") else None
+            hub.log(f"SIM 心跳 t={now - src.t0:.1f}s (仿真模式)")
         next_t += interval
         delay = next_t - time.perf_counter()
         while delay > 0:
@@ -494,12 +504,18 @@ class MotorHandler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path.startswith("/data"):
             since = 0
-            if "since=" in self.path:
-                try:
-                    since = int(self.path.split("since=")[1].split("&")[0])
-                except ValueError:
-                    since = 0
-            body = json.dumps(self.hub.snapshot(since)).encode("utf-8")
+            log_since = 0
+            for key, val in (("since=", "since"), ("logsince=", "logsince")):
+                if key in self.path:
+                    try:
+                        v = int(self.path.split(key)[1].split("&")[0])
+                    except ValueError:
+                        v = 0
+                    if val == "since":
+                        since = v
+                    else:
+                        log_since = v
+            body = json.dumps(self.hub.snapshot(since, log_since)).encode("utf-8")
             self._send(200, "application/json; charset=utf-8", body)
             return
         if path.startswith("/health"):
@@ -540,6 +556,12 @@ class MotorHandler(BaseHTTPRequestHandler):
                 self.src.set_channel(ch)
                 self.hub.set_status("connecting", f"重连中 ch{ch} ...")
             body = json.dumps({"ok": True, "channel": ch}).encode("utf-8")
+            self._send(200, "application/json; charset=utf-8", body)
+            return
+        if path.startswith("/clearlogs"):
+            with self.hub.lock:
+                self.hub.log_lines.clear()
+            body = json.dumps({"ok": True}).encode("utf-8")
             self._send(200, "application/json; charset=utf-8", body)
             return
         rel = "index.html" if path in ("/", "/index.html") else path.lstrip("/")

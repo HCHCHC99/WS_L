@@ -57,7 +57,7 @@ async function poll() {
     }
     for (const h of d.history) {
       const f = h[2];
-      hub.curHist.push({
+      scopeAppend({
         t: h[1],
         iq: f[4], id: f[5],
         rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °
@@ -68,10 +68,7 @@ async function poll() {
         anchorFromFrame(f);
       }
     }
-    if (hub.curHist.length) {
-      const tEnd = hub.curHist[hub.curHist.length - 1].t;
-      while (hub.curHist.length && hub.curHist[0].t < tEnd - 20.0) hub.curHist.shift();
-    }
+    scopeTrim();
     if (d.logs && d.logs.length) {
       for (const e of d.logs) {
         if (e[0] > hub.lastLogSeq) { hub.logs.push(e[1]); hub.lastLogSeq = e[0]; }
@@ -130,7 +127,7 @@ async function doReconnect(ch) {
   hub.lastSeq = 0;
   hub.lastLogSeq = 0;
   hub.logs = [];        // 重连后 seq 可能重置，重新对齐
-  hub.curHist = [];
+  scopeClear();
   hub.latest = null;
   health();
 }
@@ -261,11 +258,18 @@ function drawMotor() {
     ctx.fill();
     ctx.strokeStyle = "rgba(0,0,0,0.35)"; ctx.lineWidth = 1; ctx.stroke();
   }
-  // N 标记
-  ctx.fillStyle = "#fff"; ctx.font = "bold 13px sans-serif";
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.fillText("N", Math.cos(visRotorMech * DEG) * (R_R + R_M) / 2,
-               Math.sin(visRotorMech * DEG) * (R_R + R_M) / 2);
+  // 转子标记：第一个 N 极上放亮黄色 ★（快速转动时能看出旋转趋势）
+  {
+    const mx = Math.cos(visRotorMech * DEG) * (R_R + R_M) / 2;
+    const my = Math.sin(visRotorMech * DEG) * (R_R + R_M) / 2;
+    ctx.save();
+    ctx.shadowColor = "#facc15"; ctx.shadowBlur = 14;
+    ctx.fillStyle = "#fde047";
+    ctx.font = "bold 22px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("★", mx, my + 1);
+    ctx.restore();
+  }
 
   // d/q 轴
   const qAng = visRotorMech + 90 / POLE_PAIRS;
@@ -431,7 +435,48 @@ function updatePhases() {
   else { led.className = "led"; txt.textContent = "未同步（I-F 启动中）"; txt.style.color = "#f59e0b"; }
 }
 
-/* ================= 示波器（坐标轴/时间回看/悬停读数） ================= */
+/* ================= 示波器（环形缓冲 + 坐标轴 + 时间回看 + 悬停读数） ================= */
+const SCOPE_CAP = 30000;              // 环形缓冲最大点数（1kHz 下 30s，内存约 720KB，恒定有界）
+const SCOPE_KEEP_SEC = 20.0;          // 按时间裁剪
+hub.scope = {
+  cap: SCOPE_CAP, n: 0, head: 0,
+  t: new Float32Array(SCOPE_CAP),
+  iq: new Float32Array(SCOPE_CAP),
+  id: new Float32Array(SCOPE_CAP),
+  rotorDeg: new Float32Array(SCOPE_CAP),
+  thetaDeg: new Float32Array(SCOPE_CAP),
+  diffRad: new Float32Array(SCOPE_CAP),
+};
+
+function scopeClear() { hub.scope.n = 0; hub.scope.head = 0; }
+function scopeCount() { return hub.scope.n; }
+function scopeFirstT() { const s = hub.scope; return s.n ? s.t[s.head] : 0; }
+function scopeLastT() { const s = hub.scope; return s.n ? s.t[(s.head + s.n - 1) % s.cap] : 0; }
+function scopeAppend(p) {
+  const s = hub.scope;
+  const idx = (s.head + s.n) % s.cap;
+  s.t[idx] = p.t; s.iq[idx] = p.iq; s.id[idx] = p.id;
+  s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.diffRad[idx] = p.diffRad;
+  if (s.n < s.cap) s.n++; else s.head = (s.head + 1) % s.cap;
+}
+function scopeTrim() {
+  const s = hub.scope;
+  if (!s.n) return;
+  const minT = scopeLastT() - SCOPE_KEEP_SEC;
+  while (s.n > 0 && s.t[s.head] < minT) {
+    s.head = (s.head + 1) % s.cap;
+    s.n--;
+  }
+}
+function scopeLowerBound(t) {
+  const s = hub.scope; let lo = 0, hi = s.n;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (s.t[(s.head + mid) % s.cap] < t) lo = mid + 1; else hi = mid;
+  }
+  return lo;
+}
+
 const scopeNav = { windowSec: 1.0, followLive: true, viewEnd: 0, hover: null };
 const scopeCfg = {
   cur:   { iq: true,  id: true },
@@ -449,10 +494,8 @@ function fmtVal(v) {
 }
 
 function scopeWindow() {
-  const hist = hub.curHist;
-  if (!hist.length) return null;
-  const maxT = hist[hist.length - 1].t;
-  const minT = hist[0].t;
+  if (!scopeCount()) return null;
+  const maxT = scopeLastT(), minT = scopeFirstT();
   let t1 = scopeNav.followLive ? maxT : scopeNav.viewEnd;
   if (t1 > maxT) t1 = maxT;
   let t0 = t1 - scopeNav.windowSec;
@@ -460,19 +503,22 @@ function scopeWindow() {
   return { t0, t1, minT, maxT };
 }
 
-function interpVal(hist, t, key) {
-  if (!hist.length) return null;
-  if (t <= hist[0].t) return hist[0][key];
-  const last = hist[hist.length - 1];
-  if (t >= last.t) return last[key];
-  let lo = 0, hi = hist.length - 1;
+function interpVal(t, key) {
+  const s = hub.scope;
+  if (!s.n) return null;
+  if (t <= scopeFirstT()) return s[key][s.head];
+  if (t >= scopeLastT()) return s[key][(s.head + s.n - 1) % s.cap];
+  let lo = 0, hi = s.n - 1;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (hist[mid].t < t) lo = mid + 1; else hi = mid;
+    if (s.t[(s.head + mid) % s.cap] < t) lo = mid + 1; else hi = mid;
   }
-  const b = hist[lo], a = hist[lo - 1];
-  const f = (t - a.t) / ((b.t - a.t) || 1);
-  return a[key] + (b[key] - a[key]) * f;
+  if (lo === 0) lo = 1;
+  const a = lo - 1, b = lo;
+  const ta = s.t[(s.head + a) % s.cap], tb = s.t[(s.head + b) % s.cap];
+  const f = (t - ta) / ((tb - ta) || 1);
+  const va = s[key][(s.head + a) % s.cap], vb = s[key][(s.head + b) % s.cap];
+  return va + (vb - va) * f;
 }
 
 function drawScope(cv, kind) {
@@ -484,24 +530,26 @@ function drawScope(cv, kind) {
   ctx.fillStyle = "#10151a";
   ctx.fillRect(0, 0, W, H);
 
-  const hist = hub.curHist;
+  const s = hub.scope;
   const win = scopeWindow();
-  if (!win || hist.length < 2) {
+  if (!win || s.n < 2) {
     ctx.fillStyle = "#5b6672"; ctx.font = "12px sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("等待数据…", W / 2, H / 2);
     return;
   }
-  const t0 = win.t0, t1 = win.t1;
+  const t0 = win.t0, t1 = win.t1, n = s.n;
   const x = (t) => mL + (t - t0) / (t1 - t0) * pw;
+  const startIdx = scopeLowerBound(t0);
 
   /* Y 轴配置 */
   let ticks, fmt, yMap, unit, traces;
   if (kind === "cur") {
     let maxA = 1;
-    for (const p of hist) {
-      if (p.t < t0 || p.t > t1) continue;
-      maxA = Math.max(maxA, Math.abs(p.iq), Math.abs(p.id));
+    for (let i = startIdx; i < n; i++) {
+      const idx = (s.head + i) % s.cap;
+      if (s.t[idx] > t1) break;
+      maxA = Math.max(maxA, Math.abs(s.iq[idx]), Math.abs(s.id[idx]));
     }
     maxA *= 1.15;
     const yMid = mT + ph / 2;
@@ -545,13 +593,12 @@ function drawScope(cv, kind) {
 
   /* X 轴刻度 + 网格 */
   ctx.textAlign = "center"; ctx.textBaseline = "top";
-  for (let k = 0; k <= 4; k++) {
-    const tt = t0 + (t1 - t0) * k / 4;
-    const xx = x(tt);
+  for (let k2 = 0; k2 <= 4; k2++) {
+    const tt = t0 + (t1 - t0) * k2 / 4;
     ctx.strokeStyle = "rgba(255,255,255,0.06)";
-    ctx.beginPath(); ctx.moveTo(xx, mT); ctx.lineTo(xx, mT + ph); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x(tt), mT); ctx.lineTo(x(tt), mT + ph); ctx.stroke();
     ctx.fillStyle = "#7c8794";
-    ctx.fillText((tt - t1) > -0.0005 ? "0" : (tt - t1).toFixed(2) + "s", xx, H - mB + 5);
+    ctx.fillText((tt - t1) > -0.0005 ? "0" : (tt - t1).toFixed(2) + "s", x(tt), H - mB + 5);
   }
   ctx.fillStyle = "#5b6672"; ctx.textAlign = "right";
   ctx.fillText("t/s", W - mR, H - mB + 5);
@@ -564,9 +611,11 @@ function drawScope(cv, kind) {
     if (tr.dash) ctx.setLineDash([5, 4]);
     ctx.beginPath();
     let started = false;
-    for (const p of hist) {
-      if (p.t < t0 || p.t > t1) continue;
-      const px = x(p.t), py = yMap(p[tr.key]);
+    for (let i = startIdx; i < n; i++) {
+      const idx = (s.head + i) % s.cap;
+      const tt = s.t[idx];
+      if (tt > t1) break;
+      const px = x(tt), py = yMap(s[tr.key][idx]);
       if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
     }
     ctx.stroke();
@@ -583,7 +632,7 @@ function drawScope(cv, kind) {
     const rows = [];
     for (const tr of traces) {
       if (!tr.on()) continue;
-      const v = interpVal(hist, th, tr.key);
+      const v = interpVal(th, tr.key);
       if (v === null) continue;
       const label = tr.key === "rotorDeg" ? "转子" : tr.key === "thetaDeg" ? "控制" : tr.key;
       rows.push({ color: tr.color, text: label + " " + fmtVal(v) });
@@ -598,9 +647,9 @@ function drawScope(cv, kind) {
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillStyle = "#8fa0b0";
     ctx.fillText("t " + (th - t1).toFixed(3) + " s", bx + 6, by + 10);
-    rows.forEach((r, i) => {
+    rows.forEach((r, i3) => {
       ctx.fillStyle = r.color;
-      ctx.fillText(r.text, bx + 6, by + 10 + 18 * (i + 1));
+      ctx.fillText(r.text, bx + 6, by + 10 + 18 * (i3 + 1));
     });
   }
 }

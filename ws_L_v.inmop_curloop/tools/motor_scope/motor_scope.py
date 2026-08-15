@@ -130,8 +130,11 @@ def parse_binary(buf: bytes):
 class RttParser:
     """RTT 字节流 -> FocFrame。ch0 为文本（日志 + MOTF 行），>2kHz 时另有二进制帧。"""
 
-    def __init__(self):
+    def __init__(self, log_motf: bool = True):
         self.buf = bytearray()
+        self.log_motf = log_motf
+        self._last_motf_log = 0.0
+        self._prev_state = None
 
     def feed(self, data: bytes, sink, log_sink=None):
         self.buf.extend(data)
@@ -148,6 +151,13 @@ class RttParser:
             fr = parse_text_line(line)
             if fr is not None:
                 sink(fr)
+                if log_sink is not None and self.log_motf:
+                    state = (fr.mode, fr.phase, fr.sync)
+                    now = time.time()
+                    if state != self._prev_state or (now - self._last_motf_log) >= 0.1:
+                        self._last_motf_log = now
+                        log_sink(line)   # 节流记录 MOTF 帧（~10 条/秒 + 状态变化）
+                    self._prev_state = state
             elif log_sink is not None:
                 log_sink(line)
         # 二进制模式（>2kHz 帧率）：按 magic 扫描
@@ -321,13 +331,24 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
     interval = 1.0 / sample_hz
     next_t = time.perf_counter()
     last_log = 0.0
+    last_motf_log = 0.0
+    prev_state = None
     while True:
-        hub.push(src.next_frame())
+        f = src.next_frame()
+        hub.push(f)
         now = time.time()
         if now - last_log >= 2.0:          # 每 2s 打一条心跳，方便预览日志搜索/复制
             last_log = now
-            f = src.latest if hasattr(src, "latest") else None
             hub.log(f"SIM 心跳 t={now - src.t0:.1f}s (仿真模式)")
+        # 与 jlink 解析器一致的 MOTF 节流日志（~10 条/秒 + 状态变化）
+        state = (f.mode, f.phase, f.sync)
+        if state != prev_state or (now - last_motf_log) >= 0.1:
+            last_motf_log = now
+            prev_state = state
+            hub.log(
+                f"MOTF,{f.mode},{f.phase},{int(f.rotor_mrad)},{int(f.theta_mrad)},"
+                f"{int(f.iq_ma)},{int(f.id_ma)},{int(f.vq_mv)},{int(f.vd_mv)},"
+                f"{int(f.spd_rpm)},{f.sync},{int(f.diff_mrad)},{int(f.freq_cHz)},{f.ms}")
         next_t += interval
         delay = next_t - time.perf_counter()
         while delay > 0:

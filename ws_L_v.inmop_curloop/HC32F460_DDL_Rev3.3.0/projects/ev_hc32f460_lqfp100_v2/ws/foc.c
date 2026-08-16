@@ -1113,20 +1113,20 @@ static int32_t Foc_IsAngleMrad(void)   { return (int32_t)(atan2f(g_foc_iq_ma, g_
 static int32_t Foc_VMagMv(void)        { return (int32_t)(sqrtf(g_foc_vd * g_foc_vd + g_foc_vq * g_foc_vq) * 1000.0f); }
 static int32_t Foc_VAngleMrad(void)    { return (int32_t)(atan2f(g_foc_vq, g_foc_vd) * 1000.0f); }
 static int32_t Foc_ThetaMechMrad(void) { return (int32_t)(g_foc_theta_rad * (1000.0f / (float)FOC_POLE_PAIRS)); }
-static uint32_t s_foc_rtt_last_ms = 0u;
+static uint64_t s_foc_rtt_last_us = 0u;
 
-/* 心跳发送：由主循环以 now_ms 调用，内部按 FOC_RTT_RATE_HZ 节流。
+/* 心跳发送：由主循环以 now_us 调用，内部按 FOC_RTT_RATE_HZ 节流。
  * 放在主循环而不是 FOC ISR —— 保证 comm_mode=0（PWM/ADC 停止、FOC ISR 不触发）
  * 时也持续上报，手扭电机时 g_enc_count/机械角/电角度始终实时更新。 */
-void Foc_RttSend(uint32_t now_ms)
+void Foc_RttSend(uint64_t now_us)
 {
     uint32_t ms;
 
-    if ((now_ms - s_foc_rtt_last_ms) < (1000u / FOC_RTT_RATE_HZ)) {
+    if ((now_us - s_foc_rtt_last_us) < (1000000u / FOC_RTT_RATE_HZ)) {
         return;
     }
-    s_foc_rtt_last_ms = now_ms;
-    ms = now_ms;
+    s_foc_rtt_last_us = now_us;
+    ms = (uint32_t)(now_us / 1000u);
 
     /* 时刻从 ABZ 编码器刷新转子电角度（FOC 未运行时也更新，手转电机动画跟随） */
     g_foc_if_rotor_rad = Foc_RotorAngleFromEncoderRad();
@@ -1191,7 +1191,7 @@ void Foc_RttSend(uint32_t now_ms)
     }
 }
 #else
-void Foc_RttSend(uint32_t now_ms) { (void)now_ms; }
+void Foc_RttSend(uint64_t now_us) { (void)now_us; }
 #endif /* FOC_RTT_ENABLE */
 
 /*******************************************************************************

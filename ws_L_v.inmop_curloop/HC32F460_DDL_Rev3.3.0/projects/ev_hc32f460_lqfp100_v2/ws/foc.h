@@ -152,7 +152,7 @@ uint8_t Foc_IsRunning(void);
 /* 20 kHz ISR callback (registered via I_RegisterFocCallback). Must be short:
  * no blocking, no prints, no malloc. */
 void Foc_Isr(const stc_i_data_t *pData);
-void Foc_RttSend(uint32_t now_ms);   /* MotorScope RTT 心跳，主循环调用 */
+void Foc_RttSend(uint64_t now_us);   /* MotorScope RTT 心跳，主循环调用（µs 时间戳） */
 
 /* Mechanical encoder counts -> electrical angle (rad). */
 float Foc_EncoderElecAngleRad(void);

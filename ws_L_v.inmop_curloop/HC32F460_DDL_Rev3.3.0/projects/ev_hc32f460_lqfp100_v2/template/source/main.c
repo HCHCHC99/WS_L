@@ -226,6 +226,9 @@ int main(void)
         /* ABZ encoder: position + speed */
         Encoder_Update();
 
+        /* MotorScope RTT 心跳：任何模式（含 comm_mode=0）都持续上报 */
+        Foc_RttSend(tickTimer_GetCount());
+
         /* g_bemf_wave_data �?? Bemf_DataCallback() �?? DMA BTC ISR 中自动更�??
          * (根据 g_scope_step 选择浮空�??, 计算 floating_raw - neutral_raw) */
 

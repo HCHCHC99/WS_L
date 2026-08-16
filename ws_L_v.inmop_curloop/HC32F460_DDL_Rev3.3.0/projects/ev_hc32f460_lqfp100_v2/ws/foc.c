@@ -1087,18 +1087,20 @@ static float Foc_RotorAngleFromEncoderRad(void)
     return enc;
 }
 
-static uint32_t s_foc_rtt_tick = 0u;
-static uint32_t s_foc_rtt_ms   = 0u;
+static uint32_t s_foc_rtt_last_ms = 0u;
 
-static void Foc_RttIsrSend(void)
+/* 心跳发送：由主循环以 now_ms 调用，内部按 FOC_RTT_RATE_HZ 节流。
+ * 放在主循环而不是 FOC ISR —— 保证 comm_mode=0（PWM/ADC 停止、FOC ISR 不触发）
+ * 时也持续上报，手扭电机时 g_enc_count/机械角/电角度始终实时更新。 */
+void Foc_RttSend(uint32_t now_ms)
 {
     uint32_t ms;
 
-    if ((++s_foc_rtt_tick % FOC_RTT_DIV) != 0u) {
+    if ((now_ms - s_foc_rtt_last_ms) < (1000u / FOC_RTT_RATE_HZ)) {
         return;
     }
-    ms = s_foc_rtt_ms;
-    s_foc_rtt_ms += (1000u / FOC_RTT_RATE_HZ);
+    s_foc_rtt_last_ms = now_ms;
+    ms = now_ms;
 
     /* 时刻从 ABZ 编码器刷新转子电角度（FOC 未运行时也更新，手转电机动画跟随） */
     g_foc_if_rotor_rad = Foc_RotorAngleFromEncoderRad();
@@ -1150,6 +1152,8 @@ static void Foc_RttIsrSend(void)
 #endif
     }
 }
+#else
+void Foc_RttSend(uint32_t now_ms) { (void)now_ms; }
 #endif /* FOC_RTT_ENABLE */
 
 /*******************************************************************************
@@ -1159,11 +1163,6 @@ void Foc_Isr(const stc_i_data_t *pData)
 {
     float theta, valpha, vbeta;
     float du, dv, dw;
-
-#if FOC_RTT_ENABLE
-    /* 心跳：无论电机是否运行都按 1kHz 上报，便于上位机确认连接/通道 */
-    Foc_RttIsrSend();
-#endif
 
     if (!g_foc_active) {
         return;

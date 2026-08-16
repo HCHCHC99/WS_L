@@ -39,6 +39,7 @@ const gctx = gaugeCv.getContext("2d");
 const scope1Cv = document.getElementById("scope1");
 const scope2Cv = document.getElementById("scope2");
 const scope3Cv = document.getElementById("scope3");
+const scope4Cv = document.getElementById("scope4");
 
 /* ================= 数据轮询 ================= */
 async function poll() {
@@ -67,6 +68,7 @@ async function poll() {
         rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °
         thetaDeg: (f[3] / 1000) * RAD2DEG,
         diffRad: f[10] / 1000,
+        mode: f[0],
       });
     }
     scopeTrim();
@@ -474,12 +476,14 @@ const SCOPE_CAP = 30000;              // 环形缓冲最大点数（1kHz 下 30s
 const SCOPE_KEEP_SEC = 20.0;          // 按时间裁剪
 hub.scope = {
   cap: SCOPE_CAP, n: 0, head: 0,
-  t: new Float32Array(SCOPE_CAP),
+  t: new Float64Array(SCOPE_CAP),  // 时间戳=Unix秒(~1.79e9)，float32 仅 24bit 整数精度会全部崩塌成同一值，必须 float64
+  // （其余量 iq/id/角度/diff/mode 数值小，float32 足够）
   iq: new Float32Array(SCOPE_CAP),
   id: new Float32Array(SCOPE_CAP),
   rotorDeg: new Float32Array(SCOPE_CAP),
   thetaDeg: new Float32Array(SCOPE_CAP),
   diffRad: new Float32Array(SCOPE_CAP),
+  mode: new Float32Array(SCOPE_CAP),
 };
 
 function scopeClear() { hub.scope.n = 0; hub.scope.head = 0; }
@@ -491,6 +495,7 @@ function scopeAppend(p) {
   const idx = (s.head + s.n) % s.cap;
   s.t[idx] = p.t; s.iq[idx] = p.iq; s.id[idx] = p.id;
   s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.diffRad[idx] = p.diffRad;
+  s.mode[idx] = p.mode;
   if (s.n < s.cap) s.n++; else s.head = (s.head + 1) % s.cap;
 }
 function scopeTrim() {
@@ -603,6 +608,11 @@ function drawScope(cv, kind) {
       { key: "thetaDeg", color: "#ffffff", dash: true,  on: () => scopeCfg.angle.theta },
       { mech: true, key: "mech", color: "#4ade80", dash: false, on: () => scopeCfg.angle.mech },
     ];
+  } else if (kind === "mode") {
+    ticks = [0, 1, 2, 3, 4];
+    fmt = (v) => v.toFixed(0); unit = "";
+    yMap = (v) => mT + 10 + (4 - v) / 4 * (ph - 20);
+    traces = [{ key: "mode", color: "#f472b6", dash: false, on: () => true }];
   } else {
     const yMid = mT + ph / 2;
     ticks = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
@@ -754,7 +764,7 @@ document.querySelectorAll(".chip").forEach((ch) => {
     ch.classList.toggle("on", scopeCfg[g][k]);
   });
 });
-[["scope1", "cur"], ["scope2", "angle"], ["scope3", "diff"]].forEach(([id, kind]) => {
+[["scope1", "cur"], ["scope2", "angle"], ["scope3", "diff"], ["scope4", "mode"]].forEach(([id, kind]) => {
   const cv = document.getElementById(id);
   cv.addEventListener("mousemove", (e) => {
     const r = cv.getBoundingClientRect();
@@ -860,6 +870,7 @@ function frame(now) {
   drawScope(scope1Cv, "cur");
   drawScope(scope2Cv, "angle");
   drawScope(scope3Cv, "diff");
+  drawScope(scope4Cv, "mode");
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

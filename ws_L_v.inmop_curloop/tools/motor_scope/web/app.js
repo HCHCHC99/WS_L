@@ -41,6 +41,7 @@ const scope1Cv = document.getElementById("scope1");
 const scope2Cv = document.getElementById("scope2");
 const scope3Cv = document.getElementById("scope3");
 const scope4Cv = document.getElementById("scope4");
+const scope5Cv = document.getElementById("scope5");
 
 /* ================= 数据轮询 ================= */
 async function poll() {
@@ -696,6 +697,22 @@ function drawScope(cv, kind) {
     fmt = (v) => v.toFixed(0); unit = "";
     yMap = (v) => mT + 10 + (4 - v) / 4 * (ph - 20);
     traces = [{ key: "mode", color: "#f472b6", dash: false, on: () => true }];
+  } else if (kind === "cnt") {
+    // ABZ 编码器原始计数：按可见窗口自动量程 [min,max]，波形斜率方向即旋转方向
+    let minV = Infinity, maxV = -Infinity;
+    for (let i = startIdx; i < n; i++) {
+      const idx = (s.head + i) % s.cap;
+      if (s.t[idx] > t1) break;
+      const v = s.cnt[idx];
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+    if (!isFinite(minV)) { minV = 0; maxV = 1; }
+    if (maxV - minV < 1) maxV = minV + 1;
+    ticks = [minV, (minV + maxV) / 2, maxV];
+    fmt = (v) => v.toFixed(0); unit = "cnt";
+    yMap = (v) => mT + 10 + (maxV - v) / (maxV - minV) * (ph - 20);
+    traces = [{ key: "cnt", color: "#f472b6", dash: false, on: () => true }];
   } else {
     const yMid = mT + ph / 2;
     ticks = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
@@ -838,7 +855,7 @@ document.querySelectorAll(".chip").forEach((ch) => {
     ch.classList.toggle("on", scopeCfg[g][k]);
   });
 });
-[["scope1", "cur"], ["scope2", "angle"], ["scope3", "diff"], ["scope4", "mode"]].forEach(([id, kind]) => {
+[["scope1", "cur"], ["scope2", "angle"], ["scope3", "diff"], ["scope4", "mode"], ["scope5", "cnt"]].forEach(([id, kind]) => {
   const cv = document.getElementById(id);
   cv.addEventListener("mousemove", (e) => {
     const r = cv.getBoundingClientRect();
@@ -966,6 +983,7 @@ function frame(now) {
   drawScope(scope2Cv, "angle");
   drawScope(scope3Cv, "diff");
   drawScope(scope4Cv, "mode");
+  drawScope(scope5Cv, "cnt");
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

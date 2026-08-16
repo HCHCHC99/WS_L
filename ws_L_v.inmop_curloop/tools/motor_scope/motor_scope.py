@@ -23,7 +23,7 @@ HTTP 推给浏览器，浏览器 Canvas 实时绘制：
 帧格式（文本）：
   MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
        <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,<mech_mrad>,
-       <is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>
+       <is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>,<cnt>
 """
 from __future__ import annotations
 
@@ -81,6 +81,7 @@ class FocFrame:
     v_mv: float = 0.0            # 固件直传 v 电压矢量幅值（mV）
     v_angle_mrad: float = 0.0    # 固件直传 v 相角（dq 电角度，mrad）
     theta_mech_mrad: float = 0.0 # 固件直传控制角机械角（theta/极对数，mrad）
+    cnt: int = 0                # g_enc_count 编码器原始计数（方向诊断）
 
     def to_list(self):
         return [self.mode, self.phase, int(round(self.rotor_mrad)),
@@ -92,7 +93,7 @@ class FocFrame:
                 int(round(self.mech_mrad)),
                 int(round(self.is_ma)), int(round(self.is_angle_mrad)),
                 int(round(self.v_mv)), int(round(self.v_angle_mrad)),
-                int(round(self.theta_mech_mrad))]
+                int(round(self.theta_mech_mrad)), self.cnt]
 
 
 def _clean_rtt_line(line: str) -> str:
@@ -103,7 +104,7 @@ def _clean_rtt_line(line: str) -> str:
 
 
 def parse_text_line(line: str):
-    """解析文本帧：MOTF,<19 个字段>（兼容 MAIN_E 的 [MAIN] 前缀/ANSI 颜色）。"""
+    """解析文本帧：MOTF,<20 个字段>（兼容 MAIN_E 的 [MAIN] 前缀/ANSI 颜色）。"""
     line = _clean_rtt_line(line)
     if not line.startswith("MOTF,"):
         return None
@@ -125,22 +126,23 @@ def parse_text_line(line: str):
             v_mv=float(p[17]) if len(p) > 17 else 0,
             v_angle_mrad=float(p[18]) if len(p) > 18 else 0,
             theta_mech_mrad=float(p[19]) if len(p) > 19 else 0,
+            cnt=int(p[20]) if len(p) > 20 else 0,
         )
     except (ValueError, IndexError):
         return None
 
 
-_BIN_FMT = "<4sIiiiiiiiiiBBBBiiiiii"     # 72 字节小端二进制帧（mech + is/v + theta_mech）
+_BIN_FMT = "<4sIiiiiiiiiiBBBBiiiiiii"    # 76 字节小端二进制帧（mech + is/v + theta_mech + cnt）
 _BIN_SIZE = struct.calcsize(_BIN_FMT)
 
 
 def parse_binary(buf: bytes):
-    """解析 72 字节二进制帧（MOTF magic，末尾 mech + is/v + theta_mech）。"""
+    """解析 76 字节二进制帧（MOTF magic，末尾 mech + is/v + theta_mech + cnt）。"""
     if len(buf) < _BIN_SIZE or buf[:4] != b"MOTF":
         return None
     (magic, ms, rotor, theta, iq, id_, vq, vd, spd, diff, freq,
      mode, phase, sync, rsv, mech, is_ma, is_ang, v_mv, v_ang,
-     theta_mech) = struct.unpack(_BIN_FMT, buf[:_BIN_SIZE])
+     theta_mech, cnt) = struct.unpack(_BIN_FMT, buf[:_BIN_SIZE])
     return FocFrame(mode=mode, phase=phase, rotor_mrad=float(rotor),
                     theta_mrad=float(theta), iq_ma=float(iq), id_ma=float(id_),
                     vq_mv=float(vq), vd_mv=float(vd), spd_rpm=float(spd),
@@ -148,7 +150,7 @@ def parse_binary(buf: bytes):
                     ms=ms, mech_mrad=float(mech),
                     is_ma=float(is_ma), is_angle_mrad=float(is_ang),
                     v_mv=float(v_mv), v_angle_mrad=float(v_ang),
-                    theta_mech_mrad=float(theta_mech))
+                    theta_mech_mrad=float(theta_mech), cnt=cnt)
 
 
 class RttParser:
@@ -445,6 +447,7 @@ class SimFoc:
         f.is_angle_mrad = math.atan2(f.iq_ma, f.id_ma) * 1000.0
         f.v_mv = math.hypot(f.vd_mv, f.vq_mv)
         f.v_angle_mrad = math.atan2(f.vq_mv, f.vd_mv) * 1000.0
+        f.cnt = int((f.mech_mrad / 1000.0) * (4096.0 / (2 * math.pi)))  # 模拟编码器原始计数（方向诊断）
         f.spd_rpm = (f.freq_cHz / 100.0) * 60.0 / self.pp
         f.ms = int(t * 1000)
         self._last_theta = getattr(self, "_last_theta", 0.0)

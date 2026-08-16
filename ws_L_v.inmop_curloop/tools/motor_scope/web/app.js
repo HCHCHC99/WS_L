@@ -61,6 +61,7 @@ async function poll() {
         isMa: d.latest[14], isAng: d.latest[15],
         vMv: d.latest[16], vAng: d.latest[17],
         thetaMech: d.latest[18],   // 控制角机械角 mrad（θ 指针走 thetaMechDeg 插值，此字段保留协议完整性）
+        cnt: d.latest[19],
       };
       hub.rpmMax = Math.max(hub.rpmMax, Math.abs(hub.latest.spd) * 1.25);
       hub.curMax = Math.max(hub.curMax, Math.abs(hub.latest.iq), Math.abs(hub.latest.id), Math.abs(hub.latest.isMa));
@@ -75,6 +76,7 @@ async function poll() {
           thetaDeg: (f[3] / 1000) * RAD2DEG,
           mechDeg: (f[13] / 1000) * RAD2DEG,   // 固件直传连续机械角 deg
           thetaMechDeg: (f[18] / 1000) * RAD2DEG,   // 固件直传控制角机械角 deg
+          cnt: f[19],
           vd: f[7], vq: f[6],                       // 回看历史时电机/仪表用
           isMa: f[14], isAng: f[15],
           vMv: f[16], vAng: f[17],
@@ -440,7 +442,8 @@ function drawGauge() {
 /* ================= 数值面板 ================= */
 function buildNumGrid() {
   const rows = [
-    ["转速", "rpmVal", "0 rpm"], ["转子电角 θe", "rotorVal", "0°"],
+    ["转速", "rpmVal", "0 rpm"], ["cnt", "cntVal", "0"],
+    ["转子电角 θe", "rotorVal", "0°"],
     ["控制角 θ", "ctrlVal", "0°"], ["机械角 θm", "mechVal", "0°"],
     ["iq", "iqVal", "0 mA"],
     ["id", "idVal", "0 mA"], ["is", "isVal", "0 mA"],
@@ -462,6 +465,7 @@ function updateNum() {
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   if (!f) return;
   set("rpmVal", f.spd.toFixed(0) + " rpm");
+  set("cntVal", f.cnt.toFixed(0));
   set("rotorVal", ((f.rotor / 1000) * RAD2DEG % 360).toFixed(1) + "°");
   set("ctrlVal", ((f.theta / 1000) * RAD2DEG % 360).toFixed(1) + "°");
   set("mechVal", ((((f.mech / 1000) * RAD2DEG % 360) + 360) % 360).toFixed(1) + "°");
@@ -518,6 +522,7 @@ hub.scope = {
   thetaDeg: new Float32Array(SCOPE_CAP),
   mechDeg: new Float32Array(SCOPE_CAP),
   thetaMechDeg: new Float32Array(SCOPE_CAP),
+  cnt: new Float32Array(SCOPE_CAP),
   // 回看历史时电机图/仪表需要的字段
   vd: new Float32Array(SCOPE_CAP),
   vq: new Float32Array(SCOPE_CAP),
@@ -541,6 +546,7 @@ function scopeAppend(p) {
   s.t[idx] = p.t; s.iq[idx] = p.iq; s.id[idx] = p.id;
   s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.mechDeg[idx] = p.mechDeg;
   s.thetaMechDeg[idx] = p.thetaMechDeg;
+  s.cnt[idx] = p.cnt;
   s.vd[idx] = p.vd; s.vq[idx] = p.vq;
   s.isMa[idx] = p.isMa; s.isAng[idx] = p.isAng;
   s.vMv[idx] = p.vMv; s.vAng[idx] = p.vAng;
@@ -632,6 +638,7 @@ function buildViewFrame(t) {
     vAng: interpVal(t, 'vAng') || 0,
     spd: interpVal(t, 'spd') || 0,
     freq: interpVal(t, 'freq') || 0,
+    cnt: interpVal(t, 'cnt') || 0,
     diff: (interpVal(t, 'diffRad') || 0) * 1000,  // mrad
   };
 }

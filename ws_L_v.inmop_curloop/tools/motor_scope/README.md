@@ -33,7 +33,7 @@ python motor_scope.py --mode jlink --device HC32F460 --speed-khz 4000
 ```
 MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
      <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,<mech_mrad>,
-     <is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>
+     <is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>,<cnt>
 ```
 
 | 字段 | 来源 | 说明 |
@@ -54,9 +54,10 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 | v_mv | √(vd²+vq²)×1000 | **固件直传 v 电压矢量幅值**（mV） |
 | v_angle_mrad | atan2(vq,vd)×1000 | **固件直传 v 相角**（dq 电角度 mrad） |
 | theta_mech_mrad | g_foc_theta_rad/极对数×1000 | **固件直传控制角机械角**（mrad） |
+| cnt | g_enc_count | **编码器原始计数**（方向诊断用） |
 
-`FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **72 字节小端二进制帧**
-（magic "MOTF"，字段同上；相较 52B 新增 5 个 int32，二进制末尾依次为 `mech_mrad` + `is_ma`/`is_angle_mrad`/`v_mv`/`v_angle_mrad`/`theta_mech_mrad` 共 6 个 int32），本工具自动识别两种格式。
+`FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **76 字节小端二进制帧**
+（magic "MOTF"，字段同上；相较 52B 新增 6 个 int32，二进制末尾依次为 `mech_mrad` + `is_ma`/`is_angle_mrad`/`v_mv`/`v_angle_mrad`/`theta_mech_mrad`/`cnt` 共 7 个 int32），本工具自动识别两种格式。
 
 ## 固件端改动（本分支已包含）
 

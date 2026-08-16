@@ -1038,7 +1038,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
  * 帧格式（文本）：
  *   MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
  *        <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,
- *        <mech_mrad>,<is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>
+ *        <mech_mrad>,<is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>,<cnt>
  ******************************************************************************/
 #ifndef FOC_RTT_ENABLE
 #define FOC_RTT_ENABLE      1u
@@ -1054,7 +1054,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 #define FOC_RTT_DIV         ((uint16_t)(FOC_ISR_HZ / FOC_RTT_RATE_HZ))
 
 #if FOC_RTT_RATE_HZ > 2000u
-/* 二进制帧：72 字节（小端），PC 端按小端解析 */
+/* 二进制帧：76 字节（小端），PC 端按小端解析 */
 typedef struct __attribute__((packed)) {
     uint32_t magic;        /* 0x46544F4D = "MOTF" */
     uint32_t ms;
@@ -1077,6 +1077,7 @@ typedef struct __attribute__((packed)) {
     int32_t  v_mv;            /* sqrt(vd^2+vq^2) mV */
     int32_t  v_angle_mrad;    /* atan2(vq,vd) dq 电角度 mrad */
     int32_t  theta_mech_mrad; /* g_foc_theta_rad / FOC_POLE_PAIRS * 1000；I-F 阶段 theta∈[0,2π)，RUN 阶段 theta∈[0,2π·PP)，机械角按各自折回 */
+    int32_t  cnt;             /* g_enc_count 编码器原始计数（方向诊断） */
 } foc_rtt_frame_t;
 #endif /* FOC_RTT_RATE_HZ > 2000u */
 
@@ -1239,6 +1240,7 @@ void Foc_RttSend(uint64_t now_us)
         fr.v_mv            = Foc_VMagMv();
         fr.v_angle_mrad    = Foc_VAngleMrad();
         fr.theta_mech_mrad = Foc_ThetaMechMrad();
+        fr.cnt            = (int32_t)g_enc_count;
         SEGGER_RTT_Write(FOC_RTT_CH, (const char *)&fr, (unsigned)sizeof(fr));
     }
 #else
@@ -1247,7 +1249,7 @@ void Foc_RttSend(uint64_t now_us)
         int  n;
 
         n = snprintf(buf, sizeof(buf),
-            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u,%d,%d,%d,%d,%d,%d\r\n",
+            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u,%d,%d,%d,%d,%d,%d,%d\r\n",
             (unsigned)g_foc_mode, (unsigned)g_foc_phase,
             (int)(rotor_rad * 1000.0f),
             (int)(g_foc_theta_rad  * 1000.0f),
@@ -1263,7 +1265,8 @@ void Foc_RttSend(uint64_t now_us)
             (int)Foc_IsAngleMrad(),
             (int)Foc_VMagMv(),
             (int)Foc_VAngleMrad(),
-            (int)Foc_ThetaMechMrad());
+            (int)Foc_ThetaMechMrad(),
+            (int)g_enc_count);
         if (n > 0 && n < (int)sizeof(buf)) {
             SEGGER_RTT_Write(FOC_RTT_CH, buf, (unsigned)n);
         }

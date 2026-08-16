@@ -1114,24 +1114,99 @@ static int32_t Foc_IsAngleMrad(void)   { return (int32_t)(atan2f(g_foc_iq_ma, g_
 static int32_t Foc_VMagMv(void)        { return (int32_t)(sqrtf(g_foc_vd * g_foc_vd + g_foc_vq * g_foc_vq) * 1000.0f); }
 static int32_t Foc_VAngleMrad(void)    { return (int32_t)(atan2f(g_foc_vq, g_foc_vd) * 1000.0f); }
 static int32_t Foc_ThetaMechMrad(void) { return (int32_t)(g_foc_theta_rad * (1000.0f / (float)FOC_POLE_PAIRS)); }
-static uint64_t s_foc_rtt_last_us = 0u;
 
-/* 心跳发送：由主循环以 now_us 调用，内部按 FOC_RTT_RATE_HZ 节流。
+/* MotorScope 发送节流状态（间隔/阈值参数见 motor_config.h MOTOR_SCOPE_*） */
+static uint64_t s_mot_scope_last_us    = 0u;
+static int32_t  s_mot_scope_last_mode  = -1;
+static int32_t  s_mot_scope_last_phase = -1;
+static int32_t  s_mot_scope_last_sync  = -1;
+static int32_t  s_mot_scope_last_evt   = -1;
+static float    s_mot_scope_last_iq    = 0.0f;
+static float    s_mot_scope_last_id    = 0.0f;
+static float    s_mot_scope_last_th    = 0.0f;
+static float    s_mot_scope_last_spd   = 0.0f;
+static float    s_mot_scope_last_vd    = 0.0f;
+static float    s_mot_scope_last_vq    = 0.0f;
+
+/* 心跳发送：由主循环以 now_us 调用。发送门控采用"锁"机制（大幅降低打印频率，
+ * 避免拖慢主循环导致 RUN 阶段编码器角陈旧而停转）：
+ *   1) mode/phase/sync/I-F 事件变化   -> 立即发（无锁）
+ *   2) spd/|vd|/|vq| 变化超过阈值     -> 立即发（无锁）
+ *   3) id/iq/theta 连续量变化         -> 至少间隔 MOTOR_SCOPE_LOCK_MS_FAST
+ *   4) 距上次发送 >= KEEPALIVE        -> 保活补发（防工具断联判定）
  * 放在主循环而不是 FOC ISR —— 保证 comm_mode=0（PWM/ADC 停止、FOC ISR 不触发）
  * 时也持续上报，手扭电机时 g_enc_count/机械角/电角度始终实时更新。 */
 void Foc_RttSend(uint64_t now_us)
 {
     uint32_t ms;
+    uint64_t since_us;
+    int32_t  mode, phase, sync, evt;
+    float    iq, id, theta, spd, vd, vq;
+    uint8_t  send;
 
     /* MotorScope 总开关：g_motor_scope=0 时完全跳过（Keil Watch 可改，默认 MOTOR_SCOPE_KEY） */
     if (g_motor_scope == 0) {
         return;
     }
 
-    if ((now_us - s_foc_rtt_last_us) < (1000000u / FOC_RTT_RATE_HZ)) {
+    /* ---- 发送门控（锁）：满足任一条件才真正发送 ---- */
+    mode  = (int32_t)g_foc_mode;
+    phase = (int32_t)g_foc_phase;
+    sync  = (int32_t)g_foc_if_sync;
+    evt   = (int32_t)g_foc_if_evt;
+    iq    = g_foc_iq_ma;
+    id    = g_foc_id_ma;
+    theta = g_foc_theta_rad;
+    spd   = g_enc_speed_rpm;
+    vd    = g_foc_vd;
+    vq    = g_foc_vq;
+    since_us = now_us - s_mot_scope_last_us;
+
+    send = 0u;
+    /* 1) 关键状态/事件变化 -> 立即发（无锁） */
+    if ((mode != s_mot_scope_last_mode) || (phase != s_mot_scope_last_phase) ||
+        (sync != s_mot_scope_last_sync) || (evt != s_mot_scope_last_evt)) {
+        send = 1u;
+    }
+    /* 2) 关键数值变化超过阈值 -> 立即发（无锁） */
+    if (!send) {
+        if ((fabsf(spd - s_mot_scope_last_spd) > (float)MOTOR_SCOPE_CHG_SPD_RPM) ||
+            (fabsf(vd - s_mot_scope_last_vd)    > (float)MOTOR_SCOPE_CHG_VD_V) ||
+            (fabsf(vq - s_mot_scope_last_vq)    > (float)MOTOR_SCOPE_CHG_VQ_V)) {
+            send = 1u;
+        }
+    }
+    /* 3) id/iq/theta 连续量变化 -> 至少间隔 MOTOR_SCOPE_LOCK_MS_FAST */
+    if (!send) {
+        if ((iq != s_mot_scope_last_iq) || (id != s_mot_scope_last_id) ||
+            (theta != s_mot_scope_last_th)) {
+            if (since_us >= ((uint64_t)MOTOR_SCOPE_LOCK_MS_FAST * 1000u)) {
+                send = 1u;
+            }
+        }
+    }
+    /* 4) 保活：距上次发送 >= MOTOR_SCOPE_LOCK_MS_KEEPALIVE（防工具断联判定） */
+    if (!send) {
+        if (since_us >= ((uint64_t)MOTOR_SCOPE_LOCK_MS_KEEPALIVE * 1000u)) {
+            send = 1u;
+        }
+    }
+    if (!send) {
         return;
     }
-    s_foc_rtt_last_us = now_us;
+
+    /* 记录本次已发送的快照（下一次以此比较） */
+    s_mot_scope_last_us    = now_us;
+    s_mot_scope_last_mode  = mode;
+    s_mot_scope_last_phase = phase;
+    s_mot_scope_last_sync  = sync;
+    s_mot_scope_last_evt   = evt;
+    s_mot_scope_last_iq    = iq;
+    s_mot_scope_last_id    = id;
+    s_mot_scope_last_th    = theta;
+    s_mot_scope_last_spd   = spd;
+    s_mot_scope_last_vd    = vd;
+    s_mot_scope_last_vq    = vq;
     ms = (uint32_t)(now_us / 1000u);
 
     /* 时刻从 ABZ 编码器刷新转子电角度（FOC 未运行时也更新，手转电机动画跟随） */

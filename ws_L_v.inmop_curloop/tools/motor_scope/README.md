@@ -32,7 +32,8 @@ python motor_scope.py --mode jlink --device HC32F460 --speed-khz 4000
 
 ```
 MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
-     <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,<mech_mrad>
+     <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,<mech_mrad>,
+     <is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>
 ```
 
 | 字段 | 来源 | 说明 |
@@ -48,9 +49,14 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 | diff_mrad | g_foc_if_diff_rad×1000 | 控制角-转子角偏差 |
 | freq_cHz | g_foc_if_freq_hz×100 | I-F 电频率 |
 | mech_mrad | g_enc_count×FOC_ENC_DIR 换算 | **固件直传连续机械角**（mrad，不折叠） |
+| is_ma | √(id²+iq²) | **固件直传 is 电流矢量幅值**（mA） |
+| is_angle_mrad | atan2(iq,id)×1000 | **固件直传 is 相角**（dq 电角度 mrad） |
+| v_mv | √(vd²+vq²)×1000 | **固件直传 v 电压矢量幅值**（mV） |
+| v_angle_mrad | atan2(vq,vd)×1000 | **固件直传 v 相角**（dq 电角度 mrad） |
+| theta_mech_mrad | g_foc_theta_rad/极对数×1000 | **固件直传控制角机械角**（mrad） |
 
-`FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **52 字节小端二进制帧**
-（magic "MOTF"，字段同上，末尾多一个 `mech_mrad` int32），本工具自动识别两种格式。
+`FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **72 字节小端二进制帧**
+（magic "MOTF"，字段同上，末尾多 `mech_mrad` + `is_ma`/`is_angle_mrad`/`v_mv`/`v_angle_mrad`/`theta_mech_mrad` 共 6 个 int32），本工具自动识别两种格式。
 
 ## 固件端改动（本分支已包含）
 
@@ -69,6 +75,8 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 - `g_foc_if_rotor_rad` 依赖编码器方向/零位（FOC_ENC_DIR / 对齐校准）。
 - 机械角由固件直传：`mech_mrad = g_enc_count × g_foc_enc_dir × 2π/ENCODER_CPR × 1000`（连续、不折叠），
   前端示波器/数值面板/电机图直接用该值（`%360` 回绕由前端处理），不再由电角度解卷÷极对数反推。
+- is/v 相角为 dq 坐标系内电角度 mrad，前端画布角 = 转子机械角 + dq角/极对数；
+  固件在 `Foc_RttSend`（主循环 1kHz）用单精度 sqrtf/atan2f 计算，不进 20kHz ISR。
 
 
 

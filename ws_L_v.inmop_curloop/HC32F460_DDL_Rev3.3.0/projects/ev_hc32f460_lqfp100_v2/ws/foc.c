@@ -1022,7 +1022,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 /*******************************************************************************
  * MotorScope RTT 实时动画数据发送（ISR 内，非阻塞）
  * ----------------------------------------------------------------------------
- * 把 FOC 控制环关键量以 1kHz 文本帧（或 >2kHz 的 48B 二进制帧）写入独立 RTT
+ * 把 FOC 控制环关键量以 1kHz 文本帧（或 >2kHz 的 72B 二进制帧）写入独立 RTT
  * 上行通道，PC 端（tools/motor_scope）读取后在浏览器实时绘制电机动画。
  *
  * 配置（可用编译器 -D 覆盖；若想统一收口到 motor_config.h 也可移过去）：
@@ -1036,7 +1036,8 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
  *
  * 帧格式（文本）：
  *   MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
- *        <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>
+ *        <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,
+ *        <mech_mrad>,<is_ma>,<is_angle_mrad>,<v_mv>,<v_angle_mrad>,<theta_mech_mrad>
  ******************************************************************************/
 #ifndef FOC_RTT_ENABLE
 #define FOC_RTT_ENABLE      1u
@@ -1052,7 +1053,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 #define FOC_RTT_DIV         ((uint16_t)(FOC_ISR_HZ / FOC_RTT_RATE_HZ))
 
 #if FOC_RTT_RATE_HZ > 2000u
-/* 二进制帧：52 字节（小端），PC 端按小端解析 */
+/* 二进制帧：72 字节（小端），PC 端按小端解析 */
 typedef struct __attribute__((packed)) {
     uint32_t magic;        /* 0x46544F4D = "MOTF" */
     uint32_t ms;
@@ -1070,6 +1071,11 @@ typedef struct __attribute__((packed)) {
     uint8_t  sync;         /* g_foc_if_sync */
     uint8_t  rsv;
     int32_t  mech_mrad;   /* 连续机械角（不折叠）mrad：g_enc_count*g_foc_enc_dir 换算 */
+    int32_t  is_ma;           /* sqrt(id^2+iq^2) mA（固件直传） */
+    int32_t  is_angle_mrad;   /* atan2(iq,id) dq 电角度 mrad */
+    int32_t  v_mv;            /* sqrt(vd^2+vq^2) mV */
+    int32_t  v_angle_mrad;    /* atan2(vq,vd) dq 电角度 mrad */
+    int32_t  theta_mech_mrad; /* g_foc_theta_rad / FOC_POLE_PAIRS * 1000；I-F 阶段 theta∈[0,2π)，RUN 阶段 theta∈[0,2π·PP)，机械角按各自折回 */
 } foc_rtt_frame_t;
 #endif /* FOC_RTT_RATE_HZ > 2000u */
 
@@ -1099,6 +1105,14 @@ static int32_t Foc_MechAngleMrad(void)
     return (int32_t)(mech_rad * 1000.0f);
 }
 
+/* 电流/电压矢量 + 控制角机械角：dq 合成，供 MOTF 直传（主循环调用，不进 ISR）。
+ * 全单精度 sqrtf/atan2f（M4F VSQRT + 硬件 FPU，1kHz 下开销 <1% CPU）。
+ * theta_mech_mrad：I-F 阶段 theta∈[0,2π)，RUN 阶段 theta∈[0,2π·PP)，机械角按各自折回。 */
+static int32_t Foc_IsMagMa(void)       { return (int32_t)sqrtf(g_foc_id_ma * g_foc_id_ma + g_foc_iq_ma * g_foc_iq_ma); }
+static int32_t Foc_IsAngleMrad(void)   { return (int32_t)(atan2f(g_foc_iq_ma, g_foc_id_ma) * 1000.0f); }
+static int32_t Foc_VMagMv(void)        { return (int32_t)(sqrtf(g_foc_vd * g_foc_vd + g_foc_vq * g_foc_vq) * 1000.0f); }
+static int32_t Foc_VAngleMrad(void)    { return (int32_t)(atan2f(g_foc_vq, g_foc_vd) * 1000.0f); }
+static int32_t Foc_ThetaMechMrad(void) { return (int32_t)(g_foc_theta_rad * (1000.0f / (float)FOC_POLE_PAIRS)); }
 static uint32_t s_foc_rtt_last_ms = 0u;
 
 /* 心跳发送：由主循环以 now_ms 调用，内部按 FOC_RTT_RATE_HZ 节流。
@@ -1139,15 +1153,20 @@ void Foc_RttSend(uint32_t now_ms)
         fr.sync       = g_foc_if_sync;
         fr.rsv        = 0u;
         fr.mech_mrad  = Foc_MechAngleMrad();
+        fr.is_ma           = Foc_IsMagMa();
+        fr.is_angle_mrad   = Foc_IsAngleMrad();
+        fr.v_mv            = Foc_VMagMv();
+        fr.v_angle_mrad    = Foc_VAngleMrad();
+        fr.theta_mech_mrad = Foc_ThetaMechMrad();
         SEGGER_RTT_Write(FOC_RTT_CH, (const char *)&fr, (unsigned)sizeof(fr));
     }
 #else
     {
-        char buf[160];
+        char buf[224];
         int  n;
 
         n = snprintf(buf, sizeof(buf),
-            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u,%d\r\n",
+            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u,%d,%d,%d,%d,%d,%d\r\n",
             (unsigned)g_foc_mode, (unsigned)g_foc_phase,
             (int)(rotor_rad * 1000.0f),
             (int)(g_foc_theta_rad  * 1000.0f),
@@ -1158,8 +1177,13 @@ void Foc_RttSend(uint32_t now_ms)
             (int)(g_foc_if_diff_rad * 1000.0f),
             (int)(g_foc_if_freq_hz * 100.0f),
             (unsigned)ms,
-            (int)Foc_MechAngleMrad());
-        if (n > 0) {
+            (int)Foc_MechAngleMrad(),
+            (int)Foc_IsMagMa(),
+            (int)Foc_IsAngleMrad(),
+            (int)Foc_VMagMv(),
+            (int)Foc_VAngleMrad(),
+            (int)Foc_ThetaMechMrad());
+        if (n > 0 && n < (int)sizeof(buf)) {
             SEGGER_RTT_Write(FOC_RTT_CH, buf, (unsigned)n);
         }
     }

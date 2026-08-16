@@ -49,7 +49,8 @@ async function poll() {
     hub.status = d.status; hub.detail = d.detail || "--"; hub.fps = d.fps || 0;
     if (d.last_age_ms !== undefined) hub.lastAgeMs = d.last_age_ms;
     if (d.seq < hub.lastSeq) hub.lastSeq = 0;   // 服务器重启（seq 倒退）：重新对齐
-    if (d.latest) {
+    const paused = !scopeNav.followLive;        // 暂停：缓冲写入/裁剪/最新帧全部冻结
+    if (d.latest && !paused) {
       hub.latest = {
         mode: d.latest[0], phase: d.latest[1], rotor: d.latest[2],
         theta: d.latest[3], iq: d.latest[4], id: d.latest[5],
@@ -63,21 +64,23 @@ async function poll() {
       hub.rpmMax = Math.max(hub.rpmMax, Math.abs(hub.latest.spd) * 1.25);
       hub.curMax = Math.max(hub.curMax, Math.abs(hub.latest.iq), Math.abs(hub.latest.id), Math.abs(hub.latest.isMa));
     }
-    for (const h of d.history) {
-      const f = h[2];
-      scopeAppend({
-        t: h[1],
-        iq: f[4], id: f[5],
-        rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °
-        thetaDeg: (f[3] / 1000) * RAD2DEG,
-        mechDeg: (f[13] / 1000) * RAD2DEG,   // 固件直传连续机械角 deg
-        thetaMechDeg: (f[18] / 1000) * RAD2DEG,   // 固件直传控制角机械角 deg
-        diffRad: f[10] / 1000,
-        mode: f[0],
-      });
+    if (!paused) {
+      for (const h of d.history) {
+        const f = h[2];
+        scopeAppend({
+          t: h[1],
+          iq: f[4], id: f[5],
+          rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °
+          thetaDeg: (f[3] / 1000) * RAD2DEG,
+          mechDeg: (f[13] / 1000) * RAD2DEG,   // 固件直传连续机械角 deg
+          thetaMechDeg: (f[18] / 1000) * RAD2DEG,   // 固件直传控制角机械角 deg
+          diffRad: f[10] / 1000,
+          mode: f[0],
+        });
+      }
+      scopeTrim();
+      if (d.history && d.history.length) hub.lastFrameWall = Date.now();
     }
-    scopeTrim();
-    if (d.history && d.history.length) hub.lastFrameWall = Date.now();
     if (d.logs && d.logs.length) {
       for (const e of d.logs) {
         if (e[0] > hub.lastLogSeq) { hub.logs.push(e[1]); hub.lastLogSeq = e[0]; }
@@ -180,7 +183,7 @@ function advance(now) {
   const s = hub.scope;
   if (!s.n || !hub.latest) return;
   // 数据新鲜度：超过 STALE_MS 没有新帧 => 冻结在最新位置
-  const stale = hub.lastAgeMs < 0 || hub.lastAgeMs > STALE_MS;
+  const stale = !scopeNav.followLive || hub.lastAgeMs < 0 || hub.lastAgeMs > STALE_MS;
 
   // 转子/控制角：用最新两个数据点做"线性插值/外推"，完全跟随真实帧数据。
   // 不再用转速积分、不做收敛校正——彻底避免"转一点又弹回原位"。

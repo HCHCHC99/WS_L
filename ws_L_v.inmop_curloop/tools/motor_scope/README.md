@@ -65,6 +65,8 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 2. `RTT/SEGGER_RTT_Conf.h`：`SEGGER_RTT_MAX_NUM_UP_BUFFERS` 3 → 7（启用更多通道；MOTF 帧走通道 0）。
 3. 配置宏在 `foc.c` 顶部（`FOC_RTT_ENABLE / FOC_RTT_CH / FOC_RTT_RATE_HZ`，`FOC_RTT_CH` 默认 0，与 `MAIN_D/E` 日志共用通道 0；若用 `MAIN_E()` 打印 MOTF 行，上位机解析器同样兼容），
    可用编译器 `-D` 覆盖；如需统一收口可移入 `motor_config.h`。
+4. `motor_config.h` 新增 `MOTOR_SCOPE_KEY`（`g_motor_scope` 默认值，默认 1）。Keil Watch 改 `g_motor_scope`：
+   0 = 不发送 MOTF RTT 数据；1 = 发送。
 
 ## 注意
 

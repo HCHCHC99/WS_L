@@ -58,6 +58,7 @@ volatile float   g_foc_openloop_volt_v  = FOC_OPENLOOP_VOLT_V;
 volatile uint8_t g_foc_mode             = FOC_MODE_NONE;
 volatile int32_t g_foc_cur_sign         = (int32_t)FOC_CUR_SIGN;
 volatile int32_t g_foc_enc_dir         = (int32_t)FOC_ENC_DIR;  /* encoder direction, Watch tunable */
+volatile int32_t g_motor_scope        = (int32_t)MOTOR_SCOPE_KEY;   /* MotorScope RTT 总开关：0=关 1=开（Watch 可改） */
 volatile int32_t g_foc_pi_off_180      = (int32_t)FOC_PI_OFF_180;   /* 1 = +180deg control angle (flip torque), Watch tunable */
 volatile float   g_foc_iq_ref_cmd_ma    = (float)FOC_IQ_REF_MA;
 volatile float   g_foc_iq_ref_ma        = 0.0f;
@@ -1121,6 +1122,11 @@ static uint64_t s_foc_rtt_last_us = 0u;
 void Foc_RttSend(uint64_t now_us)
 {
     uint32_t ms;
+
+    /* MotorScope 总开关：g_motor_scope=0 时完全跳过（Keil Watch 可改，默认 MOTOR_SCOPE_KEY） */
+    if (g_motor_scope == 0) {
+        return;
+    }
 
     if ((now_us - s_foc_rtt_last_us) < (1000000u / FOC_RTT_RATE_HZ)) {
         return;

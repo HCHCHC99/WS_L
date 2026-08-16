@@ -56,6 +56,7 @@ extern volatile float    g_foc_openloop_volt_v;  /* voltage amplitude (V), Keil 
 extern volatile uint8_t  g_foc_mode;             /* 0=idle, 1=open-loop, 2=current-loop */
 extern volatile int32_t  g_foc_cur_sign;        /* current sign correction (+1/-1), Watch tunable */
 extern volatile int32_t  g_foc_enc_dir;         /* encoder direction for electrical angle (+1/-1), Watch tunable */
+extern volatile int32_t  g_motor_scope;          /* MotorScope RTT 总开关：0=关 1=开（Watch 可改） */
 extern volatile int32_t  g_foc_pi_off_180;      /* add 180deg to control angle to flip torque direction (0/1), Watch tunable */
 extern volatile float    g_foc_iq_ref_cmd_ma;    /* Iq target (mA), Keil Watch editable */
 extern volatile float    g_foc_iq_ref_ma;        /* ramped Iq setpoint actually used (mA) */

@@ -56,9 +56,11 @@ async function poll() {
         vq: d.latest[6], vd: d.latest[7], spd: d.latest[8],
         sync: d.latest[9], diff: d.latest[10], freq: d.latest[11],
         ms: d.latest[12], mech: d.latest[13],
+        isMa: d.latest[14], isAng: d.latest[15],
+        vMv: d.latest[16], vAng: d.latest[17],
       };
       hub.rpmMax = Math.max(hub.rpmMax, Math.abs(hub.latest.spd) * 1.25);
-      hub.curMax = Math.max(hub.curMax, Math.abs(hub.latest.iq), Math.abs(hub.latest.id));
+      hub.curMax = Math.max(hub.curMax, Math.abs(hub.latest.iq), Math.abs(hub.latest.id), Math.abs(hub.latest.isMa));
     }
     for (const h of d.history) {
       const f = h[2];
@@ -68,6 +70,7 @@ async function poll() {
         rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °
         thetaDeg: (f[3] / 1000) * RAD2DEG,
         mechDeg: (f[13] / 1000) * RAD2DEG,   // 固件直传连续机械角 deg
+        thetaMechDeg: (f[18] / 1000) * RAD2DEG,   // 固件直传控制角机械角 deg
         diffRad: f[10] / 1000,
         mode: f[0],
       });
@@ -169,7 +172,7 @@ function updateStatus() {
 }
 
 /* ================= 显示角度（帧间按转速/频率积分，动画平滑） ================= */
-let visRotorMech = 0, visRotorElec = 0, visCtrlElec = 0;
+let visRotorMech = 0, visCtrlMech = 0, visRotorElec = 0, visCtrlElec = 0;
 let lastNow = performance.now();
 
 function advance(now) {
@@ -207,6 +210,14 @@ function advance(now) {
   }
   visRotorElec = rot;
   visRotorMech = mech;
+  // 控制角机械角：固件直传（theta/极对数），直接插值/外推
+  let ctrlMech = s.thetaMechDeg[iLast];
+  if (span > 1e-6) {
+    let dCtrlMech = s.thetaMechDeg[iLast] - s.thetaMechDeg[iPrev];
+    dCtrlMech = ((dCtrlMech % 360) + 540) % 360 - 180;   // 角度回绕（与 rotor/theta 一致）
+    ctrlMech = s.thetaMechDeg[iLast] + dCtrlMech / span * ext;
+  }
+  visCtrlMech = ctrlMech;
   visCtrlElec = th;
 }
 
@@ -313,7 +324,7 @@ function drawMotor() {
   ctx.setLineDash([]);
 
   // 控制角 θ（I-F 合成角 / RUN 控制角）——白色虚线指针
-  const ctrlMech = visCtrlElec / POLE_PAIRS;
+  const ctrlMech = visCtrlMech;   // 固件直传控制角机械角
   ctx.strokeStyle = "#ffffff"; ctx.setLineDash([6, 4]); ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ctrlMech * DEG) * (R_R - 10), Math.sin(ctrlMech * DEG) * (R_R - 10)); ctx.stroke();
   ctx.setLineDash([]);
@@ -326,20 +337,16 @@ function drawMotor() {
     const Lmax = R_R - 34;
     const idL = f.id / maxA * Lmax;
     const iqL = f.iq / maxA * Lmax;
-    const idX = idL * Math.cos(visRotorMech * DEG), idY = idL * Math.sin(visRotorMech * DEG);
-    const iqX = iqL * Math.cos(qAng * DEG),       iqY = iqL * Math.sin(qAng * DEG);
-    const isL = Math.hypot(idL, iqL);
-    const isAng = Math.atan2(idY + iqY, idX + iqX) / DEG;
+    const isL = (f.isMa / maxA) * Lmax;                                   // 固件直传 is 幅值
+    const isAng = visRotorMech + (f.isAng / 1000) * RAD2DEG / POLE_PAIRS; // dq 电角度→机械画布角
     drawVector(ctx, "#22d3ee", idL, visRotorMech, 4);          // id
     drawVector(ctx, "#fb923c", iqL, qAng, 4);                  // iq
     drawVector(ctx, "#facc15", isL, isAng, 5);                 // is
     // 电压矢量（vd/vq）
     const vLmax = 100;
-    const vdL = f.vd / 1000 * vLmax, vqL = f.vq / 1000 * vLmax;
-    const vx = vdL * Math.cos(visRotorMech * DEG) + vqL * Math.cos(qAng * DEG);
-    const vy = vdL * Math.sin(visRotorMech * DEG) + vqL * Math.sin(qAng * DEG);
-    const vL = Math.hypot(vx, vy);
-    if (vL > 3) drawVector(ctx, "#e879f9", vL, Math.atan2(vy, vx) / DEG, 3, [4, 4]);
+    const vL = f.vMv / 1000 * vLmax;                                      // 固件直传 v 幅值
+    const vAng = visRotorMech + (f.vAng / 1000) * RAD2DEG / POLE_PAIRS;   // dq 电角度→机械画布角
+    if (vL > 3) drawVector(ctx, "#e879f9", vL, vAng, 3, [4, 4]);
     // 标注
     ctx.font = "bold 13px Consolas, monospace";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -412,8 +419,10 @@ function buildNumGrid() {
     ["转速", "rpmVal", "0 rpm"], ["转子电角 θe", "rotorVal", "0°"],
     ["控制角 θ", "ctrlVal", "0°"], ["机械角 θm", "mechVal", "0°"],
     ["iq", "iqVal", "0 mA"],
-    ["id", "idVal", "0 mA"], ["vq", "vqVal", "0 mV"],
-    ["vd", "vdVal", "0 mV"], ["电频率", "freqVal", "0 Hz"],
+    ["id", "idVal", "0 mA"], ["is", "isVal", "0 mA"],
+    ["vq", "vqVal", "0 mV"],
+    ["vd", "vdVal", "0 mV"], ["|v|", "vMagVal", "0 mV"],
+    ["电频率", "freqVal", "0 Hz"],
     ["角度偏差 diff", "diffVal", "0 rad"],
   ];
   const grid = document.getElementById("numGrid");
@@ -436,6 +445,8 @@ function updateNum() {
   set("idVal", f.id.toFixed(0) + " mA");
   set("vqVal", f.vq.toFixed(0) + " mV");
   set("vdVal", f.vd.toFixed(0) + " mV");
+  set("isVal", f.isMa.toFixed(0) + " mA");
+  set("vMagVal", f.vMv.toFixed(0) + " mV");
   set("freqVal", (f.freq / 100).toFixed(2) + " Hz");
   set("diffVal", (f.diff / 1000).toFixed(3) + " rad");
 }
@@ -482,6 +493,7 @@ hub.scope = {
   rotorDeg: new Float32Array(SCOPE_CAP),
   thetaDeg: new Float32Array(SCOPE_CAP),
   mechDeg: new Float32Array(SCOPE_CAP),
+  thetaMechDeg: new Float32Array(SCOPE_CAP),
   diffRad: new Float32Array(SCOPE_CAP),
   mode: new Float32Array(SCOPE_CAP),
 };
@@ -495,6 +507,7 @@ function scopeAppend(p) {
   const idx = (s.head + s.n) % s.cap;
   s.t[idx] = p.t; s.iq[idx] = p.iq; s.id[idx] = p.id;
   s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.mechDeg[idx] = p.mechDeg;
+  s.thetaMechDeg[idx] = p.thetaMechDeg;
   s.diffRad[idx] = p.diffRad;
   s.mode[idx] = p.mode;
   if (s.n < s.cap) s.n++; else s.head = (s.head + 1) % s.cap;

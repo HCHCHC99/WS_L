@@ -116,7 +116,7 @@
 
 <footer>
   <div class="card">
-    <h2>&#9993; RTT 日志 / 数据帧</h2>
+    <h2>&#9993; RTT 数据帧（MOTF）</h2>
     <div class="log-toolbar">
       <input id="logSearch" type="text" placeholder="搜索日志（输入即过滤）" autocomplete="off">
       <button id="logCopy" title="复制当前（过滤后）日志">复制</button>
@@ -124,6 +124,15 @@
       <span id="logCount" class="pill">0 / 0 条</span>
     </div>
     <div id="log" class="log">等待数据…</div>
+  </div>
+
+  <div class="card">
+    <h2>&#9993; 固件日志（MAIN_D 等 · 本地记录）</h2>
+    <div class="log-toolbar">
+      <input id="mainLogSearch" type="text" placeholder="搜索固件日志（输入即过滤）" autocomplete="off">
+      <span id="mainLogCount" class="pill">0 条</span>
+    </div>
+    <pre id="mainLog" class="log">等待数据…</pre>
   </div>
 </footer>
 

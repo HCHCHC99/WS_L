@@ -68,3 +68,4 @@ footer { padding: 0 16px 24px; max-width: 1320px; margin: 0 auto; }
 .log .mot { color: #4ade80; }
 .log .bad { color: #ef4444; }
 @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+pre.log { margin: 0; }

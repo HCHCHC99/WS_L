@@ -30,6 +30,7 @@ const hub = {
   logs: [],
   lastLogSeq: 0,
   logFilter: "",
+  mainLogFilter: "",
 };
 
 const motorCv = document.getElementById("motor");
@@ -91,6 +92,7 @@ async function poll() {
       }
       while (hub.logs.length > 2000) hub.logs.shift();
       renderLog();
+      renderMainLog();
     }
     if (d.latest && d.seq > hub.lastSeq) hub.lastSeq = d.seq;
     updateStatus();
@@ -844,22 +846,26 @@ function escapeHtml(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function motfLogs() {
+  return hub.logs.filter(l => l.indexOf("MOTF,") >= 0);
+}
 function filteredLogs() {
   const f = (hub.logFilter || "").toLowerCase();
-  return f ? hub.logs.filter(l => l.toLowerCase().includes(f)) : hub.logs.slice();
+  const base = motfLogs();
+  return f ? base.filter(l => l.toLowerCase().includes(f)) : base.slice();
 }
 
 function renderLog() {
   const box = document.getElementById("log");
   const cnt = document.getElementById("logCount");
   const f = hub.logFilter || "";
-  if (!hub.logs.length) {
+  if (!motfLogs().length) {
     box.textContent = "等待数据…";
     if (cnt) cnt.textContent = "0 / 0 条";
     return;
   }
   const lines = filteredLogs();
-  if (cnt) cnt.textContent = lines.length + " / " + hub.logs.length + " 条";
+  if (cnt) cnt.textContent = lines.length + " / " + motfLogs().length + " 条";
   box.innerHTML = "";
   for (const line of lines) {
     const div = document.createElement("div");
@@ -876,6 +882,18 @@ function renderLog() {
     div.innerHTML = html;
     box.appendChild(div);
   }
+  box.scrollTop = box.scrollHeight;
+}
+
+/* 固件日志面板（MAIN_D 等非 MOTF 行）：纯文本，可鼠标框选 + Ctrl+C 复制 */
+function renderMainLog() {
+  const box = document.getElementById("mainLog");
+  const cnt = document.getElementById("mainLogCount");
+  const f = (hub.mainLogFilter || "").toLowerCase();
+  const lines = hub.logs.filter(l => l.indexOf("MOTF,") < 0 && (!f || l.toLowerCase().includes(f)));
+  if (cnt) cnt.textContent = lines.length + " 条";
+  if (!lines.length) { box.textContent = "等待数据…"; return; }
+  box.textContent = lines.join("\n");
   box.scrollTop = box.scrollHeight;
 }
 
@@ -904,6 +922,10 @@ document.getElementById("logSearch").addEventListener("input", (e) => {
   hub.logFilter = e.target.value;
   renderLog();
 });
+document.getElementById("mainLogSearch").addEventListener("input", (e) => {
+  hub.mainLogFilter = e.target.value;
+  renderMainLog();
+});
 document.getElementById("logCopy").addEventListener("click", () => {
   copyText(filteredLogs().join("\n"), "logCopy");
 });
@@ -912,6 +934,7 @@ document.getElementById("logClear").addEventListener("click", async () => {
   hub.logs = [];
   hub.lastLogSeq = 0;
   renderLog();
+  renderMainLog();
 });
 
 /* 页面退出：自动清空 history.txt（sendBeacon 在 unload 时也能发出） */

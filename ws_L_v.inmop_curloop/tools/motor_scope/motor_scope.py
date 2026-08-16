@@ -4,7 +4,7 @@
 MotorScope - J-Link RTT 电机实时可视化调试助手（FOC 版，分支 inmop_cur_loop_rtt）
 =================================================================================
 
-固件端（ws/foc.c）在 FOC ISR 内以 1kHz 向 RTT 通道 6 发送 MOTF 帧
+固件端（ws/foc.c 的 Foc_RttSend）由主循环以 1kHz 向 RTT 通道 0 发送 MOTF 帧
 （>2kHz 时自动切换为 72B 二进制帧），本程序用 pylink 读取、解析后通过
 HTTP 推给浏览器，浏览器 Canvas 实时绘制：
   - 转子（极对数 10 的 20 块磁钢）按"转子实测电角度"转动
@@ -337,8 +337,9 @@ class SimFoc:
     def describe(self):
         return f"仿真FOC (I-F启动->同步->运行, 极对数{self.pp}, {self.sample_hz}Hz)"
 
-    def next_frame(self) -> FocFrame:
-        t = time.time() - self.t0
+    def next_frame(self, t=None) -> FocFrame:
+        if t is None:
+            t = time.time() - self.t0
         dt = 1.0 / self.sample_hz
         f = FocFrame(mode=2, sync=0)
 
@@ -456,7 +457,7 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
 # ======================================================================
 
 class JLinkRttSource:
-    def __init__(self, device: str, speed_khz: int = 4000, channel: int = 6,
+    def __init__(self, device: str, speed_khz: int = 4000, channel: int = 0,
                  rtt_addr: int = 0, ram_base: int = 0x1FFF8000,
                  ram_size: int = 0x2F000):
         try:

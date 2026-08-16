@@ -1,10 +1,10 @@
 # MotorScope —— J-Link RTT 电机实时动画（FOC，分支 inmop_cur_loop_rtt）
 
-目标固件（`ws/foc.c`）在 FOC ISR（20kHz）内以 **1kHz** 向 RTT 通道 0 发送
+目标固件（`ws/foc.c` 的 Foc_RttSend）由主循环以 **1kHz** 向 RTT 通道 0 发送
 MOTF 帧，本工具用 pylink 读取、解析后，在浏览器 Canvas 里**根据真实数据**
 实时绘制电机动画：
 
-- 转子：**20 块磁钢（极对数 10）** 按编码器实测电角度 `g_foc_if_rotor_rad` 转动
+- 转子：**20 块磁钢（极对数 10）** 按固件直传连续机械角 `mech_mrad` 转动
 - **控制角 θ**（I-F 合成角 / RUN 控制角 `g_foc_theta_rad`）白色虚线指针
 - **id**（d 轴，青色）/ **iq**（q 轴，橙色）/ **is = id + j·iq**（黄色）矢量
 - **电压矢量 v**（vd/vq，品红虚线）
@@ -56,7 +56,7 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 | theta_mech_mrad | g_foc_theta_rad/极对数×1000 | **固件直传控制角机械角**（mrad） |
 
 `FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **72 字节小端二进制帧**
-（magic "MOTF"，字段同上，末尾多 `mech_mrad` + `is_ma`/`is_angle_mrad`/`v_mv`/`v_angle_mrad`/`theta_mech_mrad` 共 6 个 int32），本工具自动识别两种格式。
+（magic "MOTF"，字段同上；相较 52B 新增 5 个 int32，二进制末尾依次为 `mech_mrad` + `is_ma`/`is_angle_mrad`/`v_mv`/`v_angle_mrad`/`theta_mech_mrad` 共 6 个 int32），本工具自动识别两种格式。
 
 ## 固件端改动（本分支已包含）
 

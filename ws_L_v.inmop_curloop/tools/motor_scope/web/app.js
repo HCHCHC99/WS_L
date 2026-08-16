@@ -58,6 +58,7 @@ async function poll() {
         ms: d.latest[12], mech: d.latest[13],
         isMa: d.latest[14], isAng: d.latest[15],
         vMv: d.latest[16], vAng: d.latest[17],
+        thetaMech: d.latest[18],   // 控制角机械角 mrad（θ 指针走 thetaMechDeg 插值，此字段保留协议完整性）
       };
       hub.rpmMax = Math.max(hub.rpmMax, Math.abs(hub.latest.spd) * 1.25);
       hub.curMax = Math.max(hub.curMax, Math.abs(hub.latest.iq), Math.abs(hub.latest.id), Math.abs(hub.latest.isMa));
@@ -210,11 +211,13 @@ function advance(now) {
   }
   visRotorElec = rot;
   visRotorMech = mech;
-  // 控制角机械角：固件直传（theta/极对数），直接插值/外推
+  // 控制角机械角：固件直传（theta/极对数，折回值），插值/外推。
+  // 回绕周期按相位：RUN=360°；I-F（hold/ramp/sync）=360°/极对数（控制角每电周期折叠）。
   let ctrlMech = s.thetaMechDeg[iLast];
   if (span > 1e-6) {
+    const ctrlWrap = (hub.latest.phase === 3) ? 360 : 360 / POLE_PAIRS;
     let dCtrlMech = s.thetaMechDeg[iLast] - s.thetaMechDeg[iPrev];
-    dCtrlMech = ((dCtrlMech % 360) + 540) % 360 - 180;   // 角度回绕（与 rotor/theta 一致）
+    dCtrlMech = ((dCtrlMech % ctrlWrap) + ctrlWrap * 1.5) % ctrlWrap - ctrlWrap / 2;
     ctrlMech = s.thetaMechDeg[iLast] + dCtrlMech / span * ext;
   }
   visCtrlMech = ctrlMech;

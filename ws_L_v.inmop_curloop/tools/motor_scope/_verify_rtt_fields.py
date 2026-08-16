@@ -34,15 +34,18 @@ lst = fr.to_list()
 assert len(lst) == 19 and lst[13] == 78540 and lst[14] == 2061 and lst[18] == 628, lst
 print("to_list 19 fields OK")
 
-# 5) 仿真：is/v 幅值非负、theta_mech 连续无跳变
+# 5) 仿真：确定性时间驱动 0..10s，覆盖 phase 0..3（theta_mech 连续无跳变）
 sim = ms.SimFoc(sample_hz=200)
 prev = None
-for i in range(2000):
-    f = sim.next_frame()
+phases = set()
+for i in range(2001):
+    f = sim.next_frame(t=i / 200.0)
+    phases.add(f.phase)
     assert f.is_ma >= 0.0 and f.v_mv >= 0.0
     if prev and f.phase in (2, 3) and prev.phase in (2, 3):
         assert abs(f.theta_mech_mrad - prev.theta_mech_mrad) < 500.0
         assert f.theta_mech_mrad > 0.0
     prev = f
+assert phases >= {0, 1, 2, 3}, phases   # 必须真的跑到 phase 2/3，否则上面断言是空测试
 print("sim is/v/theta_mech OK")
 print("ALL TESTS PASSED")

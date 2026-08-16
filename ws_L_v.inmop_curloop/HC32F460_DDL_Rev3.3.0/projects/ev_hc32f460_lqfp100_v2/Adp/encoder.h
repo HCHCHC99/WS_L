@@ -45,7 +45,7 @@ extern volatile uint8_t  g_enc_dbg_print;   /* 1 = main loop prints cnt/rev ever
 extern volatile float    g_enc_count_f;    /* float mirror of g_enc_count */
 extern volatile float    g_enc_angle_deg;  /* 0..360 */
 extern volatile float    g_enc_speed_rpm;  /* rpm */
-extern volatile int8_t   g_enc_dir;        /* +1 CW, -1 CCW, 0 stopped */
+extern volatile int8_t   g_enc_dir;        /* +1 CW, -1 CCW, 0=未建立/初始（迟滞锁存，停止后保持最后方向） */
 extern volatile uint32_t g_enc_rev;        /* Z pulses (revolutions) */
 
 #ifdef __cplusplus

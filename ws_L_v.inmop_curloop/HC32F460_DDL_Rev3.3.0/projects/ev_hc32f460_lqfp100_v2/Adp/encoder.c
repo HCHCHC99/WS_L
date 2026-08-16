@@ -34,6 +34,10 @@
 /* Direction deadband (rpm): below this |speed| the direction is reported as 0.
  * The 10ms window count sign flips at low speed from +/-1 count noise. */
 #define ENC_DIR_DEADBAND_RPM  (5.0f)
+/* Direction flip hysteresis (rpm): once a direction is established, only flip
+ * when the opposite |speed| exceeds this — kills low-speed hand-turning
+ * direction dithering (repeated "switch direction" prints). */
+#define ENC_DIR_HYST_RPM  (10.0f)
 /* Speed integration window (us) */
 #define ENC_SPEED_WIN_US (10000u)
 
@@ -188,9 +192,17 @@ void Encoder_Update(void)
         float rpm = (float)s_cnt_sum * 60000000.0f
                   / ((float)s_us_sum * (float)ENCODER_CPR);
         s_speed_rpm += ENC_SPEED_ALPHA * (rpm - s_speed_rpm);
-        if (s_speed_rpm >  ENC_DIR_DEADBAND_RPM) s_dir = 1;
-        else if (s_speed_rpm < -ENC_DIR_DEADBAND_RPM) s_dir = -1;
-        else s_dir = 0;
+        /* 方向判定加迟滞（Schmitt）：从静止用 ±DEADBAND 建立方向；已建立方向后
+         * 只有反向转速超过 ±HYST 才翻转，避免低速手转时计数量化/微反转导致
+         * 方向在死区边缘反复抖动（每次翻转都打印 switch direction）。 */
+        if (s_dir == 0) {
+            if (s_speed_rpm >  ENC_DIR_DEADBAND_RPM) s_dir =  1;
+            else if (s_speed_rpm < -ENC_DIR_DEADBAND_RPM) s_dir = -1;
+        } else if (s_dir == 1) {
+            if (s_speed_rpm < -ENC_DIR_HYST_RPM) s_dir = -1;
+        } else { /* s_dir == -1 */
+            if (s_speed_rpm >  ENC_DIR_HYST_RPM) s_dir =  1;
+        }
         s_cnt_sum = 0;
         s_us_sum  = 0;
     }

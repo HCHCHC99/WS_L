@@ -811,6 +811,9 @@ function updateSlider() {
   const lbl = document.getElementById("timeLabel");
   const live = document.getElementById("liveBtn");
   const pause = document.getElementById("pauseBtn");
+  const ws = document.getElementById("winSel");
+  if (ws) ws.value = winSecToSlider(scopeNav.windowSec);
+  updateWinLabel();
   if (!win) { if (s) s.value = 1000; if (lbl) lbl.textContent = "--"; return; }
   const { minT, maxT } = win;
   const lo = minT + scopeNav.windowSec, hi = maxT;
@@ -829,9 +832,27 @@ function updateSlider() {
   }
 }
 
-document.getElementById("winSel").addEventListener("change", (e) => {
-  scopeNav.windowSec = parseFloat(e.target.value);
-  scopeNav.followLive = true;
+/* 窗口宽度：对数滑动条（0.1s ~ 20s），方便缩放查看细节 */
+const WIN_SEC_MIN = 0.1, WIN_SEC_MAX = 20.0;
+function winSliderToSec(v) { return WIN_SEC_MIN * Math.pow(WIN_SEC_MAX / WIN_SEC_MIN, v / 1000); }
+function winSecToSlider(s) {
+  const c = Math.log(WIN_SEC_MAX / WIN_SEC_MIN);
+  return Math.round(1000 * Math.log(Math.max(WIN_SEC_MIN, Math.min(WIN_SEC_MAX, s)) / WIN_SEC_MIN) / c);
+}
+function updateWinLabel() {
+  const wl = document.getElementById("winLabel");
+  if (wl) wl.textContent = scopeNav.windowSec.toFixed(1) + " s";
+}
+document.getElementById("winSel").addEventListener("input", (e) => {
+  const oldWin = scopeNav.windowSec;
+  const win = scopeWindow();
+  const center = win ? (win.t0 + win.t1) / 2 : 0;
+  scopeNav.windowSec = winSliderToSec(parseFloat(e.target.value));
+  if (!scopeNav.followLive && win) {
+    // 暂停/回看：缩放时保持视野中心（不跳回实时，也不把正在看的数据挤出窗口）
+    scopeNav.viewEnd = center + scopeNav.windowSec / 2;
+  }
+  updateWinLabel();
 });
 document.getElementById("pauseBtn").addEventListener("click", () => {
   scopeNav.followLive = false;

@@ -1052,7 +1052,7 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
 #define FOC_RTT_DIV         ((uint16_t)(FOC_ISR_HZ / FOC_RTT_RATE_HZ))
 
 #if FOC_RTT_RATE_HZ > 2000u
-/* 二进制帧：48 字节（小端），PC 端按小端解析 */
+/* 二进制帧：52 字节（小端），PC 端按小端解析 */
 typedef struct __attribute__((packed)) {
     uint32_t magic;        /* 0x46544F4D = "MOTF" */
     uint32_t ms;
@@ -1069,6 +1069,7 @@ typedef struct __attribute__((packed)) {
     uint8_t  phase;        /* g_foc_phase */
     uint8_t  sync;         /* g_foc_if_sync */
     uint8_t  rsv;
+    int32_t  mech_mrad;   /* 连续机械角（不折叠）mrad：g_enc_count*g_foc_enc_dir 换算 */
 } foc_rtt_frame_t;
 #endif /* FOC_RTT_RATE_HZ > 2000u */
 
@@ -1085,6 +1086,17 @@ static float Foc_RotorAngleFromEncoderRad(void)
         enc += FOC_MATH_2PI;
     }
     return enc;
+}
+
+/* ABZ 编码器计数 -> 连续机械角 (mrad)，方向与 FOC 电角度一致（乘 g_foc_enc_dir）。
+ * g_enc_count 连续累计（Z 不复位），/ENCODER_CPR 得机械圈角，*2PI*1000 得 mrad。
+ * 与电角度不同：不折叠，PC 端直接按连续值绘制（%360 回绕由前端处理）。
+ * 注意：连续值随 int32 溢出回绕（4096 计数/圈，约 52 万圈后），调试工具无影响。 */
+static int32_t Foc_MechAngleMrad(void)
+{
+    float mech_rad = (float)((int32_t)g_enc_count * (int32_t)g_foc_enc_dir)
+                   * (FOC_MATH_2PI / (float)ENCODER_CPR);
+    return (int32_t)(mech_rad * 1000.0f);
 }
 
 static uint32_t s_foc_rtt_last_ms = 0u;
@@ -1126,15 +1138,16 @@ void Foc_RttSend(uint32_t now_ms)
         fr.phase      = g_foc_phase;
         fr.sync       = g_foc_if_sync;
         fr.rsv        = 0u;
+        fr.mech_mrad  = Foc_MechAngleMrad();
         SEGGER_RTT_Write(FOC_RTT_CH, (const char *)&fr, (unsigned)sizeof(fr));
     }
 #else
     {
-        char buf[96];
+        char buf[160];
         int  n;
 
         n = snprintf(buf, sizeof(buf),
-            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u\r\n",
+            "MOTF,%u,%u,%d,%d,%d,%d,%d,%d,%d,%u,%d,%d,%u,%d\r\n",
             (unsigned)g_foc_mode, (unsigned)g_foc_phase,
             (int)(rotor_rad * 1000.0f),
             (int)(g_foc_theta_rad  * 1000.0f),
@@ -1144,7 +1157,8 @@ void Foc_RttSend(uint32_t now_ms)
             (unsigned)g_foc_if_sync,
             (int)(g_foc_if_diff_rad * 1000.0f),
             (int)(g_foc_if_freq_hz * 100.0f),
-            (unsigned)ms);
+            (unsigned)ms,
+            (int)Foc_MechAngleMrad());
         if (n > 0) {
             SEGGER_RTT_Write(FOC_RTT_CH, buf, (unsigned)n);
         }

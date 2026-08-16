@@ -304,7 +304,7 @@
         <Ww>
           <count>1</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_target_rpm</ItemText>
+          <ItemText>g_enc_count,0x0A</ItemText>
         </Ww>
         <Ww>
           <count>2</count>
@@ -505,6 +505,11 @@
           <count>41</count>
           <WinNumber>2</WinNumber>
           <ItemText>phi_hold</ItemText>
+        </Ww>
+        <Ww>
+          <count>42</count>
+          <WinNumber>2</WinNumber>
+          <ItemText>g_foc_if_rotor_rad*57.29578</ItemText>
         </Ww>
       </WatchWindow2>
       <Tracepoint>

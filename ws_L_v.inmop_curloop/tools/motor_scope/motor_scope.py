@@ -5,7 +5,7 @@ MotorScope - J-Link RTT 电机实时可视化调试助手（FOC 版，分支 inm
 =================================================================================
 
 固件端（ws/foc.c）在 FOC ISR 内以 1kHz 向 RTT 通道 6 发送 MOTF 帧
-（>2kHz 时自动切换为 48B 二进制帧），本程序用 pylink 读取、解析后通过
+（>2kHz 时自动切换为 52B 二进制帧），本程序用 pylink 读取、解析后通过
 HTTP 推给浏览器，浏览器 Canvas 实时绘制：
   - 转子（极对数 10 的 20 块磁钢）按"转子实测电角度"转动
   - 控制角（I-F 合成角）指针 vs 转子角（编码器实测）双指针
@@ -22,7 +22,7 @@ HTTP 推给浏览器，浏览器 Canvas 实时绘制：
 
 帧格式（文本）：
   MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
-       <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>
+       <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,<mech_mrad>
 """
 from __future__ import annotations
 
@@ -73,6 +73,7 @@ class FocFrame:
     diff_mrad: float = 0.0     # 控制角 vs 转子角偏差
     freq_cHz: float = 0.0      # I-F 电频率
     ms: int = 0
+    mech_mrad: float = 0.0     # 固件直传连续机械角 mrad（编码器换算，不折叠）
 
     def to_list(self):
         return [self.mode, self.phase, int(round(self.rotor_mrad)),
@@ -80,7 +81,8 @@ class FocFrame:
                 int(round(self.id_ma)), int(round(self.vq_mv)),
                 int(round(self.vd_mv)), int(round(self.spd_rpm)),
                 self.sync, int(round(self.diff_mrad)),
-                int(round(self.freq_cHz)), self.ms]
+                int(round(self.freq_cHz)), self.ms,
+                int(round(self.mech_mrad))]
 
 
 def _clean_rtt_line(line: str) -> str:
@@ -91,7 +93,7 @@ def _clean_rtt_line(line: str) -> str:
 
 
 def parse_text_line(line: str):
-    """解析文本帧：MOTF,<13 个字段>（兼容 MAIN_E 的 [MAIN] 前缀/ANSI 颜色）。"""
+    """解析文本帧：MOTF,<14 个字段>（兼容 MAIN_E 的 [MAIN] 前缀/ANSI 颜色）。"""
     line = _clean_rtt_line(line)
     if not line.startswith("MOTF,"):
         return None
@@ -107,26 +109,27 @@ def parse_text_line(line: str):
             spd_rpm=float(p[9]), sync=int(p[10]),
             diff_mrad=float(p[11]), freq_cHz=float(p[12]),
             ms=int(p[13]) if len(p) > 13 else 0,
+            mech_mrad=float(p[14]) if len(p) > 14 else 0,
         )
     except (ValueError, IndexError):
         return None
 
 
-_BIN_FMT = "<4sIiiiiiiiiiBBBB"      # 48 字节小端二进制帧
+_BIN_FMT = "<4sIiiiiiiiiiBBBBi"     # 52 字节小端二进制帧（末尾 mech_mrad）
 _BIN_SIZE = struct.calcsize(_BIN_FMT)
 
 
 def parse_binary(buf: bytes):
-    """解析 48 字节二进制帧（MOTF magic）。"""
+    """解析 52 字节二进制帧（MOTF magic，末尾 mech_mrad）。"""
     if len(buf) < _BIN_SIZE or buf[:4] != b"MOTF":
         return None
     (magic, ms, rotor, theta, iq, id_, vq, vd, spd, diff, freq,
-     mode, phase, sync, rsv) = struct.unpack(_BIN_FMT, buf[:_BIN_SIZE])
+     mode, phase, sync, rsv, mech) = struct.unpack(_BIN_FMT, buf[:_BIN_SIZE])
     return FocFrame(mode=mode, phase=phase, rotor_mrad=float(rotor),
                     theta_mrad=float(theta), iq_ma=float(iq), id_ma=float(id_),
                     vq_mv=float(vq), vd_mv=float(vd), spd_rpm=float(spd),
                     sync=sync, diff_mrad=float(diff), freq_cHz=float(freq),
-                    ms=ms)
+                    ms=ms, mech_mrad=float(mech))
 
 
 class RttParser:
@@ -310,6 +313,7 @@ class SimFoc:
         self.pp = 10
         self.t0 = time.time()
         self._last_theta = 0.0
+        self._theta_cont = 0.0   # 连续电角度（不折叠），用于机械角
         self.stop_at = stop_at      # >0 时：超过该秒数停止产生帧（模拟数据中断）
 
     def describe(self):
@@ -328,6 +332,7 @@ class SimFoc:
             f.phase = 1
             f.theta_mrad = 0.0
             f.rotor_mrad = 30.0 * math.sin(2 * math.pi * 3 * t)   # 轻微抖动
+            f.mech_mrad = f.rotor_mrad / self.pp                  # 机械角（抖动很小，不折叠）
             f.iq_ma = min(1200.0, 1200.0 * (t - 0.5) / 1.5)
             f.id_ma = 20.0 * math.sin(2 * math.pi * 2 * t)
             f.freq_cHz = 0.0
@@ -336,8 +341,9 @@ class SimFoc:
             f.phase = 2
             freq = min(20.0, 20.0 * (t - 2.5) / 4.0)   # 0 -> 20Hz
             f.freq_cHz = freq * 100.0
-            th = self._last_theta + 2 * math.pi * freq * dt
-            th %= 2 * math.pi
+            th_cont = self._theta_cont + 2 * math.pi * freq * dt
+            self._theta_cont = th_cont
+            th = th_cont % (2 * math.pi)
             self._last_theta = th
             # 转子滞后于合成角：滞后量从 0 起呈铃形（先增大后收敛）。
             # 注意不要强制 lag 下限（否则 hold->ramp 瞬间 rotor=th-lag 变负取模，
@@ -351,6 +357,7 @@ class SimFoc:
             rotor %= 2 * math.pi
             f.theta_mrad = th * 1000.0
             f.rotor_mrad = rotor * 1000.0
+            f.mech_mrad = (max(0.0, th_cont - lag) / self.pp) * 1000.0   # 连续机械角
             f.diff_mrad = _wrap_rad(rotor - th) * 1000.0
             f.iq_ma = 1200.0 + 800.0 * (t - 2.5) / 5.5
             f.id_ma = 30.0 * math.sin(2 * math.pi * 4 * t)
@@ -362,11 +369,13 @@ class SimFoc:
             f.sync = 1
             freq = 20.0
             f.freq_cHz = freq * 100.0
-            th = self._last_theta + 2 * math.pi * freq * dt
-            th %= 2 * math.pi
+            th_cont = self._theta_cont + 2 * math.pi * freq * dt
+            self._theta_cont = th_cont
+            th = th_cont % (2 * math.pi)
             self._last_theta = th
             f.theta_mrad = th * 1000.0
             f.rotor_mrad = (th + 0.25) * 1000.0        # 负载角 ~0.25 rad
+            f.mech_mrad = ((th_cont + 0.25) / self.pp) * 1000.0   # 连续机械角
             f.diff_mrad = 250.0
             f.iq_ma = 2000.0 + 150.0 * math.sin(2 * math.pi * 0.8 * t)
             f.id_ma = 25.0 * math.sin(2 * math.pi * 20 * t)
@@ -406,7 +415,8 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
             hub.log(
                 f"MOTF,{f.mode},{f.phase},{int(f.rotor_mrad)},{int(f.theta_mrad)},"
                 f"{int(f.iq_ma)},{int(f.id_ma)},{int(f.vq_mv)},{int(f.vd_mv)},"
-                f"{int(f.spd_rpm)},{f.sync},{int(f.diff_mrad)},{int(f.freq_cHz)},{f.ms}")
+                f"{int(f.spd_rpm)},{f.sync},{int(f.diff_mrad)},{int(f.freq_cHz)},{f.ms},"
+                f"{int(f.mech_mrad)}")
         next_t += interval
         delay = next_t - time.perf_counter()
         while delay > 0:

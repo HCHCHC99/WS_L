@@ -26,13 +26,13 @@ python motor_scope.py --mode jlink --device HC32F460 --speed-khz 4000
 
 启动后自动打开 `http://127.0.0.1:8080/`。
 
-## 数据协议（固件端 `ws/foc.c` 的 Foc_RttIsrSend）
+## 数据协议（固件端 `ws/foc.c` 的 Foc_RttSend）
 
 文本帧（`FOC_RTT_RATE_HZ <= 2000`，默认 1000）：
 
 ```
 MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
-     <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>
+     <vq_mv>,<vd_mv>,<spd_rpm>,<sync>,<diff_mrad>,<freq_cHz>,<ms>,<mech_mrad>
 ```
 
 | 字段 | 来源 | 说明 |
@@ -47,14 +47,15 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 | sync | g_foc_if_sync | 1 = 已同步（handover） |
 | diff_mrad | g_foc_if_diff_rad×1000 | 控制角-转子角偏差 |
 | freq_cHz | g_foc_if_freq_hz×100 | I-F 电频率 |
+| mech_mrad | g_enc_count×FOC_ENC_DIR 换算 | **固件直传连续机械角**（mrad，不折叠） |
 
-`FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **48 字节小端二进制帧**
-（magic "MOTF"，字段同上），本工具自动识别两种格式。
+`FOC_RTT_RATE_HZ > 2000` 时固件自动切换为 **52 字节小端二进制帧**
+（magic "MOTF"，字段同上，末尾多一个 `mech_mrad` int32），本工具自动识别两种格式。
 
 ## 固件端改动（本分支已包含）
 
-1. `ws/foc.c`：新增 `Foc_RttIsrSend()`，在 `Foc_Isr` 里每 `FOC_ISR_HZ/FOC_RTT_RATE_HZ`
-   个周期调用一次；`SEGGER_RTT_Write` 非阻塞，缓冲满丢帧不影响控制环。
+1. `ws/foc.c`：`Foc_RttSend()` 由主循环按 `FOC_RTT_RATE_HZ` 节流发送（FOC 未运行时也持续上报）；
+   `SEGGER_RTT_Write` 非阻塞，缓冲满丢帧不影响控制环。
 2. `RTT/SEGGER_RTT_Conf.h`：`SEGGER_RTT_MAX_NUM_UP_BUFFERS` 3 → 7（启用更多通道；MOTF 帧走通道 0）。
 3. 配置宏在 `foc.c` 顶部（`FOC_RTT_ENABLE / FOC_RTT_CH / FOC_RTT_RATE_HZ`，`FOC_RTT_CH` 默认 0，与 `MAIN_D/E` 日志共用通道 0；若用 `MAIN_E()` 打印 MOTF 行，上位机解析器同样兼容），
    可用编译器 `-D` 覆盖；如需统一收口可移入 `motor_config.h`。
@@ -66,6 +67,8 @@ MOTF,<mode>,<phase>,<rotor_mrad>,<theta_mrad>,<iq_ma>,<id_ma>,
 - I-F 启动阶段 `g_foc_theta_rad` 是合成角，动画会显示"控制角指针"与"转子
   磁钢"分离直到同步——这正是调试 I-F 启动要看的现象。
 - `g_foc_if_rotor_rad` 依赖编码器方向/零位（FOC_ENC_DIR / 对齐校准）。
+- 机械角由固件直传：`mech_mrad = g_enc_count × g_foc_enc_dir × 2π/ENCODER_CPR × 1000`（连续、不折叠），
+  前端示波器/数值面板/电机图直接用该值（`%360` 回绕由前端处理），不再由电角度解卷÷极对数反推。
 
 
 

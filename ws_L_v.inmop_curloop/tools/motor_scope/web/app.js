@@ -55,7 +55,7 @@ async function poll() {
         theta: d.latest[3], iq: d.latest[4], id: d.latest[5],
         vq: d.latest[6], vd: d.latest[7], spd: d.latest[8],
         sync: d.latest[9], diff: d.latest[10], freq: d.latest[11],
-        ms: d.latest[12],
+        ms: d.latest[12], mech: d.latest[13],
       };
       hub.rpmMax = Math.max(hub.rpmMax, Math.abs(hub.latest.spd) * 1.25);
       hub.curMax = Math.max(hub.curMax, Math.abs(hub.latest.iq), Math.abs(hub.latest.id));
@@ -67,6 +67,7 @@ async function poll() {
         iq: f[4], id: f[5],
         rotorDeg: (f[2] / 1000) * RAD2DEG,        // 电角度 °
         thetaDeg: (f[3] / 1000) * RAD2DEG,
+        mechDeg: (f[13] / 1000) * RAD2DEG,   // 固件直传连续机械角 deg
         diffRad: f[10] / 1000,
         mode: f[0],
       });
@@ -168,17 +169,9 @@ function updateStatus() {
 }
 
 /* ================= 显示角度（帧间按转速/频率积分，动画平滑） ================= */
-let visRotorMech = 0, visRotorElec = 0, visCtrlElec = 0, visRotorElecUnwrapped = 0;
+let visRotorMech = 0, visRotorElec = 0, visCtrlElec = 0;
 let lastNow = performance.now();
 
-// 角度解卷：把折返的 [0,360) 电角度展开成连续角度。
-// 10 对极电机每转 36° 机械角电角度就折返一次，不展开的话星星会每隔
-// 一次电周期'瞬移'回同样式的 N 极（看起来像回到初始位置）。
-function unwrapAngle(cur, prevUnwrapped) {
-  let d = cur - (prevUnwrapped % 360);
-  d = ((d % 360) + 540) % 360 - 180;      // 最短角差 [-180,180)
-  return prevUnwrapped + d;
-}
 function advance(now) {
   const s = hub.scope;
   if (!s.n || !hub.latest) return;
@@ -205,9 +198,15 @@ function advance(now) {
     rot = s.rotorDeg[iLast] + dRot / span * ext;
     th  = s.thetaDeg[iLast]  + dTh  / span * ext;
   }
+  // 机械角：固件直传连续值（编码器 g_enc_count*FOC_ENC_DIR 换算），直接插值/外推，
+  // 不再由电角度解卷÷极对数反推（避免窗口滑动时锚点漂移导致的 0°/360° 回跳）。
+  let mech = s.mechDeg[iLast];
+  if (span > 1e-6) {
+    const dMech = s.mechDeg[iLast] - s.mechDeg[iPrev];
+    mech = s.mechDeg[iLast] + dMech / span * ext;
+  }
   visRotorElec = rot;
-  visRotorElecUnwrapped = unwrapAngle(rot, visRotorElecUnwrapped);
-  visRotorMech = visRotorElecUnwrapped / POLE_PAIRS;   // 连续机械角，跟随整圈转动
+  visRotorMech = mech;
   visCtrlElec = th;
 }
 
@@ -432,7 +431,7 @@ function updateNum() {
   set("rpmVal", f.spd.toFixed(0) + " rpm");
   set("rotorVal", ((f.rotor / 1000) * RAD2DEG % 360).toFixed(1) + "°");
   set("ctrlVal", ((f.theta / 1000) * RAD2DEG % 360).toFixed(1) + "°");
-  set("mechVal", (((visRotorMech % 360) + 360) % 360).toFixed(1) + "°");
+  set("mechVal", ((((hub.latest.mech / 1000) * RAD2DEG % 360) + 360) % 360).toFixed(1) + "°");
   set("iqVal", f.iq.toFixed(0) + " mA");
   set("idVal", f.id.toFixed(0) + " mA");
   set("vqVal", f.vq.toFixed(0) + " mV");
@@ -482,6 +481,7 @@ hub.scope = {
   id: new Float32Array(SCOPE_CAP),
   rotorDeg: new Float32Array(SCOPE_CAP),
   thetaDeg: new Float32Array(SCOPE_CAP),
+  mechDeg: new Float32Array(SCOPE_CAP),
   diffRad: new Float32Array(SCOPE_CAP),
   mode: new Float32Array(SCOPE_CAP),
 };
@@ -494,7 +494,8 @@ function scopeAppend(p) {
   const s = hub.scope;
   const idx = (s.head + s.n) % s.cap;
   s.t[idx] = p.t; s.iq[idx] = p.iq; s.id[idx] = p.id;
-  s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.diffRad[idx] = p.diffRad;
+  s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.mechDeg[idx] = p.mechDeg;
+  s.diffRad[idx] = p.diffRad;
   s.mode[idx] = p.mode;
   if (s.n < s.cap) s.n++; else s.head = (s.head + 1) % s.cap;
 }
@@ -606,7 +607,7 @@ function drawScope(cv, kind) {
     traces = [
       { key: "rotorDeg", color: "#e5484d", dash: false, on: () => scopeCfg.angle.rotor },
       { key: "thetaDeg", color: "#ffffff", dash: true,  on: () => scopeCfg.angle.theta },
-      { mech: true, key: "mech", color: "#4ade80", dash: false, on: () => scopeCfg.angle.mech },
+      { mech: true, key: "mechDeg", color: "#4ade80", dash: false, on: () => scopeCfg.angle.mech },
     ];
   } else if (kind === "mode") {
     ticks = [0, 1, 2, 3, 4];
@@ -656,22 +657,13 @@ function drawScope(cv, kind) {
     if (tr.dash) ctx.setLineDash([5, 4]);
     ctx.beginPath();
     let started = false;
-    let mechCum = 0, mechInit = false, mechPrev = 0;
     for (let i = startIdx; i < n; i++) {
       const idx = (s.head + i) % s.cap;
       const tt = s.t[idx];
       if (tt > t1) break;
       let v;
       if (tr.mech) {
-        // 机械角：电角度逐点解卷 / 极对数（0~360° 机械，比电角度慢 P 倍）
-        if (!mechInit) { mechCum = s.rotorDeg[idx] / POLE_PAIRS; mechInit = true; }
-        else {
-          let d = s.rotorDeg[idx] - mechPrev;
-          d = ((d % 360) + 540) % 360 - 180;
-          mechCum += d / POLE_PAIRS;
-        }
-        mechPrev = s.rotorDeg[idx];
-        v = mechCum;
+        v = s.mechDeg[idx];   // 固件直传连续机械角，yMap 的 %360 负责 0/360 回绕
       } else {
         v = s[tr.key][idx];
       }

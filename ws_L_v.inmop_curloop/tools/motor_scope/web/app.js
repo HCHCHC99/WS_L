@@ -74,6 +74,10 @@ async function poll() {
           thetaDeg: (f[3] / 1000) * RAD2DEG,
           mechDeg: (f[13] / 1000) * RAD2DEG,   // 固件直传连续机械角 deg
           thetaMechDeg: (f[18] / 1000) * RAD2DEG,   // 固件直传控制角机械角 deg
+          vd: f[7], vq: f[6],                       // 回看历史时电机/仪表用
+          isMa: f[14], isAng: f[15],
+          vMv: f[16], vAng: f[17],
+          spd: f[8], freq: f[11],
           diffRad: f[10] / 1000,
           mode: f[0],
         });
@@ -177,13 +181,25 @@ function updateStatus() {
 
 /* ================= 显示角度（帧间按转速/频率积分，动画平滑） ================= */
 let visRotorMech = 0, visCtrlMech = 0, visRotorElec = 0, visCtrlElec = 0;
+let viewFrame = null;   // 当前"查看时刻"的数据帧（实时=最新帧，回看历史=滑块时刻插值）
 let lastNow = performance.now();
 
 function advance(now) {
   const s = hub.scope;
   if (!s.n || !hub.latest) return;
+  // 回看历史：电机图/仪表跟随滑块时刻（对缓冲做时间插值）
+  if (!scopeNav.followLive) {
+    const tv = Math.min(Math.max(scopeNav.viewEnd, scopeFirstT()), scopeLastT());
+    viewFrame = buildViewFrame(tv);
+    visRotorElec = interpVal(tv, 'rotorDeg');
+    visCtrlElec = interpVal(tv, 'thetaDeg');
+    visRotorMech = interpVal(tv, 'mechDeg');
+    visCtrlMech = interpVal(tv, 'thetaMechDeg');
+    return;
+  }
+  viewFrame = hub.latest;
   // 数据新鲜度：超过 STALE_MS 没有新帧 => 冻结在最新位置
-  const stale = !scopeNav.followLive || hub.lastAgeMs < 0 || hub.lastAgeMs > STALE_MS;
+  const stale = hub.lastAgeMs < 0 || hub.lastAgeMs > STALE_MS;
 
   // 转子/控制角：用最新两个数据点做"线性插值/外推"，完全跟随真实帧数据。
   // 不再用转速积分、不做收敛校正——彻底避免"转一点又弹回原位"。
@@ -253,7 +269,7 @@ function drawMotor() {
   const ctx = mctx;
   ctx.clearRect(0, 0, MW, MH);
   const cx = MW / 2, cy = MH / 2;
-  const f = hub.latest;
+  const f = viewFrame || hub.latest;   // 回看历史时用"查看时刻"的插值帧
 
   // 背景
   const bg = ctx.createRadialGradient(cx, cy, 60, cx, cy, MW * 0.72);
@@ -382,7 +398,7 @@ function drawGauge() {
   const ctx = gctx;
   const W = gaugeCv.width, H = gaugeCv.height;
   ctx.clearRect(0, 0, W, H);
-  const f = hub.latest;
+  const f = viewFrame || hub.latest;   // 回看历史时用"查看时刻"的插值帧
   const rpm = f ? Math.abs(f.spd) : 0;
   const max = Math.max(100, hub.rpmMax);
   const cx = W / 2, cy = H - 14, R = Math.min(W / 2, H) - 22;
@@ -440,13 +456,13 @@ function buildNumGrid() {
   }
 }
 function updateNum() {
-  const f = hub.latest;
+  const f = viewFrame || hub.latest;   // 回看历史时用"查看时刻"的插值帧
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   if (!f) return;
   set("rpmVal", f.spd.toFixed(0) + " rpm");
   set("rotorVal", ((f.rotor / 1000) * RAD2DEG % 360).toFixed(1) + "°");
   set("ctrlVal", ((f.theta / 1000) * RAD2DEG % 360).toFixed(1) + "°");
-  set("mechVal", ((((hub.latest.mech / 1000) * RAD2DEG % 360) + 360) % 360).toFixed(1) + "°");
+  set("mechVal", ((((f.mech / 1000) * RAD2DEG % 360) + 360) % 360).toFixed(1) + "°");
   set("iqVal", f.iq.toFixed(0) + " mA");
   set("idVal", f.id.toFixed(0) + " mA");
   set("vqVal", f.vq.toFixed(0) + " mV");
@@ -500,6 +516,15 @@ hub.scope = {
   thetaDeg: new Float32Array(SCOPE_CAP),
   mechDeg: new Float32Array(SCOPE_CAP),
   thetaMechDeg: new Float32Array(SCOPE_CAP),
+  // 回看历史时电机图/仪表需要的字段
+  vd: new Float32Array(SCOPE_CAP),
+  vq: new Float32Array(SCOPE_CAP),
+  isMa: new Float32Array(SCOPE_CAP),
+  isAng: new Float32Array(SCOPE_CAP),
+  vMv: new Float32Array(SCOPE_CAP),
+  vAng: new Float32Array(SCOPE_CAP),
+  spd: new Float32Array(SCOPE_CAP),
+  freq: new Float32Array(SCOPE_CAP),
   diffRad: new Float32Array(SCOPE_CAP),
   mode: new Float32Array(SCOPE_CAP),
 };
@@ -514,6 +539,10 @@ function scopeAppend(p) {
   s.t[idx] = p.t; s.iq[idx] = p.iq; s.id[idx] = p.id;
   s.rotorDeg[idx] = p.rotorDeg; s.thetaDeg[idx] = p.thetaDeg; s.mechDeg[idx] = p.mechDeg;
   s.thetaMechDeg[idx] = p.thetaMechDeg;
+  s.vd[idx] = p.vd; s.vq[idx] = p.vq;
+  s.isMa[idx] = p.isMa; s.isAng[idx] = p.isAng;
+  s.vMv[idx] = p.vMv; s.vAng[idx] = p.vAng;
+  s.spd[idx] = p.spd; s.freq[idx] = p.freq;
   s.diffRad[idx] = p.diffRad;
   s.mode[idx] = p.mode;
   if (s.n < s.cap) s.n++; else s.head = (s.head + 1) % s.cap;
@@ -578,6 +607,31 @@ function interpVal(t, key) {
   const f = (t - ta) / ((tb - ta) || 1);
   const va = s[key][(s.head + a) % s.cap], vb = s[key][(s.head + b) % s.cap];
   return va + (vb - va) * f;
+}
+
+/* 回看历史：按时间插值出"查看时刻"的完整数据帧（协议单位，与 hub.latest 同构） */
+function buildViewFrame(t) {
+  const rd = interpVal(t, 'rotorDeg') || 0;
+  const td = interpVal(t, 'thetaDeg') || 0;
+  const md = interpVal(t, 'mechDeg') || 0;
+  const tmd = interpVal(t, 'thetaMechDeg') || 0;
+  return {
+    rotor: rd / RAD2DEG * 1000,       // mrad
+    theta: td / RAD2DEG * 1000,       // mrad
+    mech: md / RAD2DEG * 1000,        // mrad
+    thetaMech: tmd / RAD2DEG * 1000,  // mrad
+    iq: interpVal(t, 'iq') || 0,
+    id: interpVal(t, 'id') || 0,
+    vd: interpVal(t, 'vd') || 0,
+    vq: interpVal(t, 'vq') || 0,
+    isMa: interpVal(t, 'isMa') || 0,
+    isAng: interpVal(t, 'isAng') || 0,
+    vMv: interpVal(t, 'vMv') || 0,
+    vAng: interpVal(t, 'vAng') || 0,
+    spd: interpVal(t, 'spd') || 0,
+    freq: interpVal(t, 'freq') || 0,
+    diff: (interpVal(t, 'diffRad') || 0) * 1000,  // mrad
+  };
 }
 
 function drawScope(cv, kind) {

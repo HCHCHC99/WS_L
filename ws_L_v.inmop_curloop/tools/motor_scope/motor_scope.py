@@ -48,8 +48,9 @@ except Exception:
     pass
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
-HISTORY_FILE = Path(__file__).resolve().parent / "history.txt"
-HISTORY_FILE_MAX_BYTES = 2 * 1024 * 1024      # history.txt 上限 2MB，达到即清空
+HISTORY_FILE = Path(__file__).resolve().parent / "history_scope.txt"      # MOTF 数据帧历史
+HISTORY_MAIN_FILE = Path(__file__).resolve().parent / "history_main.txt"    # 固件日志（MAIN_D 等）历史
+HISTORY_FILE_MAX_BYTES = 2 * 1024 * 1024      # 单个 history 文件上限 2MB，达到即清空
 
 PHASE_NAMES = {0: "idle", 1: "hold", 2: "ramp/sync", 3: "run", 4: "align"}
 MODE_NAMES = {0: "停止", 1: "开环", 2: "电流环", 3: "对齐"}
@@ -211,11 +212,19 @@ class DataHub:
         self.log_lines = deque(maxlen=max_log)
         self.log_seq = 0
         self.start_time = time.time()
-        self._hf = None
+        self._hf = None              # history_scope.txt 句柄
         self._hist_bytes = 0
+        self._hf_main = None          # history_main.txt 句柄
+        self._hist_main_bytes = 0
         self.frames_total = 0
         self.status = "starting"
         self.detail = ""
+        # 方案A：每次启动新实例即清空两个历史文件（启动实机模式.bat 后从零开始）
+        try:
+            HISTORY_FILE.write_text("", encoding="utf-8")
+            HISTORY_MAIN_FILE.write_text("", encoding="utf-8")
+        except Exception:
+            pass
 
     def push(self, frame: FocFrame, raw: str = ""):
         with self.lock:
@@ -229,7 +238,7 @@ class DataHub:
             self.log(raw)
 
     def _history_append(self, frame: FocFrame):
-        """消费过的帧追加写入 history.txt；达到 2MB 上限即清空再写。
+        """消费过的帧追加写入 history_scope.txt；达到 2MB 上限即清空再写。
         用二进制追加模式，精确按字节计数（避免文本模式 \n->\r\n 的计数偏差）。"""
         try:
             ts = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -252,18 +261,44 @@ class DataHub:
         except Exception:
             pass
 
-    def clear_history(self):
-        """清空 history.txt（页面退出时调用）。"""
-        with self.lock:
-            if self._hf is not None:
+    def _history_main_append(self, text: str):
+        """非 MOTF 固件日志（MAIN_D 等）追加写入 history_main.txt；2MB 上限即清空再写。"""
+        try:
+            ts = (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                  + f".{int(time.time() * 1000) % 1000:03d}")
+            data = (ts + " " + text + "\r\n").encode("utf-8")
+            if self._hf_main is None:
+                self._hf_main = open(HISTORY_MAIN_FILE, "ab")
                 try:
-                    self._hf.close()
+                    self._hf_main.seek(0, 2)
+                    self._hist_main_bytes = self._hf_main.tell()
                 except Exception:
-                    pass
-                self._hf = None
+                    self._hist_main_bytes = 0
+            self._hist_main_bytes += len(data)
+            if self._hist_main_bytes > HISTORY_FILE_MAX_BYTES:
+                self._hf_main.truncate(0)             # 达到上限：清空
+                self._hist_main_bytes = len(data)     # 本行随后写入
+            self._hf_main.write(data)
+            self._hf_main.flush()
+        except Exception:
+            pass
+
+    def clear_history(self):
+        """清空 history_scope.txt / history_main.txt（页面退出时调用）。"""
+        with self.lock:
+            for h in (self._hf, self._hf_main):
+                if h is not None:
+                    try:
+                        h.close()
+                    except Exception:
+                        pass
+            self._hf = None
+            self._hf_main = None
             self._hist_bytes = 0
+            self._hist_main_bytes = 0
         try:
             HISTORY_FILE.write_text("", encoding="utf-8")
+            HISTORY_MAIN_FILE.write_text("", encoding="utf-8")
         except Exception:
             pass
 
@@ -271,6 +306,9 @@ class DataHub:
         with self.lock:
             self.log_seq += 1
             self.log_lines.append((self.log_seq, text))
+            # 固件日志（非 MOTF 行）写入 history_main.txt（与前端面板 2 分流一致）
+            if "MOTF," not in text:
+                self._history_main_append(text)
 
     def last_frame_age_ms(self):
         with self.lock:

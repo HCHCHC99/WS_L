@@ -937,7 +937,7 @@ document.getElementById("logClear").addEventListener("click", async () => {
   renderMainLog();
 });
 
-/* 页面退出：自动清空 history.txt（sendBeacon 在 unload 时也能发出） */
+/* 页面退出：自动清空 history_scope.txt / history_main.txt（sendBeacon 在 unload 时也能发出） */
 window.addEventListener("pagehide", () => {
   try { navigator.sendBeacon("/clear_history"); } catch (e) {
     fetch("/clear_history").catch(() => {});

@@ -98,8 +98,18 @@ class DataThread(QThread):
                 return
             try:
                 src.open()
+            except ms.JLinkOpenError as exc:
+                self.data_error.emit(f"J-Link 连接失败（未找到/无法打开 J-Link），3 秒后重试: {exc}")
+                src.close()
+                time.sleep(3.0)
+                continue
+            except ms.ChipConnectError as exc:
+                self.data_error.emit(f"芯片连接失败（J-Link 已连接，目标无响应），3 秒后重试: {exc}")
+                src.close()
+                time.sleep(3.0)
+                continue
             except Exception as exc:
-                self.data_error.emit(f"J-Link 连接失败，3 秒后重试: {exc}")
+                self.data_error.emit(f"连接异常，3 秒后重试: {exc}")
                 src.close()
                 time.sleep(3.0)
                 continue

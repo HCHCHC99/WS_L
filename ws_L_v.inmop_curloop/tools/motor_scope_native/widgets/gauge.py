@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""半圆转速表（QPainter），量程自适应。"""
+"""半圆转速表（QPainter），量程自适应。米色浅色主题。"""
 import math
 
 from PySide6.QtCore import Qt, QPointF
@@ -9,6 +9,14 @@ from PySide6.QtWidgets import QWidget
 PI = math.pi
 R16 = 180.0 * 16.0 / PI        # rad -> Qt drawArc 单位（1/16 度）
 LBW = 32                        # 刻度数值标签文本框宽
+
+# 米色主题
+BG = "#FDFBF7"
+TRACK = "#E2D9C7"
+TICK = "#6E685C"
+ACTIVE = "#2F855A"
+VALUE = "#3D3D38"
+LABEL = "#6E685C"
 
 
 class Gauge(QWidget):
@@ -21,7 +29,7 @@ class Gauge(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor("#1b2128"))
+        p.fillRect(self.rect(), QColor(BG))
         fr = self.hub.latest
         rpm = abs(fr.spd_rpm) if fr else 0.0
         if fr:
@@ -31,10 +39,10 @@ class Gauge(QWidget):
         r = min(w / 2, h) - 22
         a0, a1 = PI, 2 * PI
         frac = min(1.0, rpm / self.rpm_max)
-        p.setPen(QPen(QColor("#2a313a"), 13))
+        p.setPen(QPen(QColor(TRACK), 13))
         p.drawArc(int(cx - r), int(cy - r), int(2 * r), int(2 * r),
                   int(-a1 * R16), int(-(a0 - a1) * R16))
-        p.setPen(QColor("#7c8794"))
+        p.setPen(QColor(TICK))
         p.setFont(QFont("Consolas", 9))
         for v in range(11):
             a = a0 + (a1 - a0) * v / 10
@@ -46,10 +54,10 @@ class Gauge(QWidget):
             p.drawText(bx, by, LBW, 14, Qt.AlignCenter,
                        "%d" % int(self.rpm_max * v / 10))
         na = a0 + (a1 - a0) * frac
-        p.setPen(QPen(QColor("#22c55e"), 13))
+        p.setPen(QPen(QColor(ACTIVE), 13))
         p.drawArc(int(cx - r), int(cy - r), int(2 * r), int(2 * r),
                   int(-na * R16), int(-(a0 - na) * R16))
-        p.setPen(QColor("#ffffff"))
+        p.setPen(QColor(VALUE))
         p.drawText(int(cx - 40), int(cy - 36), "%.0f" % rpm)
-        p.setPen(QColor("#a5b2bf"))
+        p.setPen(QColor(LABEL))
         p.drawText(int(cx - 20), int(cy - 16), "rpm")

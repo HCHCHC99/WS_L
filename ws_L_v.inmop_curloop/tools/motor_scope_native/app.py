@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """主窗口：电机动画 + 仪表 + 5 示波器 + 状态栏，QTimer 驱动刷新。
-工具栏：J-Link 序列号选择（多 USB 口）+ 手动刷新。"""
+工具栏：J-Link 序列号选择（多 USB 口）+ 手动刷新。
+配色：米色浅色主题；状态栏区分 J-Link 设备层 / 目标芯片层连接失败。"""
 import time
 
 from PySide6.QtCore import QTimer
@@ -16,6 +17,20 @@ from widgets.scope_view import ScopeView
 MODE_NAMES = {0: "停止", 1: "开环", 2: "电流环", 3: "对齐"}
 PHASE_NAMES = {0: "idle", 1: "hold", 2: "ramp/sync", 3: "run", 4: "align"}
 
+# 米色浅色主题
+BG = "#F6F1E7"            # 窗口底色（米色）
+PANEL = "#FDFBF7"         # 面板底（奶油白）
+TEXT = "#3D3D38"          # 主文字（深暖灰）
+TEXT2 = "#6E685C"         # 次文字
+BORDER = "#D9CDB9"        # 边框
+BTN = "#EFE7D6"           # 按钮底
+BTN_HOVER = "#E6DCC7"     # 按钮悬停
+
+# 状态栏错误配色：J-Link 设备层=琥珀，目标芯片层/RTT=红
+COLOR_ERR_JLINK = "#B45309"
+COLOR_ERR_CHIP = "#DC2626"
+COLOR_STALE = "#B45309"
+
 
 class MainWindow(QMainWindow):
     REFRESH_MS = 30          # 刷新周期（约 33fps）
@@ -26,15 +41,17 @@ class MainWindow(QMainWindow):
         self.hub = hub
         self.thread = data_thread
         self._serial_arg = serial_arg
+        self._error_active = False     # 连接错误显示中（数据中断提示不覆盖它）
         self.setWindowTitle("MotorScope 原生版（PySide6）")
 
         central = QWidget()
-        # 背景色系：深灰蓝（非纯黑），控件/文字配色统一
-        central.setStyleSheet("""
-            background-color:#242b33; color:#c6d0da;
-            QComboBox{background:#1c2229;color:#c6d0da;border:1px solid #3a4654;padding:2px 8px;}
-            QPushButton{background:#2a3542;color:#e8eef4;border:1px solid #3a4654;padding:4px 12px;border-radius:4px;}
-            QPushButton:hover{background:#35414f;}
+        central.setStyleSheet(f"""
+            background-color:{BG}; color:{TEXT};
+            QComboBox{{background:{PANEL};color:{TEXT};border:1px solid {BORDER};padding:2px 8px;}}
+            QComboBox QAbstractItemView{{background:{PANEL};color:{TEXT};selection-background-color:{BTN};}}
+            QPushButton{{background:{BTN};color:{TEXT};border:1px solid {BORDER};padding:4px 12px;border-radius:4px;}}
+            QPushButton:hover{{background:{BTN_HOVER};}}
+            QLabel{{background:transparent;}}
         """)
         outer = QVBoxLayout(central)
         outer.setContentsMargins(6, 6, 6, 6)
@@ -89,8 +106,8 @@ class MainWindow(QMainWindow):
         outer.addLayout(root, 1)
         self.setCentralWidget(central)
 
-        # 状态栏
-        self.statusBar().setStyleSheet("QStatusBar{background:#1c2229;color:#c6d0da;}")
+        # 状态栏（米色）
+        self.statusBar().setStyleSheet(f"QStatusBar{{background:{BTN};color:{TEXT};}}")
         self.lbl_status = QLabel("连接中…")
         self.lbl_state = QLabel("")
         self.lbl_age = QLabel("")
@@ -131,19 +148,31 @@ class MainWindow(QMainWindow):
         self._populate_serials()      # 启动后才插上的 J-Link 也能被列出
         self.thread.set_serial(self.serial_combo.currentData())
         self.thread.refresh()
+        self._error_active = False
         self.lbl_status.setText("正在刷新…")
         self.lbl_status.setStyleSheet("")
 
     def _on_status(self, s):
+        self._error_active = False
         self._last_status_text = s
         self.lbl_status.setText(s)
+        self.lbl_status.setStyleSheet("")
 
     def _on_frame(self, fr):
         self.hub.push(fr, time.time())
 
+    def _error_color(self, msg):
+        """按故障层配色：J-Link 设备层=琥珀；目标芯片层/RTT=红。"""
+        if msg.startswith("J-Link 连接失败") or msg.startswith("缺少 pylink"):
+            return COLOR_ERR_JLINK
+        return COLOR_ERR_CHIP
+
     def _on_error(self, msg):
+        self._error_active = True
+        color = self._error_color(msg)
+        # 前缀本身就是区分（J-Link 连接失败 / 芯片连接失败），再叠加颜色区分
         self.lbl_status.setText("❌ " + msg)
-        self.lbl_status.setStyleSheet("color:#ef4444;")
+        self.lbl_status.setStyleSheet(f"color:{color};font-weight:bold;")
 
     def _refresh(self):
         self.motor.update()
@@ -155,10 +184,13 @@ class MainWindow(QMainWindow):
         if fr:
             age = (time.time() - self.hub.last_frame_wall) * 1000.0
             if age > self.STALE_MS:
-                self.lbl_status.setText("⚠️ 数据中断（%.0f ms 无新帧）" % age)
-                self.lbl_status.setStyleSheet("color:#f59e0b;")
+                if not self._error_active:
+                    # 连接失败期间不覆盖错误文案（保留 J-Link/芯片区分提示）
+                    self.lbl_status.setText("⚠️ 数据中断（%.0f ms 无新帧）" % age)
+                    self.lbl_status.setStyleSheet(f"color:{COLOR_STALE};")
             else:
                 # 数据恢复：清中断/错误样式，文案回到最近一次连接状态
+                self._error_active = False
                 self.lbl_status.setStyleSheet("")
                 self.lbl_status.setText(self._last_status_text)
             self.lbl_state.setText("mode%d %s | phase %s | %s"

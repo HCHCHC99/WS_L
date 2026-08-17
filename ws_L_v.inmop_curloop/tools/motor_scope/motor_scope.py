@@ -496,6 +496,14 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
 # ======================================================================
 # J-Link RTT 数据源
 # ======================================================================
+class JLinkOpenError(Exception):
+    """J-Link 设备层连接失败：未找到 J-Link / USB 被占用 / 驱动异常。"""
+
+
+class ChipConnectError(Exception):
+    """J-Link 已连接，但目标芯片连接 / 调试 / RTT 初始化失败（无供电/SWD 断线/锁死等）。"""
+
+
 
 class JLinkRttSource:
     def __init__(self, device: str, speed_khz: int = 4000, channel: int = 0,
@@ -556,65 +564,87 @@ class JLinkRttSource:
         return 0
 
     def open(self):
+        """两阶段连接，便于区分故障层：
+        阶段1 jl.open() -> J-Link 设备层（未找到/占用/驱动）；
+        阶段2 connect/RTT -> 目标芯片层（无供电/SWD 断线/器件名错/锁死）。"""
         jl = self.pylink.JLink()
+
+        # ---- 阶段 1：J-Link 设备层 ----
         try:
             if self._serial is not None:
                 jl.open(serial_number=self._serial)
             else:
                 jl.open()
-            # 关键：显式指定 SWD 接口。否则 J-Link DLL 可能"connect 不报错但目标访问
-            # 全部失败（Target is not connected）"，导致找不到 RTT 控制块。
+        except Exception as exc:
             try:
-                jl.set_tif(self.pylink.enums.JLinkInterfaces.SWD)
+                jl.close()
             except Exception:
                 pass
-            print(f"[J-Link] SN={jl.serial_number} 固件={jl.firmware_version}")
-            jl.connect(self.device, speed=self.speed_khz, verbose=True)
-            try:
-                if jl.halted():     # attach 可能停核；尽量恢复运行（部分 DLL 支持 exec Go）
-                    jl.exec_command("Go")
-            except Exception:
-                pass
-            addr = self.rtt_addr
-            auto_ok = False
-            if not addr:
+            sn = f" SN={self._serial}" if self._serial is not None else ""
+            raise JLinkOpenError(
+                f"未找到或无法打开 J-Link{sn}。"
+                "请检查：1) USB 是否插好/指示灯是否亮；2) 是否被 Keil/其他软件占用；"
+                f"3) 驱动是否正常。原始错误: {exc}") from exc
+
+        # ---- 阶段 2：目标芯片连接 + RTT 初始化 ----
+        try:
+                # 关键：显式指定 SWD 接口。否则 J-Link DLL 可能"connect 不报错但目标访问
+                # 全部失败（Target is not connected）"，导致找不到 RTT 控制块。
                 try:
-                    jl.rtt_start()          # J-Link DLL 自动搜索
-                    jl.rtt_get_num_up_buffers()
-                    auto_ok = True
+                    jl.set_tif(self.pylink.enums.JLinkInterfaces.SWD)
                 except Exception:
-                    addr = self._scan_rtt_cb(jl)
-                    if not addr:
-                        raise RuntimeError(
-                            "未找到 RTT 控制块。请确认：1) 目标在运行且固件包含 SEGGER RTT；"
-                            "2) 在 Keil 里看 _SEGGER_RTT 的地址，用 --rtt-addr 0x地址 指定")
-                    print(f"[J-Link] 自动搜索失败，RAM 扫描定位到 RTT 控制块 @ 0x{addr:08X}")
+                    pass
+                print(f"[J-Link] SN={jl.serial_number} 固件={jl.firmware_version}")
+                jl.connect(self.device, speed=self.speed_khz, verbose=True)
+                try:
+                    if jl.halted():     # attach 可能停核；尽量恢复运行（部分 DLL 支持 exec Go）
+                        jl.exec_command("Go")
+                except Exception:
+                    pass
+                addr = self.rtt_addr
+                auto_ok = False
+                if not addr:
                     try:
-                        jl.rtt_stop()       # 复位 RTT 状态，否则后续指定地址会被忽略
+                        jl.rtt_start()          # J-Link DLL 自动搜索
+                        jl.rtt_get_num_up_buffers()
+                        auto_ok = True
                     except Exception:
-                        pass
-            if addr and not auto_ok:
-                jl.rtt_start(block_address=addr)
-            nbuf = None
-            for _ in range(5):          # DLL 读取 CB 需要一点时间，重试几次
-                try:
-                    nbuf = jl.rtt_get_num_up_buffers()
-                    break
-                except Exception:
-                    time.sleep(0.1)
-            if nbuf is None:
-                raise RuntimeError("RTT 控制块已定位但读取失败，请重试")
-            if nbuf < (self.channel + 1):
-                print(f"[J-Link] 警告：固件只有 {nbuf} 个上行通道（无 ch{self.channel}）。"
-                      "请确认已烧录新固件（SEGGER_RTT_MAX_NUM_UP_BUFFERS=7）")
-            print(f"[J-Link] RTT 控制块已定位（{nbuf} 个上行通道），读取通道 {self.channel} ...")
-            self.jl = jl
-        except Exception:
+                        addr = self._scan_rtt_cb(jl)
+                        if not addr:
+                            raise RuntimeError(
+                                "未找到 RTT 控制块。请确认：1) 目标在运行且固件包含 SEGGER RTT；"
+                                "2) 在 Keil 里看 _SEGGER_RTT 的地址，用 --rtt-addr 0x地址 指定")
+                        print(f"[J-Link] 自动搜索失败，RAM 扫描定位到 RTT 控制块 @ 0x{addr:08X}")
+                        try:
+                            jl.rtt_stop()       # 复位 RTT 状态，否则后续指定地址会被忽略
+                        except Exception:
+                            pass
+                if addr and not auto_ok:
+                    jl.rtt_start(block_address=addr)
+                nbuf = None
+                for _ in range(5):          # DLL 读取 CB 需要一点时间，重试几次
+                    try:
+                        nbuf = jl.rtt_get_num_up_buffers()
+                        break
+                    except Exception:
+                        time.sleep(0.1)
+                if nbuf is None:
+                    raise RuntimeError("RTT 控制块已定位但读取失败，请重试")
+                if nbuf < (self.channel + 1):
+                    print(f"[J-Link] 警告：固件只有 {nbuf} 个上行通道（无 ch{self.channel}）。"
+                          "请确认已烧录新固件（SEGGER_RTT_MAX_NUM_UP_BUFFERS=7）")
+                print(f"[J-Link] RTT 控制块已定位（{nbuf} 个上行通道），读取通道 {self.channel} ...")
+                self.jl = jl
+        except Exception as exc:
             try:
                 jl.close()      # 连接失败务必释放，避免泄漏 J-Link 连接（多次重试会耗尽）
             except Exception:
                 pass
-            raise
+            raise ChipConnectError(
+                f"J-Link 已连接，但目标芯片连接/RTT 初始化失败。"
+                "请检查：1) 目标板是否上电；2) SWD 三线（SWDIO/SWCLK/GND）是否接好；"
+                "3) 器件型号是否正确；4) 芯片是否被读保护锁死。"
+                f"原始错误: {exc}") from exc
 
     def next_chunk(self) -> bytes:
         return self.jl.rtt_read(self.channel, 2048)
@@ -624,8 +654,24 @@ def jlink_loop(hub: DataHub, src: JLinkRttSource):
     while True:
         try:
             src.open()
+        except JLinkOpenError as exc:
+            msg = f"J-Link 连接失败（未找到/无法打开 J-Link），3 秒后自动重试: {exc}"
+            hub.set_status("error", msg)
+            hub.log("[MotorScope] " + msg)
+            print("[MotorScope] " + msg)
+            src.reconnect_evt.wait(timeout=3.0)
+            src.reconnect_evt.clear()
+            continue
+        except ChipConnectError as exc:
+            msg = f"芯片连接失败（J-Link 已连接，目标无响应），3 秒后自动重试: {exc}"
+            hub.set_status("error", msg)
+            hub.log("[MotorScope] " + msg)
+            print("[MotorScope] " + msg)
+            src.reconnect_evt.wait(timeout=3.0)
+            src.reconnect_evt.clear()
+            continue
         except Exception as exc:
-            msg = f"J-Link 连接失败，3 秒后自动重试: {exc}"
+            msg = f"连接异常，3 秒后自动重试: {exc}"
             hub.set_status("error", msg)
             hub.log("[MotorScope] " + msg)
             print("[MotorScope] " + msg)

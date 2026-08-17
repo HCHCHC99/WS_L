@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
-"""数值面板：实时显示最新帧关键量（与 web 版数值面板一致，含 cnt）。"""
+"""数值面板：实时显示最新帧关键量（与 web 版数值面板一致，含 cnt）。米色浅色主题。"""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QLabel, QWidget
 
 from hub import MRAD2DEG
+
+# 米色主题
+TEXT_LABEL = "#6E685C"
+TEXT_VALUE = "#3D3D38"
 
 
 class NumPanel(QWidget):
@@ -27,8 +31,8 @@ class NumPanel(QWidget):
         for i, (name, key) in enumerate(self.ROWS):
             k = QLabel(name)
             v = QLabel("0")
-            k.setStyleSheet("color:#9aa7b4;")
-            v.setStyleSheet("color:#f0f4f8;font-family:Consolas,monospace;")
+            k.setStyleSheet(f"color:{TEXT_LABEL};background:transparent;")
+            v.setStyleSheet(f"color:{TEXT_VALUE};background:transparent;font-family:Consolas,monospace;")
             v.setAlignment(Qt.AlignRight)
             grid.addWidget(k, i, 0)
             grid.addWidget(v, i, 1)

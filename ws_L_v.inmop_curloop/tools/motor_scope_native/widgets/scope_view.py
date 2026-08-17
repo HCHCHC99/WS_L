@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """通用示波器：从 Hub 环形缓冲取最近 window_sec 秒绘制波形。
-支持 kind: cur / angle / diff / mode / cnt。QPainter 自绘 + 悬停读值。"""
+支持 kind: cur / angle / diff / mode / cnt。QPainter 自绘 + 悬停读值。
+米色浅色主题配色（曲线色为浅底加深版）。"""
 import bisect
 import math
 
@@ -9,6 +10,23 @@ from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
 PI = math.pi
+
+# 米色主题
+BG = "#FDFBF7"                # 示波器面板底（奶油白）
+TEXT = "#6E685C"              # 刻度/标签
+TEXT_DIM = "#8A8578"          # 等待数据等
+GRID = QColor(90, 82, 66, 36)   # 网格线（浅灰棕）
+HOVER_LINE = QColor(90, 82, 66, 110)
+
+# 曲线色（浅底加深版）
+C_IQ = "#D97B1E"     # 橙
+C_ID = "#0E7C9E"     # 青
+C_ROTOR = "#C53030"  # 红
+C_THETA = "#33332E"  # 近黑（原白）
+C_MECH = "#2F855A"   # 绿
+C_MODE = "#C0267B"   # 粉
+C_CNT = "#C0267B"    # 粉
+C_DIFF = "#805AD5"   # 紫
 
 
 class ScopeView(QWidget):
@@ -56,21 +74,21 @@ class ScopeView(QWidget):
                         ticks=[-max_a, -max_a / 2, 0, max_a / 2, max_a],
                         fmt=lambda v: "%.0f" % v, unit="mA",
                         ymap=lambda v: ymid - (v / max_a) * (ph / 2 - 14),
-                        traces=[("iq", "#fb923c", False), ("id", "#22d3ee", False)])
+                        traces=[("iq", C_IQ, False), ("id", C_ID, False)])
         if self.kind == "angle":
             return dict(ml=ml, mr=mr, mt=mt, mb=mb, pw=pw, ph=ph,
                         ticks=[0, 90, 180, 270, 360],
                         fmt=lambda v: "%.0f" % v, unit="deg",
                         ymap=lambda v: mt + 10 + (360 - ((v % 360) + 360) % 360) / 360 * (ph - 20),
-                        traces=[("rotor_deg", "#e5484d", False),
-                                ("theta_deg", "#ffffff", True),
-                                ("mech_deg", "#4ade80", False)])
+                        traces=[("rotor_deg", C_ROTOR, False),
+                                ("theta_deg", C_THETA, True),
+                                ("mech_deg", C_MECH, False)])
         if self.kind == "mode":
             return dict(ml=ml, mr=mr, mt=mt, mb=mb, pw=pw, ph=ph,
                         ticks=[0, 1, 2, 3, 4],
                         fmt=lambda v: "%.0f" % v, unit="",
                         ymap=lambda v: mt + 10 + (4 - v) / 4 * (ph - 20),
-                        traces=[("mode", "#f472b6", False)])
+                        traces=[("mode", C_MODE, False)])
         if self.kind == "cnt":
             vals = self._values("cnt", lo)
             mn = min(vals) if vals else 0.0
@@ -81,24 +99,24 @@ class ScopeView(QWidget):
                         ticks=[mn, (mn + mx) / 2, mx],
                         fmt=lambda v: "%.0f" % v, unit="cnt",
                         ymap=lambda v: mt + 10 + (mx - v) / (mx - mn) * (ph - 20),
-                        traces=[("cnt", "#f472b6", False)])
+                        traces=[("cnt", C_CNT, False)])
         ymid = mt + ph / 2
         return dict(ml=ml, mr=mr, mt=mt, mb=mb, pw=pw, ph=ph,
                     ticks=[-PI, -PI / 2, 0, PI / 2, PI],
                     fmt=lambda v: "0" if v == 0 else "%.1fπ" % (v / PI), unit="rad",
                     ymap=lambda v: ymid - (v / PI) * (ph / 2 - 12),
-                    traces=[("diff_rad", "#c084fc", False)])
+                    traces=[("diff_rad", C_DIFF, False)])
 
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor("#1e252d"))
+        p.fillRect(self.rect(), QColor(BG))
         ml, mr, mt, mb = 52, 10, 14, 22
         pw = max(10, self.width() - ml - mr)
         ph = max(10, self.height() - mt - mb)
         w = self._window()
         if w is None:
-            p.setPen(QColor("#8fa0b0"))
+            p.setPen(QColor(TEXT_DIM))
             p.drawText(self.rect(), Qt.AlignCenter, "等待数据…")
             return
         lo, ts, t0, t1 = w
@@ -109,11 +127,11 @@ class ScopeView(QWidget):
 
         for v in cfg["ticks"]:
             y = cfg["ymap"](v)
-            p.setPen(QPen(QColor(255, 255, 255, 16), 1))
+            p.setPen(QPen(GRID, 1))
             p.drawLine(ml, y, ml + pw, y)
-            p.setPen(QColor("#9aa7b4"))
+            p.setPen(QColor(TEXT))
             p.drawText(2, y + 4, cfg["fmt"](v))
-        p.setPen(QColor("#9aa7b4"))
+        p.setPen(QColor(TEXT))
         for k in range(5):
             tt = t0 + (t1 - t0) * k / 4
             p.drawText(int(x(tt)) - 12, self.height() - mb + 12,
@@ -139,7 +157,7 @@ class ScopeView(QWidget):
 
         if self.hover_x is not None:
             hx = min(max(self.hover_x, ml), ml + pw)     # clamp
-            p.setPen(QPen(QColor(255, 255, 255, 128), 1))
+            p.setPen(QPen(HOVER_LINE, 1))
             p.drawLine(int(hx), mt, int(hx), mt + ph)
             th = t0 + (hx - ml) / max(1, pw) * (t1 - t0)
             i = bisect.bisect_left(ts, th)
@@ -150,7 +168,7 @@ class ScopeView(QWidget):
                 vals = self._values(key, lo)
                 if 0 <= i < len(vals):
                     rows.append("%s %.0f" % (key, vals[i]))
-            p.setPen(QColor("#8fa0b0"))
+            p.setPen(QColor(TEXT))
             p.drawText(int(hx) + 8, mt + 12, " | ".join(rows))
 
     def mouseMoveEvent(self, e):

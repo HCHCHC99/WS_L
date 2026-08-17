@@ -148,12 +148,16 @@ class MotorView(QWidget):
         p.setPen(QPen(QColor(HUB_PEN), 2))
         p.drawEllipse(QPointF(0, 0), R_SH, R_SH)
 
-        # 底部读数
+        # 底部读数（两行，避免贴在一起）
         p.resetTransform()
+        p.setFont(QFont("sans-serif", 10))
         p.setPen(QColor(TEXT_MAIN))
-        p.drawText(8, MH - 8, "θe转子=%.0f° θm机械=%.0f° θe控制=%.0f° iq=%d id=%d n=%.0frpm cnt=%d"
-                   % (rotor_elec % 360, mech % 360, ctrl_elec % 360,
-                      int(fr.iq_ma), int(fr.id_ma), fr.spd_rpm, fr.cnt))
+        p.drawText(8, MH - 24,
+                   "θe转子=%d°      θm机械=%d°      θe控制=%d°"
+                   % (int(rotor_elec % 360), int(mech % 360), int(ctrl_elec % 360)))
+        p.drawText(8, MH - 7,
+                   "iq=%d mA      id=%d mA      n=%.0f rpm      cnt=%d"
+                   % (int(fr.iq_ma), int(fr.id_ma), fr.spd_rpm, fr.cnt))
 
     def _vec(self, p, color, length, ang_deg, width, dashed=False):
         if abs(length) < 2:

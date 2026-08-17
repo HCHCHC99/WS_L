@@ -119,8 +119,6 @@ volatile int32_t  g_foc_if_evt_v1 = 0;
 volatile int32_t  g_foc_if_evt_v2 = 0;
 volatile int32_t  g_foc_if_evt_v3 = 0;
 volatile int32_t  g_foc_if_evt_v4 = 0;
-volatile int32_t  g_foc_handover_d_mrad     = 0;   /* handover frame diff d (mrad), Watch */
-volatile int32_t  g_foc_handover_iq_seed_ma = 0;   /* handover iq seed (mA), Watch */
 /* Align calibration (mode 23) */
 volatile float   g_foc_align_volt_v = FOC_ALIGN_VOLT_V;        /* fixed align voltage (V), Watch tunable */
 volatile int32_t g_foc_align_offset = 0;                        /* recorded encoder electrical-zero count */
@@ -171,8 +169,8 @@ pid_config_t g_foc_pid_spd_cfg = {
     .p_valid      = true,
     .i_valid      = true,
     .d_valid      = false,
-    .kp           = 25.0f,    /* mA/rpm (was 50: handover oscillation) */
-    .ki           = 5.0f,     /* mA/(rpm*s) (was 10) */
+    .kp           = 50.0f,    /* mA/rpm */
+    .ki           = 10.0f,    /* mA/(rpm*s) */
     .kd           = 0.0f,
     .output_min   = 0.0f,     /* positive Iq only (torque direction fixed by pi_off) */
     .output_max   = (float)FOC_IQ_REF_MA,
@@ -209,10 +207,8 @@ static uint32_t s_if_wrap_cnt  = 0u;
 static uint32_t s_if_sweep_last_wrap = 0u;
 static uint32_t s_if_sweep_last_tick = 0u;
 static float    s_if_diff_unwrapped = 0.0f;   /* continuous diff for sync band (no +/-pi wrap) */
-static uint16_t s_run_blend_cnt  = 0u;        /* handover angle blend progress (uint16: BLEND_CNT=800) */
+static uint8_t  s_run_blend_cnt  = 0u;        /* handover angle blend progress */
 static float    s_run_blend_from = 0.0f;      /* synthetic angle at handover (blend start) */
-static uint16_t s_run_iq_blend_cnt  = 0u;     /* RUN iq-reference blend progress */
-static float    s_run_iq_blend_from = 0.0f;   /* I-F ramp current at handover (A) */
 static uint8_t  s_if_diff_unwrapped_valid = 0u;
 static uint32_t s_if_good_wins  = 0u;
 static uint32_t s_if_tick       = 0u;
@@ -233,11 +229,7 @@ static pid_state_t s_pid_spd;
 /* Handover angle blend: rotate the RUN control frame from the synthetic I-F
  * angle to the true rotor angle over this many ISRs (200 = 10 ms @20 kHz).
  * Avoids the current kick when the frame jumps by the I-F load angle. */
-#define FOC_RUN_BLEND_CNT    800u   /* 40ms: smooth frame rotation at handover (was 200=10ms) */
-/* Iq reference blend: from the I-F ramp current to the speed-PI output over
- * this many ISRs (1000 = 50 ms @20 kHz). Avoids the +/-2.5A reference step
- * at handover that caused torque oscillation. */
-#define FOC_RUN_IQ_BLEND_CNT  1000u
+#define FOC_RUN_BLEND_CNT    200u
 
 /* OC debounce: require N consecutive over-limit samples (N x 50us) before trip */
 #define FOC_OC_DEBOUNCE_SAMPLES  4u
@@ -897,17 +889,6 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
      * synthetic I-F angle to the true rotor angle over ~10 ms. */
     s_run_blend_cnt  = 0u;
     s_run_blend_from = g_foc_theta_rad;   /* RUN frame starts at the synthetic angle, blends to rotor */
-    s_run_iq_blend_cnt  = 0u;
-    s_run_iq_blend_from = g_foc_iq_ref_ma * 0.001f;   /* continue the I-F ramp current (A) */
-    {
-        /* Diagnostic: handover frame diff d = theta_target - blend_start.
-         * ~0 rad = frames consistent (correct); ~+/-1.57 or +/-pi = frame/phase bug. */
-        float target = Foc_CurLoopTheta();
-        float d = target - s_run_blend_from;
-        if (d >  FOC_MATH_PI) d -= FOC_MATH_2PI;
-        if (d < -FOC_MATH_PI) d += FOC_MATH_2PI;
-        g_foc_handover_d_mrad = (int32_t)(d * 1000.0f);
-    }
 
     /* Current dq for PI seeding. */
     Foc_GetDq(pData, ctrl_theta, &id, &iq);
@@ -927,8 +908,7 @@ static void Foc_IfHandover(const stc_i_data_t *pData)
         float iq_seed = g_foc_run_iq_sign * (g_foc_pid_spd_cfg.kp * (g_enc_speed_rpm - g_foc_run_target_rpm));
         if (iq_seed >  (float)FOC_IQ_REF_MA) iq_seed =  (float)FOC_IQ_REF_MA;
         if (iq_seed < -(float)FOC_IQ_REF_MA) iq_seed = -(float)FOC_IQ_REF_MA;
-        PID_Seed(&s_pid_iq, s_run_iq_blend_from, iq, vq_seed);  /* setpoint continues from I-F ramp */
-        g_foc_handover_iq_seed_ma = (int32_t)iq_seed;
+        PID_Seed(&s_pid_iq, iq_seed * 0.001f, iq, vq_seed);
     }
 
     s_id_f = 0.0f;
@@ -1013,17 +993,8 @@ static void Foc_CurrentLoopStep(const stc_i_data_t *pData)
      * PID_UpdateUs(spd, actual, target): error = actual - target, output mA,
      * clamped to [0, FOC_IQ_REF_MA]. Falls back to ramped ref when kp <= 0. */
     if (g_foc_pid_spd_cfg.kp > 0.0f) {
-        float iq_pi = g_foc_run_iq_sign * PID_UpdateUs(&s_pid_spd, g_enc_speed_rpm, g_foc_run_target_rpm,
-                                                       FOC_ISR_DT_US) * 0.001f;
-        /* Blend Iq reference from the I-F ramp current to the speed-PI output:
-         * prevents the +2.5A -> +/-0.2A reference step at handover. */
-        if (s_run_iq_blend_cnt < FOC_RUN_IQ_BLEND_CNT) {
-            float k = (float)s_run_iq_blend_cnt / (float)FOC_RUN_IQ_BLEND_CNT;
-            iq_ref_a = s_run_iq_blend_from * (1.0f - k) + iq_pi * k;
-            s_run_iq_blend_cnt++;
-        } else {
-            iq_ref_a = iq_pi;
-        }
+        iq_ref_a = g_foc_run_iq_sign * PID_UpdateUs(&s_pid_spd, g_enc_speed_rpm, g_foc_run_target_rpm,
+                                                     FOC_ISR_DT_US) * 0.001f;
         g_foc_iq_pi_ma = iq_ref_a * 1000.0f;
     } else {
         iq_ref_a = g_foc_run_iq_sign * g_foc_iq_ref_ma * 0.001f;

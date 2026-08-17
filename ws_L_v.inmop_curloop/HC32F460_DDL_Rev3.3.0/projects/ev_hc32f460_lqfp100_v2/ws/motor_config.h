@@ -77,8 +77,8 @@
  *   LOCK_MS_FAST     : id/iq/theta 等连续量触发发送的最小间隔（ms）——避免高频连续量反复解锁
  *   LOCK_MS_KEEPALIVE: 保活发送间隔（ms）——须 < 工具端断联判定 STALE_MS=400，防误判"数据中断"
  *   CHG_*            : 关键数值变化阈值，超过立即解锁发送（无锁） */
-#define MOTOR_SCOPE_LOCK_MS_FAST       15u
-#define MOTOR_SCOPE_LOCK_MS_KEEPALIVE  300u
+#define MOTOR_SCOPE_LOCK_MS_FAST       30u
+#define MOTOR_SCOPE_LOCK_MS_KEEPALIVE  100u
 #define MOTOR_SCOPE_CHG_SPD_RPM        50
 #define MOTOR_SCOPE_CHG_VD_V           0.3f
 #define MOTOR_SCOPE_CHG_VQ_V           0.3f

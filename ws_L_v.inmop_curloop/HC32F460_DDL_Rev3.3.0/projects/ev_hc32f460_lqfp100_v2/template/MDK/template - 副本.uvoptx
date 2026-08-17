@@ -120,7 +120,6 @@
         <SetRegEntry>
           <Number>0</Number>
           <Key>DLGUARM</Key>
-          <Name>鑷??</Name>
         </SetRegEntry>
         <SetRegEntry>
           <Number>0</Number>
@@ -315,12 +314,12 @@
         <Ww>
           <count>3</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_spd_pid_cfg</ItemText>
+          <ItemText>g_foc_run_iq_sign</ItemText>
         </Ww>
         <Ww>
           <count>4</count>
           <WinNumber>2</WinNumber>
-          <ItemText>g_spd_pid_cfg.kp</ItemText>
+          <ItemText>g_foc_anchor_deg</ItemText>
         </Ww>
         <Ww>
           <count>5</count>
@@ -519,7 +518,7 @@
       <DebugFlag>
         <trace>0</trace>
         <periodic>1</periodic>
-        <aLwin>0</aLwin>
+        <aLwin>1</aLwin>
         <aCover>0</aCover>
         <aSer1>0</aSer1>
         <aSer2>0</aSer2>
@@ -1908,7 +1907,7 @@
       <GroupNumber>9</GroupNumber>
       <FileNumber>95</FileNumber>
       <FileType>1</FileType>
-      <tvExp>1</tvExp>
+      <tvExp>0</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
       <PathWithFileName>..\..\Utils\rtt_manager.c</PathWithFileName>
@@ -1944,7 +1943,7 @@
 
   <Group>
     <GroupName>ws</GroupName>
-    <tvExp>0</tvExp>
+    <tvExp>1</tvExp>
     <tvExpOptDlg>0</tvExpOptDlg>
     <cbSel>0</cbSel>
     <RteFlg>0</RteFlg>
@@ -2048,7 +2047,7 @@
       <GroupNumber>10</GroupNumber>
       <FileNumber>106</FileNumber>
       <FileType>1</FileType>
-      <tvExp>0</tvExp>
+      <tvExp>1</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
       <PathWithFileName>..\..\ws\foc.c</PathWithFileName>
@@ -2060,7 +2059,7 @@
       <GroupNumber>10</GroupNumber>
       <FileNumber>107</FileNumber>
       <FileType>1</FileType>
-      <tvExp>0</tvExp>
+      <tvExp>1</tvExp>
       <tvExpOptDlg>0</tvExpOptDlg>
       <bDave2>0</bDave2>
       <PathWithFileName>..\..\ws\foc_math.c</PathWithFileName>

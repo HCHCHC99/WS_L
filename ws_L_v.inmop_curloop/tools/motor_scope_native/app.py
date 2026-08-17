@@ -109,7 +109,9 @@ class MainWindow(QMainWindow):
         self._timer.start(self.REFRESH_MS)
 
     def _populate_serials(self):
-        """枚举已连接 J-Link 序列号，填入下拉框（"自动"= 不指定）。"""
+        """枚举已连接 J-Link 序列号，填入下拉框（"自动"= 不指定）。
+        优先保留当前选择，其次命令行 --serial。"""
+        cur = self.serial_combo.currentData() if hasattr(self, "serial_combo") else None
         self.serial_combo.clear()
         self.serial_combo.addItem("自动（默认）", None)
         try:
@@ -118,13 +120,15 @@ class MainWindow(QMainWindow):
                 self.serial_combo.addItem("SN %d" % sn, sn)
         except Exception:
             pass
-        if self._serial_arg is not None:
-            idx = self.serial_combo.findData(self._serial_arg)
+        sel = cur if cur is not None else self._serial_arg
+        if sel is not None:
+            idx = self.serial_combo.findData(sel)
             if idx >= 0:
                 self.serial_combo.setCurrentIndex(idx)
 
     def _on_refresh(self):
-        """手动刷新：按下拉框所选序列号重连 J-Link。"""
+        """手动刷新：重新枚举 J-Link 列表，并按当前选择重连。"""
+        self._populate_serials()      # 启动后才插上的 J-Link 也能被列出
         self.thread.set_serial(self.serial_combo.currentData())
         self.thread.refresh()
         self.lbl_status.setText("正在刷新…")

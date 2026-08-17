@@ -39,13 +39,20 @@ class ScopeView(QWidget):
         self.setMinimumSize(360, 110)
         self.setMouseTracking(True)
 
-    # 窗口切片：每次 paint 只算一次 lo，返回真实时间戳与数值（不再均匀铺点）
+    # 窗口切片：每次 paint 只算一次 lo，返回真实时间戳与数值（不再均匀铺点）。
+    # 导航：实时=最右端；暂停/回看=view_end；t0 按窗口宽度回退并钳制到数据左端。
     def _window(self):
         tq = self.hub.t
         if not tq:
             return None
-        t1 = self.hub.last_t()
-        t0 = t1 - self.window_sec
+        minT, maxT = self.hub.t[0], self.hub.t[-1]
+        t1 = maxT if self.hub.follow_live else min(self.hub.view_end, maxT)
+        t0 = t1 - self.hub.window_sec
+        if t0 < minT:                      # 数据左端不足：右移窗口（与 web scopeWindow 一致）
+            t0 = minT
+            t1 = t0 + self.hub.window_sec
+            if t1 > maxT:
+                t1 = maxT
         lo, hi = 0, len(tq) - 1
         while lo < hi:
             mid = (lo + hi) // 2

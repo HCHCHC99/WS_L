@@ -30,7 +30,7 @@ class Gauge(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         p.fillRect(self.rect(), QColor(BG))
-        fr = self.hub.latest
+        fr = self.hub.view_frame or self.hub.latest   # 回看历史时用插值帧
         rpm = abs(fr.spd_rpm) if fr else 0.0
         if fr:
             self.rpm_max = max(self.rpm_max, rpm * 1.25)

@@ -7,6 +7,8 @@ from PySide6.QtCore import Qt, QPointF
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPainterPath
 from PySide6.QtWidgets import QWidget
 
+from hub import MRAD2DEG
+
 POLE_PAIRS = 10          # 与 motor_config.h FOC_POLE_PAIRS 一致
 DEG = math.pi / 180.0
 
@@ -48,15 +50,15 @@ class MotorView(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
         p.fillRect(0, 0, MW, MH, QColor(BG))
-        if self.hub.latest is None:
+        fr = self.hub.view_frame or self.hub.latest   # 回看历史时用插值帧
+        if fr is None:
             p.setPen(QColor(TEXT_DIM))
             p.drawText(self.rect(), Qt.AlignCenter, "等待数据…")
             return
-        mech = self.hub.mech_deg[-1]
-        ctrl = self.hub.theta_mech_deg[-1]
-        rotor_elec = self.hub.rotor_deg[-1]
-        ctrl_elec = self.hub.theta_deg[-1]
-        fr = self.hub.latest
+        mech = fr.mech_mrad * MRAD2DEG
+        ctrl = fr.theta_mech_mrad * MRAD2DEG
+        rotor_elec = fr.rotor_mrad * MRAD2DEG
+        ctrl_elec = fr.theta_mrad * MRAD2DEG
         cx, cy = MW / 2, MH / 2
         p.translate(cx, cy)
 

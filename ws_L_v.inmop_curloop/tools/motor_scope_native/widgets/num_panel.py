@@ -39,7 +39,7 @@ class NumPanel(QWidget):
             self._labels[key] = v
 
     def refresh(self):
-        fr = self.hub.latest
+        fr = self.hub.view_frame or self.hub.latest   # 回看历史时用插值帧
         if not fr:
             return
         vals = {

@@ -41,6 +41,7 @@ def main():
     thread.requestInterruption()
     if not thread.wait(2000):
         os._exit(rc)   # 线程卡在 J-Link 阻塞调用：硬退出，跳过运行中 QThread 的析构
+    thread.clear_history()   # 线程已停，再清空 history_scope.txt / history_main.txt
     sys.exit(rc)
 
 

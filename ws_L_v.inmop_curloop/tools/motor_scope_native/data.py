@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
-"""数据线程：J-Link RTT（复用 motor_scope 的 JLinkRttSource/RttParser）
-或 --mock 开发自测源。解析出的 FocFrame 经 Qt 信号发到主线程。"""
+"""数据线程：J-Link RTT（复用 motor_scope 的 JLinkRttSource/RttParser/DataHub）
+或 --mock 开发自测源。解析出的 FocFrame 经 Qt 信号发到主线程；
+日志行（MOTF 节流 / 固件 MAIN_D 等）经 log_line 信号发到主线程日志面板。
+jlink 模式用 motor_scope.DataHub 负责写 history_scope.txt / history_main.txt
+（启动即清空，2MB 上限，与 web 版一致），避免 GUI 线程做文件 I/O。"""
 import math
 import sys
 import threading
@@ -8,11 +11,17 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "motor_scope"))
-import motor_scope as ms  # noqa: E402  (复用解析/连接逻辑)
+import motor_scope as ms  # noqa: E402  (复用解析/连接/历史文件逻辑)
 
 from PySide6.QtCore import QThread, Signal  # noqa: E402
 
 D2R = math.pi / 180.0
+
+
+def _motf_line(fr):
+    """生成与固件一致的 MOTF 文本行（21 字段，供 mock 日志面板/回看历史）。"""
+    return ("MOTF,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d"
+            % tuple(fr.to_list()))
 
 
 class MockFrames:
@@ -49,6 +58,7 @@ class MockFrames:
 
 class DataThread(QThread):
     frame_received = Signal(object)   # motor_scope.FocFrame
+    log_line = Signal(str)            # 日志行（MOTF 节流 / 固件 MAIN_D 等）
     data_error = Signal(str)
     data_status = Signal(str)
 
@@ -62,14 +72,29 @@ class DataThread(QThread):
                          rtt_addr=rtt_addr, ram_base=ram_base, ram_size=ram_size,
                          serial=serial)
         self._refresh_evt = threading.Event()
+        self._writer = None           # jlink 模式：motor_scope.DataHub（写 history 文件）
 
     def set_serial(self, serial):
         """设置 J-Link 序列号（多 USB 口时选择，下次重连生效）。"""
         self._cfg["serial"] = serial
 
+    def set_channel(self, channel):
+        """设置 RTT 通道并触发重连（与 web 版"应用"一致）。"""
+        self._cfg["channel"] = int(channel)
+        self._refresh_evt.set()
+
     def refresh(self):
         """手动刷新：打断当前连接，按最新配置重连。"""
         self._refresh_evt.set()
+
+    def clear_history(self):
+        """清空 history_scope.txt / history_main.txt（窗口关闭时调用）。"""
+        w = self._writer
+        if w is not None:
+            try:
+                w.clear_history()
+            except Exception:
+                pass
 
     def run(self):
         if self._mock:
@@ -82,8 +107,22 @@ class DataThread(QThread):
         gen = MockFrames(self._mock_rate)
         interval = 1.0 / self._mock_rate
         next_t = time.perf_counter()
+        prev_state = None
+        last_log = 0.0
+        last_main = 0.0
         while not self.isInterruptionRequested():
-            self.frame_received.emit(gen.next_frame())
+            fr = gen.next_frame()
+            self.frame_received.emit(fr)
+            now = time.time()
+            state = (fr.mode, fr.phase, fr.sync)
+            if state != prev_state or (now - last_log) >= 0.1:
+                last_log = now
+                self.log_line.emit(_motf_line(fr))     # 节流 MOTF 日志（~10 条/秒）
+                prev_state = state
+            if (now - last_main) >= 2.0:               # 每 2s 一条固件日志
+                last_main = now
+                self.log_line.emit("MAIN_D: mock 固件日志 i=%d rate=%dHz"
+                                   % (gen.i, self._mock_rate))
             next_t += interval
             delay = next_t - time.perf_counter()
             if delay > 0:
@@ -119,7 +158,26 @@ class DataThread(QThread):
                 time.sleep(3.0)
                 continue
             self.data_status.emit(src.describe())
-            parser = ms.RttParser(log_motf=False)
+            # history 文件写入器：首次成功连接时创建即清空两文件（与 web 版一致）；
+            # 之后重连复用同一实例，历史文件不因重连被清空。写操作在数据线程。
+            if self._writer is None:
+                self._writer = ms.DataHub(max_history=1, max_log=1)
+            parser = ms.RttParser(log_motf=True)
+
+            def frame_sink(fr):
+                try:
+                    self._writer.push(fr)          # history_scope.txt（全部帧）
+                except Exception:
+                    pass
+                self.frame_received.emit(fr)
+
+            def log_sink(line):
+                try:
+                    self._writer.log(line)         # 非 MOTF -> history_main.txt
+                except Exception:
+                    pass
+                self.log_line.emit(line)
+
             while not self.isInterruptionRequested():
                 if self._refresh_evt.is_set():
                     self._refresh_evt.clear()
@@ -132,7 +190,6 @@ class DataThread(QThread):
                 if not chunk:
                     time.sleep(0.003)
                     continue
-                parser.feed(chunk, self.frame_received.emit)
+                parser.feed(chunk, frame_sink, log_sink)
             src.close()
             time.sleep(0.2)
-            # （原 finally 结构已并入：内层循环后统一 close）

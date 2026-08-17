@@ -59,6 +59,13 @@ class MotorView(QWidget):
         ctrl = fr.theta_mech_mrad * MRAD2DEG
         rotor_elec = fr.rotor_mrad * MRAD2DEG
         ctrl_elec = fr.theta_mrad * MRAD2DEG
+        # Qt 角度约定不一致：cos/sin 画点 正角=视觉顺时针，
+        # QPainterPath.arcTo 正角=视觉逆时针（实验已验证）。
+        # 磁钢用 arcTo(+mech)；星标/轴/矢量用 cos/sin 必须取反（md=-mech）才能与磁钢同向。
+        # 物理顺时针 -> cnt 增大 -> 固件 mech=cnt×(-1) 减小 ->
+        # 磁钢(arc +mech)视觉顺时针，cos/sin 用 md=-mech 同样视觉顺时针。
+        md = -mech
+        cd = -ctrl
         cx, cy = MW / 2, MH / 2
         p.translate(cx, cy)
 
@@ -104,8 +111,8 @@ class MotorView(QWidget):
             p.drawPath(path)
 
         # ★ 星标（深色描边 + 金黄填充，同 web 版 strokeText+fillText）
-        sx = math.cos(mech * DEG) * (R_R + R_M) / 2
-        sy = math.sin(mech * DEG) * (R_R + R_M) / 2
+        sx = math.cos(md * DEG) * (R_R + R_M) / 2
+        sy = math.sin(md * DEG) * (R_R + R_M) / 2
         f_star = QFont("sans-serif", 24)
         f_star.setBold(True)
         p.setFont(f_star)
@@ -116,23 +123,23 @@ class MotorView(QWidget):
 
         # d/q 轴 + 控制角指针
         p.setPen(QPen(AXIS_DIM, 1, Qt.DashLine))
-        p.drawLine(QPointF(0, 0), QPointF(math.cos(mech * DEG) * (R_R - 4), math.sin(mech * DEG) * (R_R - 4)))
-        q_ang = mech + 90.0 / POLE_PAIRS
+        p.drawLine(QPointF(0, 0), QPointF(math.cos(md * DEG) * (R_R - 4), math.sin(md * DEG) * (R_R - 4)))
+        q_ang = md + 90.0 / POLE_PAIRS
         p.setPen(QPen(AXIS_FAINT, 1, Qt.DashLine))
         p.drawLine(QPointF(0, 0), QPointF(math.cos(q_ang * DEG) * (R_R - 4), math.sin(q_ang * DEG) * (R_R - 4)))
         p.setPen(QPen(QColor(CTRL_LINE), 2, Qt.DashLine))
-        p.drawLine(QPointF(0, 0), QPointF(math.cos(ctrl * DEG) * (R_R - 10), math.sin(ctrl * DEG) * (R_R - 10)))
+        p.drawLine(QPointF(0, 0), QPointF(math.cos(cd * DEG) * (R_R - 10), math.sin(cd * DEG) * (R_R - 10)))
 
         # 电流/电压矢量
         max_a = self.hub.cur_max * 1.1
         lmax = R_R - 34.0
-        self._vec(p, QColor(VEC_ID), fr.id_ma / max_a * lmax, mech, 4)
+        self._vec(p, QColor(VEC_ID), fr.id_ma / max_a * lmax, md, 4)
         self._vec(p, QColor(VEC_IQ), fr.iq_ma / max_a * lmax, q_ang, 4)
         is_len = fr.is_ma / max_a * lmax
-        is_ang = mech + (fr.is_angle_mrad / 1000.0) / POLE_PAIRS * 180.0 / math.pi
+        is_ang = md + (fr.is_angle_mrad / 1000.0) / POLE_PAIRS * 180.0 / math.pi
         self._vec(p, QColor(VEC_IS), is_len, is_ang, 5)
         v_len = min(fr.v_mv / 1000.0 * 100.0, lmax)
-        v_ang = mech + (fr.v_angle_mrad / 1000.0) / POLE_PAIRS * 180.0 / math.pi
+        v_ang = md + (fr.v_angle_mrad / 1000.0) / POLE_PAIRS * 180.0 / math.pi
         self._vec(p, QColor(VEC_V), v_len, v_ang, 3, dashed=True)
 
         # 标注：is 矢量顶端 / θ 控制角
@@ -141,7 +148,7 @@ class MotorView(QWidget):
         p.setPen(QColor(VEC_IS))
         p.drawText(QPointF(math.cos(is_ang * DEG) * (is_len + 18) - 8, math.sin(is_ang * DEG) * (is_len + 18) + 4), "is")
         p.setPen(QColor(CTRL_LINE))
-        p.drawText(QPointF(math.cos(ctrl * DEG) * (R_R - 24) - 8, math.sin(ctrl * DEG) * (R_R - 24) + 4), "θ")
+        p.drawText(QPointF(math.cos(cd * DEG) * (R_R - 24) - 8, math.sin(cd * DEG) * (R_R - 24) + 4), "θ")
 
         # 中心轴
         p.setBrush(QColor(HUB))
@@ -154,7 +161,7 @@ class MotorView(QWidget):
         p.setPen(QColor(TEXT_MAIN))
         p.drawText(8, MH - 24,
                    "θe转子=%d°      θm机械=%d°      θe控制=%d°"
-                   % (int(rotor_elec % 360), int(mech % 360), int(ctrl_elec % 360)))
+                   % (int(rotor_elec % 360), int(md % 360), int(ctrl_elec % 360)))
         p.drawText(8, MH - 7,
                    "iq=%d mA      id=%d mA      n=%.0f rpm      cnt=%d"
                    % (int(fr.iq_ma), int(fr.id_ma), fr.spd_rpm, fr.cnt))

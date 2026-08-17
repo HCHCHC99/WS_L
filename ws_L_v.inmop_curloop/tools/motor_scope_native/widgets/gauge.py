@@ -21,7 +21,7 @@ class Gauge(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor("#0d1217"))
+        p.fillRect(self.rect(), QColor("#1b2128"))
         fr = self.hub.latest
         rpm = abs(fr.spd_rpm) if fr else 0.0
         if fr:
@@ -34,7 +34,7 @@ class Gauge(QWidget):
         p.setPen(QPen(QColor("#2a313a"), 13))
         p.drawArc(int(cx - r), int(cy - r), int(2 * r), int(2 * r),
                   int(-a1 * R16), int(-(a0 - a1) * R16))
-        p.setPen(QColor("#5b6672"))
+        p.setPen(QColor("#7c8794"))
         p.setFont(QFont("Consolas", 9))
         for v in range(11):
             a = a0 + (a1 - a0) * v / 10
@@ -51,5 +51,5 @@ class Gauge(QWidget):
                   int(-na * R16), int(-(a0 - na) * R16))
         p.setPen(QColor("#ffffff"))
         p.drawText(int(cx - 40), int(cy - 36), "%.0f" % rpm)
-        p.setPen(QColor("#8fa0b0"))
+        p.setPen(QColor("#a5b2bf"))
         p.drawText(int(cx - 20), int(cy - 16), "rpm")

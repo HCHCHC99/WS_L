@@ -3,6 +3,7 @@
 或 --mock 开发自测源。解析出的 FocFrame 经 Qt 信号发到主线程。"""
 import math
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -53,12 +54,22 @@ class DataThread(QThread):
 
     def __init__(self, mock=False, mock_rate=200, device="HC32F460",
                  speed_khz=1000, channel=0, rtt_addr=0,
-                 ram_base=0x1FFF8000, ram_size=0x2F000, parent=None):
+                 ram_base=0x1FFF8000, ram_size=0x2F000, serial=None, parent=None):
         super().__init__(parent)
         self._mock = mock
         self._mock_rate = mock_rate
         self._cfg = dict(device=device, speed_khz=speed_khz, channel=channel,
-                         rtt_addr=rtt_addr, ram_base=ram_base, ram_size=ram_size)
+                         rtt_addr=rtt_addr, ram_base=ram_base, ram_size=ram_size,
+                         serial=serial)
+        self._refresh_evt = threading.Event()
+
+    def set_serial(self, serial):
+        """设置 J-Link 序列号（多 USB 口时选择，下次重连生效）。"""
+        self._cfg["serial"] = serial
+
+    def refresh(self):
+        """手动刷新：打断当前连接，按最新配置重连。"""
+        self._refresh_evt.set()
 
     def run(self):
         if self._mock:
@@ -79,32 +90,34 @@ class DataThread(QThread):
                 time.sleep(delay)
 
     def _run_jlink(self):
-        try:
-            src = ms.JLinkRttSource(**self._cfg)
-        except SystemExit as exc:
-            self.data_error.emit(f"缺少 pylink / SEGGER J-Link 软件: {exc}")
-            return
         while not self.isInterruptionRequested():
+            try:
+                src = ms.JLinkRttSource(**self._cfg)
+            except SystemExit as exc:
+                self.data_error.emit(f"缺少 pylink / SEGGER J-Link 软件: {exc}")
+                return
             try:
                 src.open()
             except Exception as exc:
                 self.data_error.emit(f"J-Link 连接失败，3 秒后重试: {exc}")
+                src.close()
                 time.sleep(3.0)
                 continue
-            try:
-                self.data_status.emit(src.describe())
-                parser = ms.RttParser(log_motf=False)
-                while not self.isInterruptionRequested():
-                    try:
-                        chunk = src.next_chunk()
-                    except Exception as exc:
-                        self.data_error.emit(f"RTT 读取失败，准备重连: {exc}")
-                        src.close()
-                        break
-                    if not chunk:
-                        time.sleep(0.003)
-                        continue
-                    parser.feed(chunk, self.frame_received.emit)
-                time.sleep(0.2)
-            finally:
-                src.close()
+            self.data_status.emit(src.describe())
+            parser = ms.RttParser(log_motf=False)
+            while not self.isInterruptionRequested():
+                if self._refresh_evt.is_set():
+                    self._refresh_evt.clear()
+                    break
+                try:
+                    chunk = src.next_chunk()
+                except Exception as exc:
+                    self.data_error.emit(f"RTT 读取失败，准备重连: {exc}")
+                    break
+                if not chunk:
+                    time.sleep(0.003)
+                    continue
+                parser.feed(chunk, self.frame_received.emit)
+            src.close()
+            time.sleep(0.2)
+            # （原 finally 结构已并入：内层循环后统一 close）

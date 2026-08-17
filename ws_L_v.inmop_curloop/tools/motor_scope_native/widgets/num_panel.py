@@ -27,8 +27,8 @@ class NumPanel(QWidget):
         for i, (name, key) in enumerate(self.ROWS):
             k = QLabel(name)
             v = QLabel("0")
-            k.setStyleSheet("color:#7c8794;")
-            v.setStyleSheet("color:#e8eef4;font-family:Consolas,monospace;")
+            k.setStyleSheet("color:#9aa7b4;")
+            v.setStyleSheet("color:#f0f4f8;font-family:Consolas,monospace;")
             v.setAlignment(Qt.AlignRight)
             grid.addWidget(k, i, 0)
             grid.addWidget(v, i, 1)

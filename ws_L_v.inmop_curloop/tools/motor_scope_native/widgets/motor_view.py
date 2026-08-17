@@ -22,9 +22,9 @@ class MotorView(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(0, 0, MW, MH, QColor("#0c1014"))
+        p.fillRect(0, 0, MW, MH, QColor("#1b2129"))
         if self.hub.latest is None:
-            p.setPen(QColor("#5b6672"))
+            p.setPen(QColor("#8fa0b0"))
             p.drawText(self.rect(), Qt.AlignCenter, "等待数据…")
             return
         mech = self.hub.mech_deg[-1]
@@ -36,10 +36,10 @@ class MotorView(QWidget):
         p.translate(cx, cy)
 
         # 定子 12 槽
-        p.setBrush(QColor("#333b44"))
-        p.setPen(QPen(QColor("#454e59"), 2))
+        p.setBrush(QColor("#39424d"))
+        p.setPen(QPen(QColor("#4c5661"), 2))
         p.drawEllipse(QPointF(0, 0), R_SY, R_SY)
-        p.setBrush(QColor("#0c1014"))
+        p.setBrush(QColor("#171d24"))
         p.drawEllipse(QPointF(0, 0), R_ST - 2, R_ST - 2)
         for k in range(12):
             p.save()
@@ -60,7 +60,7 @@ class MotorView(QWidget):
                        str(k * 30))
 
         # 转子体 + 20 磁钢
-        p.setBrush(QColor("#22272e"))
+        p.setBrush(QColor("#2a323c"))
         p.setPen(QPen(QColor("#39404a"), 2))
         p.drawEllipse(QPointF(0, 0), R_R, R_R)
         pole_deg = 180.0 / POLE_PAIRS
@@ -123,7 +123,7 @@ class MotorView(QWidget):
 
         # 底部读数
         p.resetTransform()
-        p.setPen(QColor("#9aa5b1"))
+        p.setPen(QColor("#b8c4cf"))
         p.drawText(8, MH - 8, "θe转子=%.0f° θm机械=%.0f° θe控制=%.0f° iq=%d id=%d n=%.0frpm cnt=%d"
                    % (rotor_elec % 360, mech % 360, ctrl_elec % 360,
                       int(fr.iq_ma), int(fr.id_ma), fr.spd_rpm, fr.cnt))

@@ -19,6 +19,8 @@ def main():
     ap.add_argument("--device", default="HC32F460")
     ap.add_argument("--speed-khz", type=int, default=1000)
     ap.add_argument("--channel", type=int, default=0)
+    ap.add_argument("--serial", type=lambda x: int(x, 0), default=None,
+                    help="J-Link 序列号（多 USB 口时指定，留空自动）")
     ap.add_argument("--rtt-addr", type=lambda x: int(x, 0), default=0)
     ap.add_argument("--rtt-ram-base", type=lambda x: int(x, 0), default=0x1FFF8000)
     ap.add_argument("--rtt-ram-size", type=lambda x: int(x, 0), default=0x2F000)
@@ -29,8 +31,9 @@ def main():
     thread = DataThread(mock=args.mock, mock_rate=args.mock_rate,
                         device=args.device, speed_khz=args.speed_khz,
                         channel=args.channel, rtt_addr=args.rtt_addr,
-                        ram_base=args.rtt_ram_base, ram_size=args.rtt_ram_size)
-    win = MainWindow(hub, thread)
+                        ram_base=args.rtt_ram_base, ram_size=args.rtt_ram_size,
+                        serial=args.serial)
+    win = MainWindow(hub, thread, serial_arg=args.serial)
     win.resize(1400, 900)
     win.show()
     thread.start()

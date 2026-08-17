@@ -92,13 +92,13 @@ class ScopeView(QWidget):
     def paintEvent(self, event):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        p.fillRect(self.rect(), QColor("#10151a"))
+        p.fillRect(self.rect(), QColor("#1e252d"))
         ml, mr, mt, mb = 52, 10, 14, 22
         pw = max(10, self.width() - ml - mr)
         ph = max(10, self.height() - mt - mb)
         w = self._window()
         if w is None:
-            p.setPen(QColor("#5b6672"))
+            p.setPen(QColor("#8fa0b0"))
             p.drawText(self.rect(), Qt.AlignCenter, "等待数据…")
             return
         lo, ts, t0, t1 = w
@@ -111,9 +111,9 @@ class ScopeView(QWidget):
             y = cfg["ymap"](v)
             p.setPen(QPen(QColor(255, 255, 255, 16), 1))
             p.drawLine(ml, y, ml + pw, y)
-            p.setPen(QColor("#7c8794"))
+            p.setPen(QColor("#9aa7b4"))
             p.drawText(2, y + 4, cfg["fmt"](v))
-        p.setPen(QColor("#7c8794"))
+        p.setPen(QColor("#9aa7b4"))
         for k in range(5):
             tt = t0 + (t1 - t0) * k / 4
             p.drawText(int(x(tt)) - 12, self.height() - mb + 12,

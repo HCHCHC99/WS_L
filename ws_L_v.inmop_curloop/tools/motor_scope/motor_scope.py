@@ -500,7 +500,7 @@ def sim_loop(hub: DataHub, src: SimFoc, sample_hz: int):
 class JLinkRttSource:
     def __init__(self, device: str, speed_khz: int = 4000, channel: int = 0,
                  rtt_addr: int = 0, ram_base: int = 0x1FFF8000,
-                 ram_size: int = 0x2F000):
+                 ram_size: int = 0x2F000, serial: int = None):
         try:
             import pylink  # type: ignore
         except Exception as exc:
@@ -512,6 +512,7 @@ class JLinkRttSource:
         self.device = device
         self.speed_khz = speed_khz
         self.channel = channel
+        self._serial = serial
         self.rtt_addr = rtt_addr
         self.ram_base = ram_base
         self.ram_size = ram_size
@@ -557,7 +558,10 @@ class JLinkRttSource:
     def open(self):
         jl = self.pylink.JLink()
         try:
-            jl.open()
+            if self._serial is not None:
+                jl.open(serial_number=self._serial)
+            else:
+                jl.open()
             # 关键：显式指定 SWD 接口。否则 J-Link DLL 可能"connect 不报错但目标访问
             # 全部失败（Target is not connected）"，导致找不到 RTT 控制块。
             try:

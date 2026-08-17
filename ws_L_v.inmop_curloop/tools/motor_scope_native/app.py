@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""主窗口：电机动画 + 仪表 + 5 示波器 + 状态栏，QTimer 驱动刷新。"""
+"""主窗口：电机动画 + 仪表 + 5 示波器 + 状态栏，QTimer 驱动刷新。
+工具栏：J-Link 序列号选择（多 USB 口）+ 手动刷新。"""
 import time
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import (QHBoxLayout, QLabel, QMainWindow, QSplitter,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QMainWindow,
+                               QPushButton, QSplitter, QVBoxLayout, QWidget)
 
 from widgets.gauge import Gauge
 from widgets.motor_view import MotorView
@@ -20,13 +21,38 @@ class MainWindow(QMainWindow):
     REFRESH_MS = 30          # 刷新周期（约 33fps）
     STALE_MS = 400           # 数据中断判定（与 web 版一致）
 
-    def __init__(self, hub, data_thread):
+    def __init__(self, hub, data_thread, serial_arg=None):
         super().__init__()
         self.hub = hub
         self.thread = data_thread
+        self._serial_arg = serial_arg
         self.setWindowTitle("MotorScope 原生版（PySide6）")
+
         central = QWidget()
-        root = QHBoxLayout(central)
+        # 背景色系：深灰蓝（非纯黑），控件/文字配色统一
+        central.setStyleSheet("""
+            background-color:#242b33; color:#c6d0da;
+            QComboBox{background:#1c2229;color:#c6d0da;border:1px solid #3a4654;padding:2px 8px;}
+            QPushButton{background:#2a3542;color:#e8eef4;border:1px solid #3a4654;padding:4px 12px;border-radius:4px;}
+            QPushButton:hover{background:#35414f;}
+        """)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(6, 6, 6, 6)
+
+        # ---- 工具栏：J-Link 序列号选择 + 刷新 ----
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("J-Link 序列号"))
+        self.serial_combo = QComboBox()
+        self._populate_serials()
+        bar.addWidget(self.serial_combo)
+        self.btn_refresh = QPushButton("刷新")
+        self.btn_refresh.clicked.connect(self._on_refresh)
+        bar.addWidget(self.btn_refresh)
+        bar.addStretch(1)
+        outer.addLayout(bar)
+
+        # ---- 主体：左电机 + 右仪表 / 下方 5 示波器 ----
+        root = QHBoxLayout()
         self.motor = MotorView(hub)
 
         right = QVBoxLayout()
@@ -60,9 +86,11 @@ class MainWindow(QMainWindow):
         right_scopes = QWidget()
         right_scopes.setLayout(scopes)
         root.addWidget(right_scopes, 4)
+        outer.addLayout(root, 1)
         self.setCentralWidget(central)
 
         # 状态栏
+        self.statusBar().setStyleSheet("QStatusBar{background:#1c2229;color:#c6d0da;}")
         self.lbl_status = QLabel("连接中…")
         self.lbl_state = QLabel("")
         self.lbl_age = QLabel("")
@@ -79,6 +107,28 @@ class MainWindow(QMainWindow):
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._refresh)
         self._timer.start(self.REFRESH_MS)
+
+    def _populate_serials(self):
+        """枚举已连接 J-Link 序列号，填入下拉框（"自动"= 不指定）。"""
+        self.serial_combo.clear()
+        self.serial_combo.addItem("自动（默认）", None)
+        try:
+            import pylink
+            for sn in pylink.JLink().connected_emulators():
+                self.serial_combo.addItem("SN %d" % sn, sn)
+        except Exception:
+            pass
+        if self._serial_arg is not None:
+            idx = self.serial_combo.findData(self._serial_arg)
+            if idx >= 0:
+                self.serial_combo.setCurrentIndex(idx)
+
+    def _on_refresh(self):
+        """手动刷新：按下拉框所选序列号重连 J-Link。"""
+        self.thread.set_serial(self.serial_combo.currentData())
+        self.thread.refresh()
+        self.lbl_status.setText("正在刷新…")
+        self.lbl_status.setStyleSheet("")
 
     def _on_status(self, s):
         self._last_status_text = s

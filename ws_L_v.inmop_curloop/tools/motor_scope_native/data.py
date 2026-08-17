@@ -83,6 +83,20 @@ class DataThread(QThread):
         self._cfg["channel"] = int(channel)
         self._refresh_evt.set()
 
+    def set_device(self, device):
+        """设置目标芯片型号（如 HC32F460 / Cortex-M4），下次重连生效。"""
+        self._cfg["device"] = str(device).strip() or "HC32F460"
+
+    def set_speed(self, speed_khz):
+        """设置 SWD 接口速度（kHz），下次重连生效。"""
+        self._cfg["speed_khz"] = int(speed_khz)
+
+    def set_ram(self, ram_base, ram_size, rtt_addr):
+        """设置 RTT 控制块扫描参数（RAM 基址/大小 + 显式 RTT 地址），下次重连生效。"""
+        self._cfg["ram_base"] = int(ram_base)
+        self._cfg["ram_size"] = int(ram_size)
+        self._cfg["rtt_addr"] = int(rtt_addr)
+
     def refresh(self):
         """手动刷新：打断当前连接，按最新配置重连。"""
         self._refresh_evt.set()

@@ -9,9 +9,9 @@ import math
 import time
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QMainWindow,
-                               QPushButton, QSlider, QSpinBox, QSplitter,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QLineEdit,
+                               QMainWindow, QPushButton, QSlider, QSpinBox,
+                               QSplitter, QVBoxLayout, QWidget)
 
 from widgets.gauge import Gauge
 from widgets.log_panel import LogPanel
@@ -77,6 +77,8 @@ class MainWindow(QMainWindow):
             background-color:{BG}; color:{TEXT};
             QComboBox{{background:{PANEL};color:{TEXT};border:1px solid {BORDER};padding:2px 8px;}}
             QComboBox QAbstractItemView{{background:{PANEL};color:{TEXT};selection-background-color:{BTN};}}
+            QComboBox QLineEdit{{background:{PANEL};color:{TEXT};border:none;}}
+            QLineEdit{{background:{PANEL};color:{TEXT};border:1px solid {BORDER};padding:2px 6px;}}
             QSpinBox{{background:{PANEL};color:{TEXT};border:1px solid {BORDER};padding:2px 6px;}}
             QLabel{{background:transparent;}}
             QSlider::groove:horizontal{{height:4px;background:{BORDER};border-radius:2px;}}
@@ -86,28 +88,65 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(6, 6, 6, 6)
         outer.setSpacing(4)
 
-        # ---- 工具栏行 1：J-Link 序列号 + 刷新 + RTT 通道 ----
+        # ---- 工具栏行 1：J-Link 序列号 / 芯片 / SWD 速度 / RTT 通道 + 应用、刷新 ----
+        cfg = self.thread._cfg
         bar = QHBoxLayout()
         bar.addWidget(QLabel("J-Link 序列号"))
         self.serial_combo = QComboBox()
         self._populate_serials()
         bar.addWidget(self.serial_combo)
+        bar.addSpacing(10)
+        bar.addWidget(QLabel("芯片"))
+        self.combo_chip = QComboBox()
+        self.combo_chip.setEditable(True)      # 可直接键入 J-Link 设备表中任意型号
+        self.combo_chip.addItems(["HC32F460", "Cortex-M4"])
+        self.combo_chip.setCurrentText(cfg.get("device", "HC32F460"))
+        self.combo_chip.setMaximumWidth(150)
+        bar.addWidget(self.combo_chip)
+        bar.addSpacing(10)
+        bar.addWidget(QLabel("SWD 速度"))
+        self.combo_speed = QComboBox()
+        self.combo_speed.setEditable(True)     # 可直接键入任意 kHz
+        for s in (100, 400, 1000, 4000):
+            self.combo_speed.addItem("%d kHz" % s, s)
+        _si = self.combo_speed.findText("%d kHz" % cfg.get("speed_khz", 1000))
+        if _si >= 0:
+            self.combo_speed.setCurrentIndex(_si)   # setCurrentText 不会更新索引，必须用 setCurrentIndex
+        else:
+            self.combo_speed.setEditText("%d kHz" % cfg.get("speed_khz", 1000))
+        self.combo_speed.setMaximumWidth(110)
+        bar.addWidget(self.combo_speed)
+        bar.addSpacing(10)
+        bar.addWidget(QLabel("RTT 通道"))
+        self.spin_ch = QSpinBox()
+        self.spin_ch.setRange(0, 15)
+        self.spin_ch.setValue(cfg.get("channel", 0))
+        bar.addWidget(self.spin_ch)
+        self.btn_apply = QPushButton("应用")
+        self.btn_apply.setStyleSheet(BTN_STYLE)
+        self.btn_apply.clicked.connect(self._on_apply)
+        bar.addWidget(self.btn_apply)
         self.btn_refresh = QPushButton("刷新")
         self.btn_refresh.setStyleSheet(BTN_STYLE)
         self.btn_refresh.clicked.connect(self._on_refresh)
         bar.addWidget(self.btn_refresh)
-        bar.addSpacing(14)
-        bar.addWidget(QLabel("RTT 通道"))
-        self.spin_ch = QSpinBox()
-        self.spin_ch.setRange(0, 15)
-        self.spin_ch.setValue(self.thread._cfg.get("channel", 0))
-        bar.addWidget(self.spin_ch)
-        self.btn_ch = QPushButton("应用")
-        self.btn_ch.setStyleSheet(BTN_STYLE)
-        self.btn_ch.clicked.connect(self._on_channel)
-        bar.addWidget(self.btn_ch)
         bar.addStretch(1)
         outer.addLayout(bar)
+
+        # ---- 工具栏行 2：RAM 扫描区域 / RTT 地址（hex，应用时生效）----
+        bar_ram = QHBoxLayout()
+        bar_ram.addWidget(QLabel("RAM 基址"))
+        self.edit_ram_base = self._hex_edit(cfg.get("ram_base", 0x1FFF8000), 118)
+        bar_ram.addWidget(self.edit_ram_base)
+        bar_ram.addWidget(QLabel("RAM 大小"))
+        self.edit_ram_size = self._hex_edit(cfg.get("ram_size", 0x2F000), 96)
+        bar_ram.addWidget(self.edit_ram_size)
+        bar_ram.addWidget(QLabel("RTT 地址 (0=自动)"))
+        self.edit_rtt_addr = self._hex_edit(cfg.get("rtt_addr", 0), 118)
+        bar_ram.addWidget(self.edit_rtt_addr)
+        bar_ram.addWidget(QLabel("提示：RTT 自动搜索失败时，在 Keil 里看 _SEGGER_RTT 地址填入 RTT 地址；RAM 区域用于缩小扫描范围"))
+        bar_ram.addStretch(1)
+        outer.addLayout(bar_ram)
 
         # ---- 工具栏行 2：暂停/实时 + 窗口滑条 + 时间滑条 ----
         bar2 = QHBoxLayout()
@@ -237,22 +276,52 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 self.serial_combo.setCurrentIndex(idx)
 
-    def _on_refresh(self):
-        """手动刷新：重新枚举 J-Link 列表，并按当前选择重连。"""
-        self._populate_serials()
+    def _hex_edit(self, value, width=110):
+        e = QLineEdit("0x%X" % value)
+        e.setMaximumWidth(width)
+        e.setStyleSheet("QLineEdit{background:%s;color:%s;border:1px solid %s;padding:2px 6px;font-family:Consolas,monospace;}" % (PANEL, TEXT, BORDER))
+        return e
+
+    def _parse_hex(self, text, default):
+        try:
+            return int(text.strip(), 0)
+        except Exception:
+            return default
+
+    def _parse_speed(self, text):
+        """解析速度文本：支持 '400 kHz' / '400k' / '400'。"""
+        t = text.strip().lower().replace("khz", "").replace("k", "").strip()
+        try:
+            return int(t)
+        except Exception:
+            return 1000
+
+    def _apply_settings(self, reload_serials=False):
+        """读取工具栏全部连接参数，重新连接。"""
+        if reload_serials:
+            self._populate_serials()
+        dev = self.combo_chip.currentText().strip() or "HC32F460"
+        spd = self._parse_speed(self.combo_speed.currentText())
+        ram_base = self._parse_hex(self.edit_ram_base.text(), 0x1FFF8000)
+        ram_size = self._parse_hex(self.edit_ram_size.text(), 0x2F000)
+        rtt_addr = self._parse_hex(self.edit_rtt_addr.text(), 0)
         self.thread.set_serial(self.serial_combo.currentData())
+        self.thread.set_device(dev)
+        self.thread.set_speed(spd)
+        self.thread.set_channel(self.spin_ch.value())
+        self.thread.set_ram(ram_base, ram_size, rtt_addr)
         self.thread.refresh()
         self._error_active = False
-        self.lbl_status.setText("正在刷新…")
+        self.lbl_status.setText("正在重连: %s @ %d kHz ..." % (dev, spd))
         self.lbl_status.setStyleSheet("")
 
-    def _on_channel(self):
-        """切换 RTT 通道并重连（与 web 版"应用"一致）。"""
-        self.thread.set_channel(self.spin_ch.value())
-        self.thread.refresh()
-        self._error_active = False
-        self.lbl_status.setText("正在切换通道 %d …" % self.spin_ch.value())
-        self.lbl_status.setStyleSheet("")
+    def _on_apply(self):
+        """应用当前连接参数并重连。"""
+        self._apply_settings(reload_serials=False)
+
+    def _on_refresh(self):
+        """刷新：重新枚举 J-Link 列表并按当前连接参数重连。"""
+        self._apply_settings(reload_serials=True)
 
     def _on_pause(self):
         """暂停：停在当前最新时刻（缓冲写入/裁剪/最新帧全冻结）。"""

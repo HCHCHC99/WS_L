@@ -501,7 +501,11 @@ class JLinkOpenError(Exception):
 
 
 class ChipConnectError(Exception):
-    """J-Link 已连接，但目标芯片连接 / 调试 / RTT 初始化失败（无供电/SWD 断线/锁死等）。"""
+    """J-Link 已连接，但目标芯片连接/调试失败（无供电/SWD 断线/器件名错/锁死等）。"""
+
+
+class RttNoDataError(Exception):
+    """芯片已连接，但 RTT 初始化失败 / 无 RTT 数据（未烧录含 RTT 固件、未运行或地址未指定）。"""
 
 
 
@@ -564,9 +568,10 @@ class JLinkRttSource:
         return 0
 
     def open(self):
-        """两阶段连接，便于区分故障层：
+        """三阶段连接，便于区分故障层：
         阶段1 jl.open() -> J-Link 设备层（未找到/占用/驱动）；
-        阶段2 connect/RTT -> 目标芯片层（无供电/SWD 断线/器件名错/锁死）。"""
+        阶段2a connect -> 目标芯片未连接（无供电/SWD 断线/器件名错/锁死）；
+        阶段2b RTT 初始化 -> 芯片已连接但 RTT 无数据（固件未含 RTT/未运行/地址未指定）。"""
         jl = self.pylink.JLink()
 
         # ---- 阶段 1：J-Link 设备层 ----
@@ -586,7 +591,7 @@ class JLinkRttSource:
                 "请检查：1) USB 是否插好/指示灯是否亮；2) 是否被 Keil/其他软件占用；"
                 f"3) 驱动是否正常。原始错误: {exc}") from exc
 
-        # ---- 阶段 2：目标芯片连接 + RTT 初始化 ----
+        # ---- 阶段 2a：目标芯片连接 ----
         try:
                 # 关键：显式指定 SWD 接口。否则 J-Link DLL 可能"connect 不报错但目标访问
                 # 全部失败（Target is not connected）"，导致找不到 RTT 控制块。
@@ -601,6 +606,19 @@ class JLinkRttSource:
                         jl.exec_command("Go")
                 except Exception:
                     pass
+        except Exception as exc:
+            try:
+                jl.close()      # 连接失败务必释放，避免泄漏 J-Link 连接（多次重试会耗尽）
+            except Exception:
+                pass
+            raise ChipConnectError(
+                f"J-Link 已连接，但目标芯片未连接/无响应。"
+                "请检查：1) 目标板是否上电；2) SWD 三线（SWDIO/SWCLK/GND）是否接好；"
+                "3) 器件型号是否正确；4) 芯片是否被读保护锁死。"
+                f"原始错误: {exc}") from exc
+
+        # ---- 阶段 2b：RTT 初始化 / 数据读取 ----
+        try:
                 addr = self.rtt_addr
                 auto_ok = False
                 if not addr:
@@ -640,10 +658,11 @@ class JLinkRttSource:
                 jl.close()      # 连接失败务必释放，避免泄漏 J-Link 连接（多次重试会耗尽）
             except Exception:
                 pass
-            raise ChipConnectError(
-                f"J-Link 已连接，但目标芯片连接/RTT 初始化失败。"
-                "请检查：1) 目标板是否上电；2) SWD 三线（SWDIO/SWCLK/GND）是否接好；"
-                "3) 器件型号是否正确；4) 芯片是否被读保护锁死。"
+            raise RttNoDataError(
+                f"芯片已连接，但 RTT 无数据（未找到 RTT 控制块 / 读取失败）。"
+                "请确认：1) 目标已烧录含 SEGGER RTT 的固件且正在运行；"
+                "2) 在 Keil 里看 _SEGGER_RTT 的地址，用 --rtt-addr 0x地址 指定；"
+                "3) 固件是否调用了 SEGGER_RTT_Write 发送 MOTF 帧。"
                 f"原始错误: {exc}") from exc
 
     def next_chunk(self) -> bytes:
@@ -663,7 +682,15 @@ def jlink_loop(hub: DataHub, src: JLinkRttSource):
             src.reconnect_evt.clear()
             continue
         except ChipConnectError as exc:
-            msg = f"芯片连接失败（J-Link 已连接，目标无响应），3 秒后自动重试: {exc}"
+            msg = f"芯片未连接（J-Link 已连接，目标无响应），3 秒后自动重试: {exc}"
+            hub.set_status("error", msg)
+            hub.log("[MotorScope] " + msg)
+            print("[MotorScope] " + msg)
+            src.reconnect_evt.wait(timeout=3.0)
+            src.reconnect_evt.clear()
+            continue
+        except RttNoDataError as exc:
+            msg = f"RTT 无数据（芯片已连接），3 秒后自动重试: {exc}"
             hub.set_status("error", msg)
             hub.log("[MotorScope] " + msg)
             print("[MotorScope] " + msg)

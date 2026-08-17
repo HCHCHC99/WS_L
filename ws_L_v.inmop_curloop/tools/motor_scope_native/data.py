@@ -104,7 +104,12 @@ class DataThread(QThread):
                 time.sleep(3.0)
                 continue
             except ms.ChipConnectError as exc:
-                self.data_error.emit(f"芯片连接失败（J-Link 已连接，目标无响应），3 秒后重试: {exc}")
+                self.data_error.emit(f"芯片未连接（J-Link 已连接，目标无响应），3 秒后重试: {exc}")
+                src.close()
+                time.sleep(3.0)
+                continue
+            except ms.RttNoDataError as exc:
+                self.data_error.emit(f"RTT 无数据（芯片已连接，未找到 RTT 控制块），3 秒后重试: {exc}")
                 src.close()
                 time.sleep(3.0)
                 continue

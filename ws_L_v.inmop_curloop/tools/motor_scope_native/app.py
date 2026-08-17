@@ -26,9 +26,11 @@ BORDER = "#D9CDB9"        # 边框
 BTN = "#EFE7D6"           # 按钮底
 BTN_HOVER = "#E6DCC7"     # 按钮悬停
 
-# 状态栏错误配色：J-Link 设备层=琥珀，目标芯片层/RTT=红
+# 状态栏错误配色（三种故障层分别区分）：
+#   J-Link 设备层=琥珀；芯片未连接=红；RTT 无数据(芯片已连接)=紫；数据中断=琥珀
 COLOR_ERR_JLINK = "#B45309"
 COLOR_ERR_CHIP = "#DC2626"
+COLOR_ERR_RTT = "#6D28D9"
 COLOR_STALE = "#B45309"
 
 
@@ -162,9 +164,11 @@ class MainWindow(QMainWindow):
         self.hub.push(fr, time.time())
 
     def _error_color(self, msg):
-        """按故障层配色：J-Link 设备层=琥珀；目标芯片层/RTT=红。"""
+        """按故障层配色：J-Link 设备层=琥珀；RTT 无数据(芯片已连接)=紫；其余(芯片未连接/读取丢失)=红。"""
         if msg.startswith("J-Link 连接失败") or msg.startswith("缺少 pylink"):
             return COLOR_ERR_JLINK
+        if msg.startswith("RTT 无数据"):
+            return COLOR_ERR_RTT
         return COLOR_ERR_CHIP
 
     def _on_error(self, msg):

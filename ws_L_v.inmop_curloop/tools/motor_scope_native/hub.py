@@ -12,7 +12,7 @@ class Hub:
     与 web 版 scopeAppend 的换算一致（mrad->deg、mrad->rad、mA/mV 原值）。
     latest 为原始单位 FocFrame（mrad/mA/mV）；各 deque 为显示换算值（deg/rad/mA/mV）。
     cur_max 为电流显示量程（单调历史最大值，初始 500mA，push 时随 iq/id/is 更新）。
-    线程契约：数据线程独占 push；显示侧读取可容忍撕裂（Phase 1 不加锁）。"""
+    线程契约：push 由主线程（GUI 槽 _on_frame）调用；显示侧读取可容忍撕裂（Phase 1 不加锁）。"""
 
     KEEP_SEC = 20.0          # 保留时长（s）
     MAXLEN = 30000           # 最大点数（与 web 版 SCOPE_CAP 一致）

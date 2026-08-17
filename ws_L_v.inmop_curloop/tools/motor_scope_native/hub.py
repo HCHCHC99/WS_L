@@ -11,6 +11,7 @@ class Hub:
     """按时间裁剪的环形缓冲：每帧把显示所需字段按"度/rad/mA/mV"换算后入队。
     与 web 版 scopeAppend 的换算一致（mrad->deg、mrad->rad、mA/mV 原值）。
     latest 为原始单位 FocFrame（mrad/mA/mV）；各 deque 为显示换算值（deg/rad/mA/mV）。
+    cur_max 为电流显示量程（单调历史最大值，初始 500mA，push 时随 iq/id/is 更新）。
     线程契约：数据线程独占 push；显示侧读取可容忍撕裂（Phase 1 不加锁）。"""
 
     KEEP_SEC = 20.0          # 保留时长（s）
@@ -37,6 +38,7 @@ class Hub:
         self.cnt = deque(maxlen=self.MAXLEN)
         self.latest = None
         self.frames_total = 0
+        self.cur_max = 500.0            # 电流显示量程单调最大值（mA）
         self.last_frame_wall = 0.0
 
     def _deques(self):
@@ -77,6 +79,7 @@ class Hub:
         self.latest = fr
         self.frames_total += 1
         self.last_frame_wall = wall_t
+        self.cur_max = max(self.cur_max, abs(fr.iq_ma), abs(fr.id_ma), fr.is_ma)
 
     def last_t(self):
         return self.t[-1] if self.t else 0.0
